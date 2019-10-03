@@ -1439,7 +1439,7 @@ COMMIT TRANSACTION;
 END}
 }
 for { set i 1 } { $i <= 5 } { incr i } {
-odbc evaldirect $sql($i)
+$odbc evaldirect $sql($i)
 		}
 return
 }
@@ -1448,12 +1448,12 @@ return
 proc UpdateStatistics { odbc db azure } {
 puts "UPDATING SCHEMA STATISTICS"
 if {!$azure} {
-odbc evaldirect "EXEC sp_updatestats"
+$odbc evaldirect "EXEC sp_updatestats"
 } else {
 set sql(1) "USE $db"
 set sql(2) "EXEC sp_updatestats"
 for { set i 1 } { $i <= 2 } { incr i } {
-odbc evaldirect $sql($i)
+$odbc evaldirect $sql($i)
 		}
 	}
 return
@@ -1462,21 +1462,21 @@ return
 proc CreateDatabase { odbc db imdb azure } {
 set table_count 0
 puts "CHECKING IF DATABASE $db EXISTS"
-set rows [ odbc allrows "IF DB_ID('$db') is not null SELECT 1 AS res ELSE SELECT 0 AS res" ]
+set rows [ $odbc allrows "IF DB_ID('$db') is not null SELECT 1 AS res ELSE SELECT 0 AS res" ]
 set db_exists [ lindex {*}$rows 1 ]
 if { $db_exists } {
-if {!$azure} {odbc evaldirect "use $db"}
-set rows [ odbc allrows "select COUNT(*) from sys.tables" ]
+if {!$azure} {$odbc evaldirect "use $db"}
+set rows [ $odbc allrows "select COUNT(*) from sys.tables" ]
 set table_count [ lindex {*}$rows 1 ]
 if { $table_count == 0 } {
 puts "Empty database $db exists"
 if { $imdb } {
-odbc evaldirect "ALTER DATABASE $db SET AUTO_CREATE_STATISTICS OFF"
-odbc evaldirect "ALTER DATABASE $db SET AUTO_UPDATE_STATISTICS OFF"
-set rows [ odbc allrows {SELECT TOP 1 1 FROM sys.filegroups FG JOIN sys.database_files F ON FG.data_space_id = F.data_space_id WHERE FG.type = 'FX' AND F.type = 2} ]
+$odbc evaldirect "ALTER DATABASE $db SET AUTO_CREATE_STATISTICS OFF"
+$odbc evaldirect "ALTER DATABASE $db SET AUTO_UPDATE_STATISTICS OFF"
+set rows [ $odbc allrows {SELECT TOP 1 1 FROM sys.filegroups FG JOIN sys.database_files F ON FG.data_space_id = F.data_space_id WHERE FG.type = 'FX' AND F.type = 2} ]
 set imdb_fg [ lindex {*}$rows 1 ] 
 if { $imdb_fg eq "1" } { 
-set rows [ odbc allrows "SELECT is_memory_optimized_elevate_to_snapshot_on FROM sys.databases WHERE name = '$db'" ]
+set rows [ $odbc allrows "SELECT is_memory_optimized_elevate_to_snapshot_on FROM sys.databases WHERE name = '$db'" ]
 set elevatetosnap [ lindex {*}$rows 1 ]
 if { $elevatetosnap eq "1" } {
 puts "Using existing Memory Optimized Database $db with ELEVATE_TO_SNAPSHOT for Schema build"
@@ -1484,8 +1484,8 @@ puts "Using existing Memory Optimized Database $db with ELEVATE_TO_SNAPSHOT for 
 puts "Existing Memory Optimized Database $db exists, setting ELEVATE_TO_SNAPSHOT"
 unset -nocomplain rows
 unset -nocomplain elevatetosnap
-odbc evaldirect "ALTER DATABASE $db SET MEMORY_OPTIMIZED_ELEVATE_TO_SNAPSHOT = ON"
-set rows [ odbc allrows "SELECT is_memory_optimized_elevate_to_snapshot_on FROM sys.databases WHERE name = '$db'" ]
+$odbc evaldirect "ALTER DATABASE $db SET MEMORY_OPTIMIZED_ELEVATE_TO_SNAPSHOT = ON"
+set rows [ $odbc allrows "SELECT is_memory_optimized_elevate_to_snapshot_on FROM sys.databases WHERE name = '$db'" ]
 set elevatetosnap [ lindex {*}$rows 1 ]
 if { $elevatetosnap eq "1" } {
 puts "Success: Set ELEVATE_TO_SNAPSHOT for Database $db"
@@ -1511,7 +1511,7 @@ puts "In Memory Database chosen but $db does not exist"
 error "Database $db must be pre-created in a MEMORY_OPTIMIZED_DATA filegroup and empty, to specify an In-Memory build"
       } else {
 puts "CREATING DATABASE $db"
-odbc evaldirect "create database $db"
+$odbc evaldirect "create database $db"
 		}
         }
 }
@@ -1561,7 +1561,7 @@ set sql(19) {ALTER TABLE [dbo].[district] ADD  CONSTRAINT [DF__DISTRICT__paddin_
 set sql(20) {ALTER TABLE [dbo].[warehouse] ADD  CONSTRAINT [DF__WAREHOUSE__paddi__14270015]  DEFAULT (replicate('x',(4000))) FOR [padding]}
 	}
 for { set i 1 } { $i <= $stmnt_cnt } { incr i } {
-odbc evaldirect $sql($i)
+$odbc evaldirect $sql($i)
 		}
 return
 }
@@ -1580,7 +1580,7 @@ set sql(6) {CREATE NONCLUSTERED INDEX [d_details] ON [dbo].[district] ( [d_id] A
 set sql(7) {CREATE NONCLUSTERED INDEX [orders_i2] ON [dbo].[orders] ( [o_w_id] ASC, [o_d_id] ASC, [o_c_id] ASC, [o_id] ASC)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = OFF)}
 set sql(8) {CREATE UNIQUE NONCLUSTERED INDEX [w_details] ON [dbo].[warehouse] ( [w_id] ASC) INCLUDE ([w_tax], [w_name], [w_street_1], [w_street_2], [w_city], [w_state], [w_zip], [padding]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = OFF)}
 for { set i 1 } { $i <= 8 } { incr i } {
-odbc evaldirect $sql($i)
+$odbc evaldirect $sql($i)
 		}
      }
 return
@@ -1630,8 +1630,8 @@ append h_val_list ,
 	}
 incr bld_cnt
 if { ![ expr {$c_id % 2} ] } {
-odbc evaldirect "insert into customer (c_id, c_d_id, c_w_id, c_first, c_middle, c_last, c_street_1, c_street_2, c_city, c_state, c_zip, c_phone, c_since, c_credit, c_credit_lim, c_discount, c_balance, c_data, c_ytd_payment, c_payment_cnt, c_delivery_cnt) values $c_val_list"
-odbc evaldirect "insert into history (h_c_id, h_c_d_id, h_c_w_id, h_w_id, h_d_id, h_date, h_amount, h_data) values $h_val_list"
+$odbc evaldirect "insert into customer (c_id, c_d_id, c_w_id, c_first, c_middle, c_last, c_street_1, c_street_2, c_city, c_state, c_zip, c_phone, c_since, c_credit, c_credit_lim, c_discount, c_balance, c_data, c_ytd_payment, c_payment_cnt, c_delivery_cnt) values $c_val_list"
+$odbc evaldirect "insert into history (h_c_id, h_c_d_id, h_c_w_id, h_w_id, h_d_id, h_date, h_amount, h_data) values $h_val_list"
 	set bld_cnt 1
 	unset c_val_list
 	unset h_val_list
@@ -1704,11 +1704,11 @@ incr bld_cnt
  if { ![ expr {$o_id % 1000} ] } {
 	puts "...$o_id"
 	}
-odbc evaldirect "insert into orders (o_id, o_c_id, o_d_id, o_w_id, o_entry_d, o_carrier_id, o_ol_cnt, o_all_local) values $o_val_list"
+$odbc evaldirect "insert into orders (o_id, o_c_id, o_d_id, o_w_id, o_entry_d, o_carrier_id, o_ol_cnt, o_all_local) values $o_val_list"
 if { $o_id > 2100 } {
-odbc evaldirect "insert into new_order (no_o_id, no_d_id, no_w_id) values $no_val_list"
+$odbc evaldirect "insert into new_order (no_o_id, no_d_id, no_w_id) values $no_val_list"
 	}
-odbc evaldirect "insert into order_line (ol_o_id, ol_d_id, ol_w_id, ol_number, ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_dist_info, ol_delivery_d) values $ol_val_list"
+$odbc evaldirect "insert into order_line (ol_o_id, ol_d_id, ol_w_id, ol_number, ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_dist_info, ol_delivery_d) values $ol_val_list"
 	set bld_cnt 1
 	unset o_val_list
 	unset -nocomplain no_val_list
@@ -1743,7 +1743,7 @@ set last [ expr {$first + 8} ]
 set i_data [ string replace $i_data $first $last "original" ]
 	}
 }
-	odbc evaldirect "insert into item (i_id, i_im_id, i_name, i_price, i_data) VALUES ('$i_id', '$i_im_id', '$i_name', '$i_price', '$i_data')"
+	$odbc evaldirect "insert into item (i_id, i_im_id, i_name, i_price, i_data) VALUES ('$i_id', '$i_im_id', '$i_name', '$i_price', '$i_data')"
       if { ![ expr {$i_id % 50000} ] } {
 	puts "Loading Items - $i_id"
 			}
@@ -1791,7 +1791,7 @@ append val_list ,
 }
 incr bld_cnt
       if { ![ expr {$s_i_id % 2} ] } {
-odbc evaldirect "insert into stock (s_i_id, s_w_id, s_quantity, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10, s_data, s_ytd, s_order_cnt, s_remote_cnt) values $val_list"
+$odbc evaldirect "insert into stock (s_i_id, s_w_id, s_quantity, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10, s_data, s_ytd, s_order_cnt, s_remote_cnt) values $val_list"
 	set bld_cnt 1
 	unset val_list
 	}
@@ -1815,7 +1815,7 @@ set d_name [ MakeAlphaString 6 10 $globArray $chalen ]
 set d_add [ MakeAddress $globArray $chalen ]
 set d_tax_ran [ RandomNumber 10 20 ]
 set d_tax [ string replace [ format "%.2f" [ expr {$d_tax_ran / 100.0} ] ] 0 0 "" ]
-odbc evaldirect "insert into district (d_id, d_w_id, d_name, d_street_1, d_street_2, d_city, d_state, d_zip, d_tax, d_ytd, d_next_o_id) values ('$d_id', '$d_w_id', '$d_name', '[ lindex $d_add 0 ]', '[ lindex $d_add 1 ]', '[ lindex $d_add 2 ]', '[ lindex $d_add 3 ]', '[ lindex $d_add 4 ]', '$d_tax', '$d_ytd', '$d_next_o_id')"
+$odbc evaldirect "insert into district (d_id, d_w_id, d_name, d_street_1, d_street_2, d_city, d_state, d_zip, d_tax, d_ytd, d_next_o_id) values ('$d_id', '$d_w_id', '$d_name', '[ lindex $d_add 0 ]', '[ lindex $d_add 1 ]', '[ lindex $d_add 2 ]', '[ lindex $d_add 3 ]', '[ lindex $d_add 4 ]', '$d_tax', '$d_ytd', '$d_next_o_id')"
 	}
 	puts "District done"
 	return
@@ -1831,16 +1831,16 @@ set w_name [ MakeAlphaString 6 10 $globArray $chalen ]
 set add [ MakeAddress $globArray $chalen ]
 set w_tax_ran [ RandomNumber 10 20 ]
 set w_tax [ string replace [ format "%.2f" [ expr {$w_tax_ran / 100.0} ] ] 0 0 "" ]
-odbc evaldirect "insert into warehouse (w_id, w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_tax, w_ytd) values ('$w_id', '$w_name', '[ lindex $add 0 ]', '[ lindex $add 1 ]', '[ lindex $add 2 ]' , '[ lindex $add 3 ]', '[ lindex $add 4 ]', '$w_tax', '$w_ytd')"
-	Stock odbc $w_id $MAXITEMS
-	District odbc $w_id $DIST_PER_WARE
+$odbc evaldirect "insert into warehouse (w_id, w_name, w_street_1, w_street_2, w_city, w_state, w_zip, w_tax, w_ytd) values ('$w_id', '$w_name', '[ lindex $add 0 ]', '[ lindex $add 1 ]', '[ lindex $add 2 ]' , '[ lindex $add 3 ]', '[ lindex $add 4 ]', '$w_tax', '$w_ytd')"
+	Stock $odbc $w_id $MAXITEMS
+	District $odbc $w_id $DIST_PER_WARE
 	}
 }
 
 proc LoadCust { odbc ware_start count_ware CUST_PER_DIST DIST_PER_WARE } {
 for {set w_id $ware_start} {$w_id <= $count_ware } {incr w_id } {
 for {set d_id 1} {$d_id <= $DIST_PER_WARE } {incr d_id } {
-	Customer odbc $d_id $w_id $CUST_PER_DIST
+	Customer $odbc $d_id $w_id $CUST_PER_DIST
 		}
 	}
 	return
@@ -1849,7 +1849,7 @@ for {set d_id 1} {$d_id <= $DIST_PER_WARE } {incr d_id } {
 proc LoadOrd { odbc ware_start count_ware MAXITEMS ORD_PER_DIST DIST_PER_WARE } {
 for {set w_id $ware_start} {$w_id <= $count_ware } {incr w_id } {
 for {set d_id 1} {$d_id <= $DIST_PER_WARE } {incr d_id } {
-	Orders odbc $d_id $w_id $MAXITEMS $ORD_PER_DIST
+	Orders $odbc $d_id $w_id $MAXITEMS $ORD_PER_DIST
 		}
 	}
 	return
