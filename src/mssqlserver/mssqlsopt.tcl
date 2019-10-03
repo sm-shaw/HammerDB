@@ -421,9 +421,11 @@ bind .tpc.f1.r4 <ButtonPress-1> {
 .tpc.f1.e20 configure -state normal
 .tpc.f1.e21 configure -state normal
 .tpc.f1.e22 configure -state normal
+if { $mssqls_async_scale eq "true" } {
 .tpc.f1.e23 configure -state normal
 .tpc.f1.e24 configure -state normal
 .tpc.f1.e25 configure -state normal
+	}
 }
 set Name $Parent.f1.e14
    set Prompt $Parent.f1.p14
@@ -441,7 +443,7 @@ ttk::checkbutton $Name -text "" -variable mssqls_raiseerror -onvalue "true" -off
 ttk::label $Prompt -text "Keying and Thinking Time :"
   set Name $Parent.f1.e16
 ttk::checkbutton $Name -text "" -variable mssqls_keyandthink -onvalue "true" -offvalue "false"
-bind .tpc.f1.e19 <Any-ButtonRelease> {
+bind .tpc.f1.e16 <Any-ButtonRelease> {
 if { $mssqls_driver eq "timed" } {
 if { $mssqls_keyandthink eq "true" } {
 set mssqls_async_scale "false"

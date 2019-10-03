@@ -379,9 +379,11 @@ bind .tpc.f1.r2 <ButtonPress-1> {
 .tpc.f1.e23 configure -state normal
 .tpc.f1.e24 configure -state normal
 .tpc.f1.e25 configure -state normal
+if { $async_scale eq "true" } {
 .tpc.f1.e26 configure -state normal
 .tpc.f1.e27 configure -state normal
 .tpc.f1.e28 configure -state normal
+	}
 }
 set Name $Parent.f1.e17
    set Prompt $Parent.f1.p17
