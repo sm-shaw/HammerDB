@@ -2221,7 +2221,7 @@ catch {$resultset close}
 proc prep_statement { odbc statement_st } {
 switch $statement_st {
 slev_st {
-set slev_st [ odbc prepare "EXEC slev @st_w_id = :st_w_id, @st_d_id = :st_d_id, @threshold =  :threshold" ]
+set slev_st [ $odbc prepare "EXEC slev @st_w_id = :st_w_id, @st_d_id = :st_d_id, @threshold =  :threshold" ]
 $slev_st paramtype st_w_id in integer 10 0
 $slev_st paramtype st_d_id in integer 10 0
 $slev_st paramtype threshold in integer 10 0
@@ -2229,14 +2229,14 @@ return $slev_st
 }
 	
 delivery_st {
-set delivery_st [ odbc prepare "EXEC delivery @d_w_id = :d_w_id, @d_o_carrier_id = :d_o_carrier_id, @timestamp = :timestamp" ]
+set delivery_st [ $odbc prepare "EXEC delivery @d_w_id = :d_w_id, @d_o_carrier_id = :d_o_carrier_id, @timestamp = :timestamp" ]
 $delivery_st paramtype d_w_id in integer 10 0
 $delivery_st paramtype d_o_carrier_id in integer 10 0
 $delivery_st paramtype timestamp in timestamp 19 0
 return $delivery_st
 	}
 ostat_st {
-set ostat_st [ odbc prepare "EXEC ostat @os_w_id = :os_w_id, @os_d_id = :os_d_id, @os_c_id = :os_c_id, @byname = :byname, @os_c_last = :os_c_last" ]
+set ostat_st [ $odbc prepare "EXEC ostat @os_w_id = :os_w_id, @os_d_id = :os_d_id, @os_c_id = :os_c_id, @byname = :byname, @os_c_last = :os_c_last" ]
 $ostat_st paramtype os_w_id in integer 10 0
 $ostat_st paramtype os_d_id in integer 10 0
 $ostat_st paramtype os_c_id in integer 10 0 
@@ -2245,7 +2245,7 @@ $ostat_st paramtype os_c_last in char 20 0
 return $ostat_st
 	}
 payment_st {
-set payment_st [ odbc prepare "EXEC payment @p_w_id = :p_w_id, @p_d_id = :p_d_id, @p_c_w_id = :p_c_w_id, @p_c_d_id = :p_c_d_id, @p_c_id = :p_c_id, @byname = :byname, @p_h_amount = :p_h_amount, @p_c_last = :name, @TIMESTAMP =:h_date" ] 
+set payment_st [ $odbc prepare "EXEC payment @p_w_id = :p_w_id, @p_d_id = :p_d_id, @p_c_w_id = :p_c_w_id, @p_c_d_id = :p_c_d_id, @p_c_id = :p_c_id, @byname = :byname, @p_h_amount = :p_h_amount, @p_c_last = :name, @TIMESTAMP =:h_date" ] 
 $payment_st paramtype p_w_id in integer 10 0
 $payment_st paramtype p_d_id in integer 10 0
 $payment_st paramtype p_c_w_id in integer 10 0
@@ -2258,7 +2258,7 @@ $payment_st paramtype h_date in timestamp 19 0
 return $payment_st
 	}
 neword_st {
-set neword_st [ odbc prepare "EXEC neword @no_w_id = :no_w_id, @no_max_w_id = :w_id_input, @no_d_id = :no_d_id, @no_c_id = :no_c_id, @no_o_ol_cnt = :ol_cnt, @TIMESTAMP = :date" ]
+set neword_st [ $odbc prepare "EXEC neword @no_w_id = :no_w_id, @no_max_w_id = :w_id_input, @no_d_id = :no_d_id, @no_c_id = :no_c_id, @no_o_ol_cnt = :ol_cnt, @TIMESTAMP = :date" ]
 $neword_st paramtype no_w_id in integer 10 0 
 $neword_st paramtype w_id_input in integer 10 0 
 $neword_st paramtype no_d_id in integer 10 0 
@@ -2347,6 +2347,8 @@ set mssqls_authentication $mssqls_linux_authent
 ed_edit_clear
 .ed_mainFrame.notebook select .ed_mainFrame.mainwin
 set _ED(packagekeyname) "SQL Server TPC-C"
+if { !$mssqls_async_scale } {
+#REGULAR TIMED SCRIPT
 .ed_mainFrame.mainwin.textFrame.left.text fastinsert end "#!/usr/local/bin/tclsh8.6
 #EDITABLE OPTIONS##################################################
 set library $library ;# SQL Server Library
@@ -2653,7 +2655,7 @@ catch {$resultset close}
 proc prep_statement { odbc statement_st } {
 switch $statement_st {
 slev_st {
-set slev_st [ odbc prepare "EXEC slev @st_w_id = :st_w_id, @st_d_id = :st_d_id, @threshold =  :threshold" ]
+set slev_st [ $odbc prepare "EXEC slev @st_w_id = :st_w_id, @st_d_id = :st_d_id, @threshold =  :threshold" ]
 $slev_st paramtype st_w_id in integer 10 0
 $slev_st paramtype st_d_id in integer 10 0
 $slev_st paramtype threshold in integer 10 0
@@ -2661,14 +2663,14 @@ return $slev_st
 }
 	
 delivery_st {
-set delivery_st [ odbc prepare "EXEC delivery @d_w_id = :d_w_id, @d_o_carrier_id = :d_o_carrier_id, @timestamp = :timestamp" ]
+set delivery_st [ $odbc prepare "EXEC delivery @d_w_id = :d_w_id, @d_o_carrier_id = :d_o_carrier_id, @timestamp = :timestamp" ]
 $delivery_st paramtype d_w_id in integer 10 0
 $delivery_st paramtype d_o_carrier_id in integer 10 0
 $delivery_st paramtype timestamp in timestamp 19 0
 return $delivery_st
 	}
 ostat_st {
-set ostat_st [ odbc prepare "EXEC ostat @os_w_id = :os_w_id, @os_d_id = :os_d_id, @os_c_id = :os_c_id, @byname = :byname, @os_c_last = :os_c_last" ]
+set ostat_st [ $odbc prepare "EXEC ostat @os_w_id = :os_w_id, @os_d_id = :os_d_id, @os_c_id = :os_c_id, @byname = :byname, @os_c_last = :os_c_last" ]
 $ostat_st paramtype os_w_id in integer 10 0
 $ostat_st paramtype os_d_id in integer 10 0
 $ostat_st paramtype os_c_id in integer 10 0 
@@ -2677,7 +2679,7 @@ $ostat_st paramtype os_c_last in char 20 0
 return $ostat_st
 	}
 payment_st {
-set payment_st [ odbc prepare "EXEC payment @p_w_id = :p_w_id, @p_d_id = :p_d_id, @p_c_w_id = :p_c_w_id, @p_c_d_id = :p_c_d_id, @p_c_id = :p_c_id, @byname = :byname, @p_h_amount = :p_h_amount, @p_c_last = :name, @TIMESTAMP =:h_date" ] 
+set payment_st [ $odbc prepare "EXEC payment @p_w_id = :p_w_id, @p_d_id = :p_d_id, @p_c_w_id = :p_c_w_id, @p_c_d_id = :p_c_d_id, @p_c_id = :p_c_id, @byname = :byname, @p_h_amount = :p_h_amount, @p_c_last = :name, @TIMESTAMP =:h_date" ] 
 $payment_st paramtype p_w_id in integer 10 0
 $payment_st paramtype p_d_id in integer 10 0
 $payment_st paramtype p_c_w_id in integer 10 0
@@ -2690,7 +2692,7 @@ $payment_st paramtype h_date in timestamp 19 0
 return $payment_st
 	}
 neword_st {
-set neword_st [ odbc prepare "EXEC neword @no_w_id = :no_w_id, @no_max_w_id = :w_id_input, @no_d_id = :no_d_id, @no_c_id = :no_c_id, @no_o_ol_cnt = :ol_cnt, @TIMESTAMP = :date" ]
+set neword_st [ $odbc prepare "EXEC neword @no_w_id = :no_w_id, @no_max_w_id = :w_id_input, @no_d_id = :no_d_id, @no_c_id = :no_c_id, @no_o_ol_cnt = :ol_cnt, @TIMESTAMP = :date" ]
 $neword_st paramtype no_w_id in integer 10 0 
 $neword_st paramtype w_id_input in integer 10 0 
 $neword_st paramtype no_d_id in integer 10 0 
@@ -2753,4 +2755,446 @@ $ostat_st close
 odbc close
       }
    }}
+} else {
+#ASYNCHRONOUS TIMED SCRIPT
+.ed_mainFrame.mainwin.textFrame.left.text fastinsert end "#!/usr/local/bin/tclsh8.6
+#EDITABLE OPTIONS##################################################
+set library $library ;# SQL Server Library
+set version $version ;# SQL Server Library Version
+set total_iterations $mssqls_total_iterations;# Number of transactions before logging off
+set RAISEERROR \"$mssqls_raiseerror\" ;# Exit script on SQL Server error (true or false)
+set KEYANDTHINK \"$mssqls_keyandthink\" ;# Time for user thinking and keying (true or false)
+set CHECKPOINT \"$mssqls_checkpoint\" ;# Perform SQL Server checkpoint when complete (true or false)
+set rampup $mssqls_rampup;  # Rampup time in minutes before first Transaction Count is taken
+set duration $mssqls_duration;  # Duration in minutes before second Transaction Count is taken
+set mode \"$opmode\" ;# HammerDB operational mode
+set authentication \"$mssqls_authentication\";# Authentication Mode (WINDOWS or SQL)
+set server \{$mssqls_server\};# Microsoft SQL Server Database Server
+set port \"$mssqls_port\";# Microsoft SQL Server Port 
+set odbc_driver \{$mssqls_odbc_driver\};# ODBC Driver
+set uid \"$mssqls_uid\";#User ID for SQL Server Authentication
+set pwd \"$mssqls_pass\";#Password for SQL Server Authentication
+set tcp \"$mssqls_tcp\";#Specify TCP Protocol
+set azure \"$mssqls_azure\";#Azure Type Connection
+set database \"$mssqls_dbase\";# Database containing the TPC Schema
+set async_client $mssqls_async_client;# Number of asynchronous clients per Vuser
+set async_verbose $mssqls_async_verbose;# Report activity of asynchronous clients
+set async_delay $mssqls_async_delay;# Delay in ms between logins of asynchronous clients
+#EDITABLE OPTIONS##################################################
+"
+.ed_mainFrame.mainwin.textFrame.left.text fastinsert end {#LOAD LIBRARIES AND MODULES
+if [catch {package require $library $version} message] { error "Failed to load $library - $message" }
+if [catch {::tcl::tm::path add modules} ] { error "Failed to find modules directory" }
+if [catch {package require tpcccommon} ] { error "Failed to load tpcc common functions" } else { namespace import tpcccommon::* }
+if [catch {package require promise } message] { error "Failed to load promise package for asynchronous clients" }
+
+if { [ chk_thread ] eq "FALSE" } {
+error "SQL Server Timed Script must be run in Thread Enabled Interpreter"
+}
+
+proc connect_string { server port odbc_driver authentication uid pwd tcp azure db } {
+if { $tcp eq "true" } { set server tcp:$server,$port }
+if {[ string toupper $authentication ] eq "WINDOWS" } {
+set connection "DRIVER=$odbc_driver;SERVER=$server;TRUSTED_CONNECTION=YES"
+} else {
+if {[ string toupper $authentication ] eq "SQL" } {
+set connection "DRIVER=$odbc_driver;SERVER=$server;UID=$uid;PWD=$pwd"
+        } else {
+puts stderr "Error: neither WINDOWS or SQL Authentication has been specified"
+set connection "DRIVER=$odbc_driver;SERVER=$server"
+        }
+}
+if { $azure eq "true" } { append connection ";" "DATABASE=$db" }
+return $connection
+}
+
+set rema [ lassign [ findvuposition ] myposition totalvirtualusers ]
+switch $myposition {
+1 { 
+if { $mode eq "Local" || $mode eq "Master" } {
+set connection [ connect_string $server $port $odbc_driver $authentication $uid $pwd $tcp $azure $database ]
+if [catch {tdbc::odbc::connection create odbc $connection} message ] {
+error "Connection to $connection could not be established : $message"
+} else {
+if {!$azure} { odbc evaldirect "use $database" }
+}
+set ramptime 0
+puts "Beginning rampup time of $rampup minutes"
+set rampup [ expr $rampup*60000 ]
+while {$ramptime != $rampup} {
+if { [ tsv::get application abort ] } { break } else { after 6000 }
+set ramptime [ expr $ramptime+6000 ]
+if { ![ expr {$ramptime % 60000} ] } {
+puts "Rampup [ expr $ramptime / 60000 ] minutes complete ..."
+	}
+}
+if { [ tsv::get application abort ] } { break }
+puts "Rampup complete, Taking start Transaction Count."
+if {[catch {set rows [ odbc allrows "select sum(d_next_o_id) from district" ]} message ]} {
+error "Failed to query district table : $message"
+} else {
+set start_nopm [ lindex {*}$rows 1 ]
+unset -nocomplain rows
+}
+if {[catch {set rows [ odbc allrows "select cntr_value from sys.dm_os_performance_counters where counter_name = 'Batch Requests/sec'" ]} message ]} {
+error "Failed to query transaction statistics : $message"
+} else {
+set start_trans [ lindex {*}$rows 1 ]
+unset -nocomplain rows
+} 
+puts "Timing test period of $duration in minutes"
+set testtime 0
+set durmin $duration
+set duration [ expr $duration*60000 ]
+while {$testtime != $duration} {
+if { [ tsv::get application abort ] } { break } else { after 6000 }
+set testtime [ expr $testtime+6000 ]
+if { ![ expr {$testtime % 60000} ] } {
+puts -nonewline  "[ expr $testtime / 60000 ]  ...,"
+	}
+}
+if { [ tsv::get application abort ] } { break }
+puts "Test complete, Taking end Transaction Count."
+if {[catch {set rows [ odbc allrows "select sum(d_next_o_id) from district" ]} message ]} {
+error "Failed to query district table : $message"
+} else {
+set end_nopm [ lindex {*}$rows 1 ]
+unset -nocomplain rows
+}
+if {[catch {set rows [ odbc allrows "select cntr_value from sys.dm_os_performance_counters where counter_name = 'Batch Requests/sec'" ]} message ]} {
+error "Failed to query transaction statistics : $message"
+} else {
+set end_trans [ lindex {*}$rows 1 ]
+unset -nocomplain rows
+} 
+if { [ string is entier -strict $end_trans ] && [ string is entier -strict $start_trans ] } {
+if { $start_trans < $end_trans }  {
+set tpm [ expr {($end_trans - $start_trans)/$durmin} ]
+	} else {
+puts "Warning: SQL Server returned end transaction count data greater than start data"
+set tpm 0
+	} 
+} else {
+puts "Warning: SQL Server returned non-numeric transaction count data"
+set tpm 0
+	}
+set nopm [ expr {($end_nopm - $start_nopm)/$durmin} ]
+puts "[ expr $totalvirtualusers - 1 ] VU \* $async_client AC \= [ expr ($totalvirtualusers - 1) * $async_client ] Active Sessions configured"
+puts "TEST RESULT : System achieved $tpm SQL Server TPM at $nopm NOPM"
+tsv::set application abort 1
+if { $mode eq "Master" } { eval [subst {thread::send -async $MASTER { remote_command ed_kill_vusers }}] }
+if { $CHECKPOINT } {
+puts "Checkpoint"
+if  [catch {odbc evaldirect "checkpoint"} message ]  {
+error "Failed to execute checkpoint : $message"
+	} else {
+puts "Checkpoint Complete"
+        }
+    }
+odbc close
+		} else {
+puts "Operating in Slave Mode, No Snapshots taken..."
+		}
+	}
+default {
+#TIMESTAMP
+proc gettimestamp { } {
+set tstamp [ clock format [ clock seconds ] -format "%Y-%m-%d %H:%M:%S" ]
+return $tstamp
+}
+#NEW ORDER
+proc neword { neword_st no_w_id w_id_input RAISEERROR clientname } {
+#2.4.1.2 select district id randomly from home warehouse where d_w_id = d_id
+set no_d_id [ RandomNumber 1 10 ]
+#2.4.1.2 Customer id randomly selected where c_d_id = d_id and c_w_id = w_id
+set no_c_id [ RandomNumber 1 3000 ]
+#2.4.1.3 Items in the order randomly selected from 5 to 15
+set ol_cnt [ RandomNumber 5 15 ]
+#2.4.1.6 order entry date O_ENTRY_D generated by SUT
+set date [ gettimestamp ]
+if  {[catch {set resultset [ $neword_st execute [ list no_w_id $no_w_id w_id_input $w_id_input no_d_id $no_d_id no_c_id $no_c_id ol_cnt $ol_cnt date $date ]]} message ]} {
+	if { $RAISEERROR } {
+error "New Order Bind/Exec in $clientname : $message"
+	} else {
+puts "New Order Bind/Exec in $clientname : $message"
+	}
+  } else {
+if {[catch {set norows [ $resultset allrows ]} message ]} {
+catch {$resultset close}
+if { $RAISEERROR } {
+error "New Order Fetch in $clientname : $message"
+	} else {
+puts "New Order Fetch in $clientname : $message"
+	}} else {
+catch {$resultset close}
+	}
+    }
+}
+
+#PAYMENT
+proc payment { payment_st p_w_id w_id_input RAISEERROR clientname } {
+#2.5.1.1 The home warehouse id remains the same for each terminal
+#2.5.1.1 select district id randomly from home warehouse where d_w_id = d_id
+set p_d_id [ RandomNumber 1 10 ]
+#2.5.1.2 customer selected 60% of time by name and 40% of time by number
+set x [ RandomNumber 1 100 ]
+set y [ RandomNumber 1 100 ]
+if { $x <= 85 } {
+set p_c_d_id $p_d_id
+set p_c_w_id $p_w_id
+} else {
+#use a remote warehouse
+set p_c_d_id [ RandomNumber 1 10 ]
+set p_c_w_id [ RandomNumber 1 $w_id_input ]
+while { ($p_c_w_id == $p_w_id) && ($w_id_input != 1) } {
+set p_c_w_id [ RandomNumber 1  $w_id_input ]
+	}
+}
+set nrnd [ NURand 255 0 999 123 ]
+set name [ randname $nrnd ]
+set p_c_id [ RandomNumber 1 3000 ]
+if { $y <= 60 } {
+#use customer name
+#C_LAST is generated
+set byname 1
+ } else {
+#use customer number
+set byname 0
+set name {}
+ }
+#2.5.1.3 random amount from 1 to 5000
+set p_h_amount [ RandomNumber 1 5000 ]
+#2.5.1.4 date selected from SUT
+set h_date [ gettimestamp ]
+#2.5.2.1 Payment Transaction
+if  {[catch {set resultset [ $payment_st execute [ list p_w_id $p_w_id p_d_id $p_d_id p_c_w_id $p_c_w_id p_c_d_id $p_c_d_id p_c_id $p_c_id byname $byname p_h_amount $p_h_amount name $name h_date $h_date ] ]} message ]} {
+	if { $RAISEERROR } {
+error "Payment Bind/Exec in $clientname : $message"
+	} else {
+puts "Payment Bind/Exec in $clientname : $message"
+	}
+  } else {
+if {[catch {set pyrows [ $resultset allrows ]} message ]} {
+catch {$resultset close}
+if { $RAISEERROR } {
+error "Payment Fetch in $clientname : $message"
+	} else {
+puts "Payment Fetch in $clientname : $message"
+	}} else {
+catch {$resultset close}
+	}
+    }
+}
+
+#ORDER_STATUS
+proc ostat { ostat_st w_id RAISEERROR clientname } {
+#2.5.1.1 select district id randomly from home warehouse where d_w_id = d_id
+set d_id [ RandomNumber 1 10 ]
+set nrnd [ NURand 255 0 999 123 ]
+set name [ randname $nrnd ]
+set c_id [ RandomNumber 1 3000 ]
+set y [ RandomNumber 1 100 ]
+if { $y <= 60 } {
+set byname 1
+ } else {
+set byname 0
+set name {}
+}
+if  {[catch {set resultset [ $ostat_st execute [ list os_w_id $w_id os_d_id $d_id os_c_id  $c_id byname  $byname os_c_last $name ]]} message ]} {
+	if { $RAISEERROR } {
+error "Order Status Bind/Exec in $clientname : $message"
+	} else {
+puts "Order Status Bind/Exec in $clientname : $message"
+	}
+      } else {
+if {[catch {set osrows [ $resultset allrows ]} message ]} {
+catch {$resultset close}
+if { $RAISEERROR } {
+error "Order Status Fetch in $clientname : $message"
+	} else {
+puts "Order Status Fetch in $clientname : $message"
+	}} else {
+catch {$resultset close}
+	}
+    }
+}
+
+#DELIVERY
+proc delivery { delivery_st w_id RAISEERROR clientname } {
+set carrier_id [ RandomNumber 1 10 ]
+set date [ gettimestamp ]
+if  {[catch {set resultset [ $delivery_st execute [ list d_w_id $w_id d_o_carrier_id $carrier_id timestamp $date ]]} message ]} {
+	if { $RAISEERROR } {
+error "Delivery Bind/Exec in $clientname : $message"
+	} else {
+puts "Delivery Bind/Exec in $clientname : $message"
+	}
+      } else {
+if {[catch {set dlrows [ $resultset allrows ]} message ]} {
+catch {$resultset close}
+if { $RAISEERROR } {
+error "Delivery Fetch in $clientname : $message"
+	} else {
+puts "Delivery Fetch in $clientname : $message"
+	}} else {
+catch {$resultset close}
+	}
+    }
+}
+
+#STOCK LEVEL
+proc slev { slev_st w_id stock_level_d_id RAISEERROR clientname } {
+set threshold [ RandomNumber 10 20 ]
+if  {[catch {set resultset [ $slev_st execute [ list st_w_id $w_id st_d_id $stock_level_d_id threshold $threshold ]]} message ]} {
+	if { $RAISEERROR } {
+error "Stock Level in $clientname : $message"
+	} else {
+puts "Stock Level in $clientname : $message"
+	}
+      } else {
+if {[catch {set slrows [ $resultset allrows ]} message ]} {
+catch {$resultset close}
+if { $RAISEERROR } {
+error "Stock Level Fetch in $clientname : $message"
+	} else {
+puts "Stock Level Fetch in $clientname : $message"
+	}} else {
+catch {$resultset close}
+	}
+    }
+}
+
+proc prep_statement { odbc statement_st } {
+switch $statement_st {
+slev_st {
+set slev_st [ $odbc prepare "EXEC slev @st_w_id = :st_w_id, @st_d_id = :st_d_id, @threshold =  :threshold" ]
+$slev_st paramtype st_w_id in integer 10 0
+$slev_st paramtype st_d_id in integer 10 0
+$slev_st paramtype threshold in integer 10 0
+return $slev_st
+}
+	
+delivery_st {
+set delivery_st [ $odbc prepare "EXEC delivery @d_w_id = :d_w_id, @d_o_carrier_id = :d_o_carrier_id, @timestamp = :timestamp" ]
+$delivery_st paramtype d_w_id in integer 10 0
+$delivery_st paramtype d_o_carrier_id in integer 10 0
+$delivery_st paramtype timestamp in timestamp 19 0
+return $delivery_st
+	}
+ostat_st {
+set ostat_st [ $odbc prepare "EXEC ostat @os_w_id = :os_w_id, @os_d_id = :os_d_id, @os_c_id = :os_c_id, @byname = :byname, @os_c_last = :os_c_last" ]
+$ostat_st paramtype os_w_id in integer 10 0
+$ostat_st paramtype os_d_id in integer 10 0
+$ostat_st paramtype os_c_id in integer 10 0 
+$ostat_st paramtype byname in integer 10 0 
+$ostat_st paramtype os_c_last in char 20 0
+return $ostat_st
+	}
+payment_st {
+set payment_st [ $odbc prepare "EXEC payment @p_w_id = :p_w_id, @p_d_id = :p_d_id, @p_c_w_id = :p_c_w_id, @p_c_d_id = :p_c_d_id, @p_c_id = :p_c_id, @byname = :byname, @p_h_amount = :p_h_amount, @p_c_last = :name, @TIMESTAMP =:h_date" ] 
+$payment_st paramtype p_w_id in integer 10 0
+$payment_st paramtype p_d_id in integer 10 0
+$payment_st paramtype p_c_w_id in integer 10 0
+$payment_st paramtype p_c_d_id in integer 10 0
+$payment_st paramtype p_c_id in integer 10 0
+$payment_st paramtype byname in integer 10 0
+$payment_st paramtype p_h_amount in numeric 6 2
+$payment_st paramtype name in char 16 0
+$payment_st paramtype h_date in timestamp 19 0
+return $payment_st
+	}
+neword_st {
+set neword_st [ $odbc prepare "EXEC neword @no_w_id = :no_w_id, @no_max_w_id = :w_id_input, @no_d_id = :no_d_id, @no_c_id = :no_c_id, @no_o_ol_cnt = :ol_cnt, @TIMESTAMP = :date" ]
+$neword_st paramtype no_w_id in integer 10 0 
+$neword_st paramtype w_id_input in integer 10 0 
+$neword_st paramtype no_d_id in integer 10 0 
+$neword_st paramtype no_c_id in integer 10 0 
+$neword_st paramtype ol_cnt integer 10 0 
+$neword_st paramtype date in timestamp 19 0
+return $neword_st
+	}
+    }
+}
+
+promise::async simulate_client { clientname total_iterations connection RAISEERROR KEYANDTHINK database azure async_verbose async_delay } {
+set acno [ expr [ string trimleft [ lindex [ split $clientname ":" ] 1 ] ac ] * $async_delay ]
+if { $async_verbose } { puts "Delaying login of $clientname for $acno ms" } 
+async_time $acno
+if {  [ tsv::get application abort ]  } { return "$clientname:abort before login" }
+if { $async_verbose } { puts "Logging in $clientname" }
+#RUN TPC-C
+if [catch {tdbc::odbc::connection create odbc-$acno $connection} message ] {
+if { $RAISEERROR } {
+puts "$clientname:login failed:$message"
+return "$clientname:login failed:$message"
+	} 
+   } else {
+if { $async_verbose } { puts "Connected $clientname:$connection" }
+if {!$azure} { odbc-$acno evaldirect "use $database" }
+odbc-$acno evaldirect "set implicit_transactions OFF"
+   }
+foreach st {neword_st payment_st ostat_st delivery_st slev_st} { set $st [ prep_statement odbc-$acno $st ] }
+set rows [ odbc-$acno allrows "select max(w_id) from warehouse" ]
+set w_id_input [ lindex {*}$rows 1 ]
+#2.4.1.1 set warehouse_id stays constant for a given terminal
+set w_id  [ RandomNumber 1 $w_id_input ]  
+set rows [ odbc-$acno allrows "select max(d_id) from district" ]
+set d_id_input [ lindex {*}$rows 1 ]
+set stock_level_d_id  [ RandomNumber 1 $d_id_input ]  
+if { $async_verbose } { puts "Processing $total_iterations transactions with output suppressed..." }
+set abchk 1; set abchk_mx 1024; set hi_t [ expr {pow([ lindex [ time {if {  [ tsv::get application abort ]  } { break }} ] 0 ],2)}]
+for {set it 0} {$it < $total_iterations} {incr it} {
+if { [expr {$it % $abchk}] eq 0 } { if { [ time {if {  [ tsv::get application abort ]  } { break }} ] > $hi_t }  {  set  abchk [ expr {min(($abchk * 2), $abchk_mx)}]; set hi_t [ expr {$hi_t * 2} ] } }
+set choice [ RandomNumber 1 23 ]
+if {$choice <= 10} {
+if { $async_verbose } { puts "$clientname:w_id:$w_id:neword" }
+if { $KEYANDTHINK } { async_keytime 18  $clientname neword $async_verbose }
+neword $neword_st $w_id $w_id_input $RAISEERROR $clientname
+if { $KEYANDTHINK } { async_thinktime 12 $clientname neword $async_verbose }
+} elseif {$choice <= 20} {
+if { $async_verbose } { puts "$clientname:w_id:$w_id:payment" }
+if { $KEYANDTHINK } { async_keytime 3 $clientname payment $async_verbose }
+payment $payment_st $w_id $w_id_input $RAISEERROR $clientname
+if { $KEYANDTHINK } { async_thinktime 12 $clientname payment $async_verbose }
+} elseif {$choice <= 21} {
+if { $async_verbose } { puts "$clientname:w_id:$w_id:delivery" }
+if { $KEYANDTHINK } { async_keytime 2 $clientname delivery $async_verbose }
+delivery $delivery_st $w_id $RAISEERROR $clientname
+if { $KEYANDTHINK } { async_thinktime 10 $clientname delivery $async_verbose }
+} elseif {$choice <= 22} {
+if { $async_verbose } { puts "$clientname:w_id:$w_id:slev" }
+if { $KEYANDTHINK } { async_keytime 2 $clientname slev $async_verbose }
+slev $slev_st $w_id $stock_level_d_id $RAISEERROR $clientname
+if { $KEYANDTHINK } { async_thinktime 5 $clientname slev $async_verbose }
+} elseif {$choice <= 23} {
+if { $async_verbose } { puts "$clientname:w_id:$w_id:ostat" }
+if { $KEYANDTHINK } { async_keytime 2 $clientname ostat $async_verbose }
+ostat $ostat_st $w_id $RAISEERROR $clientname
+if { $KEYANDTHINK } { async_thinktime 5 $clientname ostat $async_verbose }
+	}
+}
+$neword_st close 
+$payment_st close
+$delivery_st close
+$slev_st close
+$ostat_st close
+odbc-$acno close
+if { $async_verbose } { puts "$clientname:complete" }
+return $clientname:complete
+	  }
+set connection [ connect_string $server $port $odbc_driver $authentication $uid $pwd $tcp $azure $database ] 
+for {set ac 1} {$ac <= $async_client} {incr ac} { 
+set clientdesc "vuser$myposition:ac$ac"
+lappend clientlist $clientdesc
+lappend clients [simulate_client $clientdesc $total_iterations $connection $RAISEERROR $KEYANDTHINK $database $azure $async_verbose $async_delay]
+		}
+puts "Started asynchronous clients:$clientlist"
+set acprom [ promise::eventloop [ promise::all $clients ] ] 
+puts "All asynchronous clients complete" 
+if { $async_verbose } {
+foreach client $acprom { puts $client }
+      }
+   }
+}}
+}
 }

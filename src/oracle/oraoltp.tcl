@@ -2868,11 +2868,11 @@ if { $async_verbose } { puts "Logging in $clientname" }
 #RUN TPC-C
 if {[catch {set lda [oralogon $connect]} message]} {
 if { $RAISEERROR } {
-puts "$clientname:login failed"
-return "$clientname:login failed"
+puts "$clientname:login failed:$message"
+return "$clientname:login failed:$message"
+	         }
         } else {
 if { $async_verbose } { puts "Connected $clientname:$lda" }
-	}
    }
 if { !$timesten } { SetNLS $lda }
 oraautocom $lda on
