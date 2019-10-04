@@ -259,7 +259,7 @@ if { $pg_defaultdbase eq "edb" } { set pg_defaultdbase "postgres" }
 	}
 }
 set Prompt $Parent.f1.p9a
-ttk::label $Prompt -text "PostgreSQL Stored Procedures:"
+ttk::label $Prompt -text "PostgreSQL Stored Procedures :"
 set Name $Parent.f1.e9a
 ttk::checkbutton $Name -text "" -variable pg_storedprocs -onvalue "true" -offvalue "false"
 if {$pg_oracompat == "true" } {
