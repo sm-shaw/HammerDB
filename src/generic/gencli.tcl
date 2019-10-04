@@ -1,7 +1,6 @@
 set opmode "Local"
 set table "notable"
 set suppo 1
-set optlog 0
 set _ED(package) ""
 set _ED(packagekeyname) ""
 namespace eval ttk {
