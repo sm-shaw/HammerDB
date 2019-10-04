@@ -1563,7 +1563,7 @@ set w_id  [ RandomNumber 1 $w_id_input ]
 set stmnt_handle2 [ db2_select_direct $db_handle "select max(d_id) from district" ] 
 set d_id_input [ db2_fetchrow $stmnt_handle2 ]
 set stock_level_d_id  [ RandomNumber 1 $d_id_input ]  
-puts "Processing $total_iterations transactions without output suppressed..."
+puts "Processing $total_iterations transactions with output suppressed..."
 set abchk 1; set abchk_mx 1024; set hi_t [ expr {pow([ lindex [ time {if {  [ tsv::get application abort ]  } { break }} ] 0 ],2)}]
 for {set it 0} {$it < $total_iterations} {incr it} {
 if { [expr {$it % $abchk}] eq 0 } { if { [ time {if {  [ tsv::get application abort ]  } { break }} ] > $hi_t }  {  set  abchk [ expr {min(($abchk * 2), $abchk_mx)}]; set hi_t [ expr {$hi_t * 2} ] } }
