@@ -2198,7 +2198,6 @@ ed_edit_clear
 .ed_mainFrame.notebook select .ed_mainFrame.mainwin
 set _ED(packagekeyname) "PostgreSQL TPC-C Timed"
 .ed_mainFrame.mainwin.textFrame.left.text fastinsert end "#!/usr/local/bin/tclsh8.6
-#THIS SCRIPT TO BE RUN WITH VIRTUAL USER OUTPUT ENABLED
 #EDITABLE OPTIONS##################################################
 set library $library ;# PostgreSQL Library
 set total_iterations $pg_total_iterations ;# Number of transactions before logging off

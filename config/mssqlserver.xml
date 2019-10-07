@@ -33,7 +33,7 @@
             <mssqls_allwarehouse>false</mssqls_allwarehouse>
             <mssqls_timeprofile>false</mssqls_timeprofile>
 	    <mssqls_async_scale>false</mssqls_async_scale>
-            <mssqls_async_client>0</mssqls_async_client>
+            <mssqls_async_client>10</mssqls_async_client>
             <mssqls_async_verbose>false</mssqls_async_verbose>
             <mssqls_async_delay>1000</mssqls_async_delay>
         </driver>

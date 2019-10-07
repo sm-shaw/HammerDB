@@ -2103,8 +2103,6 @@ set _ED(packagekeyname) "Oracle Timed TPC-C"
 if { !$async_scale } {
 #REGULAR TIMED SCRIPT
 .ed_mainFrame.mainwin.textFrame.left.text fastinsert end "#!/usr/local/bin/tclsh8.6
-#TIMED AWR SNAPSHOT DRIVER SCRIPT##################################
-#THIS SCRIPT TO BE RUN WITH VIRTUAL USER OUTPUT ENABLED
 #EDITABLE OPTIONS##################################################
 set library $library ;# Oracle OCI Library
 set total_iterations $total_iterations ;# Number of transactions before logging off
@@ -2506,8 +2504,6 @@ oralogoff $lda
 } else {
 #ASYNCHRONOUS TIMED SCRIPT
 .ed_mainFrame.mainwin.textFrame.left.text fastinsert end "#!/usr/local/bin/tclsh8.6
-#ASYNCHRONOUS TIMED AWR SNAPSHOT DRIVER SCRIPT#####################
-#THIS SCRIPT TO BE RUN WITH VIRTUAL USER OUTPUT ENABLED
 #EDITABLE OPTIONS##################################################
 set library $library ;# Oracle OCI Library
 set total_iterations $total_iterations ;# Number of transactions before logging off
