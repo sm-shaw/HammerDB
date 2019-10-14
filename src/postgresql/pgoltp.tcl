@@ -2748,7 +2748,7 @@ set end_nopm $o_id_arr(sum)
 	}
 set tpm [ expr {($end_trans - $start_trans)/$durmin} ]
 set nopm [ expr {($end_nopm - $start_nopm)/$durmin} ]
-puts "[ expr $totalvirtualusers - 1 ] Active Virtual Users configured"
+puts "[ expr $totalvirtualusers - 1 ] VU \* $async_client AC \= [ expr ($totalvirtualusers - 1) * $async_client ] Active Sessions configured"
 puts "TEST RESULT : System achieved $tpm PostgreSQL TPM at $nopm NOPM"
 tsv::set application abort 1
 if { $mode eq "Master" } { eval [subst {thread::send -async $MASTER { remote_command ed_kill_vusers }}] }
@@ -2989,6 +2989,7 @@ pg_result $result -clear
 pg_result $result -clear
 	}
 }
+
 #RUN TPC-C
 promise::async simulate_client { clientname total_iterations host port user password db ora_compatible pg_storedprocs RAISEERROR KEYANDTHINK async_verbose async_delay } {
 set acno [ expr [ string trimleft [ lindex [ split $clientname ":" ] 1 ] ac ] * $async_delay ]

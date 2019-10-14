@@ -2854,14 +2854,13 @@ return $curn_no
     }
 }
 
+#RUN TPC-C
 promise::async simulate_client { clientname total_iterations connect RAISEERROR KEYANDTHINK timesten async_verbose async_delay } {
-#DELAY LOGIN
 set acno [ expr [ string trimleft [ lindex [ split $clientname ":" ] 1 ] ac ] * $async_delay ]
 if { $async_verbose } { puts "Delaying login of $clientname for $acno ms" } 
 async_time $acno
 if {  [ tsv::get application abort ]  } { return "$clientname:abort before login" }
 if { $async_verbose } { puts "Logging in $clientname" } 
-#RUN TPC-C
 if {[catch {set lda [oralogon $connect]} message]} {
 if { $RAISEERROR } {
 puts "$clientname:login failed:$message"

@@ -1708,7 +1708,7 @@ set end_nopm [ db2_fetchrow $stmnt_handle4 ]
 db2_finish $stmnt_handle4
 set tpm [ expr {($end_trans - $start_trans)/$durmin} ]
 set nopm [ expr {($end_nopm - $start_nopm)/$durmin} ]
-puts "[ expr $totalvirtualusers - 1 ] Active Virtual Users configured"
+puts "[ expr $totalvirtualusers - 1 ] VU \* $async_client AC \= [ expr ($totalvirtualusers - 1) * $async_client ] Active Sessions configured"
 puts "TEST RESULT : System achieved $tpm Db2 TPM at $nopm NOPM"
 if { $doingmonreport eq "true" } {
 puts "---MONREPORT OUTPUT---"
@@ -1929,6 +1929,7 @@ return $set_handle_no
        }
    }
 }
+
 #RUN TPC-C
 promise::async simulate_client { clientname total_iterations user password dbname RAISEERROR KEYANDTHINK async_verbose async_delay } {
 set acno [ expr [ string trimleft [ lindex [ split $clientname ":" ] 1 ] ac ] * $async_delay ]

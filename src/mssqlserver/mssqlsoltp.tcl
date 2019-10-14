@@ -3116,13 +3116,13 @@ return $neword_st
     }
 }
 
+#RUN TPC-C
 promise::async simulate_client { clientname total_iterations connection RAISEERROR KEYANDTHINK database azure async_verbose async_delay } {
 set acno [ expr [ string trimleft [ lindex [ split $clientname ":" ] 1 ] ac ] * $async_delay ]
 if { $async_verbose } { puts "Delaying login of $clientname for $acno ms" } 
 async_time $acno
 if {  [ tsv::get application abort ]  } { return "$clientname:abort before login" }
 if { $async_verbose } { puts "Logging in $clientname" }
-#RUN TPC-C
 if [catch {tdbc::odbc::connection create odbc-$acno $connection} message ] {
 if { $RAISEERROR } {
 puts "$clientname:login failed:$message"
