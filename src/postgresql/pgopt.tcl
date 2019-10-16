@@ -355,6 +355,17 @@ ttk::checkbutton $Name -text "" -variable pg_raiseerror -onvalue "true" -offvalu
 ttk::label $Prompt -text "Keying and Thinking Time :"
   set Name $Parent.f1.e17
 ttk::checkbutton $Name -text "" -variable pg_keyandthink -onvalue "true" -offvalue "false"
+bind .tpc.f1.e17 <Any-ButtonRelease> {
+if { $pg_driver eq "timed" } {
+if { $pg_keyandthink eq "true" } {
+set pg_async_scale "false"
+set pg_async_verbose "false"
+.tpc.f1.e26 configure -state disabled
+.tpc.f1.e27 configure -state disabled
+.tpc.f1.e28 configure -state disabled
+        }
+    }
+}
    grid $Prompt -column 0 -row 18 -sticky e
    grid $Name -column 1 -row 18 -sticky w
 set Prompt $Parent.f1.p19

@@ -285,6 +285,17 @@ ttk::checkbutton $Name -text "" -variable mysql_raiseerror -onvalue "true" -offv
 ttk::label $Prompt -text "Keying and Thinking Time :"
   set Name $Parent.f1.e16
 ttk::checkbutton $Name -text "" -variable mysql_keyandthink -onvalue "true" -offvalue "false"
+bind .tpc.f1.e16 <Any-ButtonRelease> {
+if { $mysql_driver eq "timed" } {
+if { $mysql_keyandthink eq "true" } {
+set mysql_async_scale "false"
+set mysql_async_verbose "false"
+.tpc.f1.e22 configure -state disabled
+.tpc.f1.e23 configure -state disabled
+.tpc.f1.e24 configure -state disabled
+        }
+    }
+}
    grid $Prompt -column 0 -row 16 -sticky e
    grid $Name -column 1 -row 16 -sticky w
 set Name $Parent.f1.e17
