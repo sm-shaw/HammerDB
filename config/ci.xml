@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ci>
+    <common>
+        <listen_port>5000</listen_port>
+        <clone_cmd>git clone</clone_cmd>
+        <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
+        <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
+    </common>
+
+    <MariaDB>
+        <build>
+            <repo_url>https://github.com/MariaDB/server.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+            <overwrite>true</overwrite>
+            <local_dir_root>/opt/MARIADBCI/builds</local_dir_root>
+            <build_cmd>cmake . -DBUILD_CONFIG=mysql_release -DPLUGIN_AUTH_PAM=NO ; cmake --build .</build_cmd>
+            <build_cmd_args>--parallel 32</build_cmd_args>
+            <package_cmd>make package</package_cmd>
+        </build>
+
+        <install>
+            <install_package>tar -xvf</install_package>
+            <installer>scripts/mariadb-install-db</installer>
+            <install_dir>/opt/MARIADBCI</install_dir>
+            <base_config_file>/opt/MARIADBCI/config/maria.cnf</base_config_file>
+            <defaults_file>/opt/MARIADBCI/maria.cnf</defaults_file>
+            <basedir>/opt/MARIADBCI</basedir>
+            <datadir>data</datadir>
+            <innodb_log_group_home_dir>redo</innodb_log_group_home_dir>
+            <init_args>defaults_file basedir datadir innodb_log_group_home_dir</init_args>
+            <start_cmd>bin/mariadbd</start_cmd>
+            <start_args>defaults_file basedir datadir innodb_log_group_home_dir socket port</start_args>
+            <socket>/tmp/mariadb.sock</socket>
+            <port>3307</port>
+            <run_sql_cmd>./bin/mariadb -S {socket} --skip-ssl -vvv -e "{sql}"</run_sql_cmd>
+            <change_password>ALTER USER 'root'@'localhost' IDENTIFIED BY 'maria'</change_password>
+            <shutdown>shutdown</shutdown>
+        </install>
+
+        <test>
+            <oltp>scripts/tcl/maria/tprocc/maria_tprocc.sh</oltp>
+            <compare>scripts/tcl/maria/tprocc/maria_tprocc_compare.sh</compare>
+            <olap>scripts/tcl/maria/tproch/maria_tproch.sh</olap>
+        </test>
+
+        <pipeline>
+            <!-- Full end-to-end OLTP run (clone → build → package → install → init → start → run change_password/shutdown → restart → OLTP test) -->
+            <default>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart start_tests:oltp</default>
+
+            <!-- New unified compare path: single 'compare' step calls mariadb_compare, which does bad+good runs and job diff -->
+            <compare>compare</compare>
+
+            <!-- Build + install pipeline only, no tests -->
+            <build_no_test>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart</build_no_test>
+
+            <!-- Base profile id for compare; bad/good use pid and pid+1 (and may be bumped by JOBMAIN max(profile_id)) -->
+            <compare_profileid>99</compare_profileid>
+
+            <!-- Restart DB and run OLTP tests -->
+            <restart_and_test>restart start_tests:oltp</restart_and_test>
+
+            <!-- Just restart DB (no tests) -->
+            <restart_only>restart</restart_only>
+
+            <!-- Direct OLTP/OLAP test runs (expect DB already running) -->
+            <tests_oltp_only>start_tests:oltp</tests_oltp_only>
+            <tests_olap_only>start_tests:olap</tests_olap_only>
+        </pipeline>
+    </MariaDB>
+
+    <MySQL>
+        <!-- Configuration for MySQL to be added here -->
+    </MySQL>
+
+    <PostgreSQL>
+        <!-- Configuration for PostgreSQL to be added here -->
+    </PostgreSQL>
+</ci>
+

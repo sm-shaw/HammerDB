@@ -793,12 +793,12 @@ proc dbset { args } {
 proc print { args } {
     global _ED rdbms bm virtual_users conpause delayms ntimes suppo optlog unique_log_name no_log_buffer log_timestamps gen_count_ware gen_scale_fact gen_directory gen_num_vu
     if {[ llength $args ] != 1} {
-        puts {Usage: print [db|bm|dict|generic|script|vuconf|vucreated|vustatus|vucomplete|datagen|tcconf]}
+        puts {Usage: print [db|bm|ci|dict|generic|script|vuconf|vucreated|vustatus|vucomplete|datagen|tcconf]}
     } else {
-        set ind [ lsearch {db bm dict generic script vuconf vucreated vustatus vucomplete datagen tcconf} $args ]
+        set ind [ lsearch {db bm ci dict generic script vuconf vucreated vustatus vucomplete datagen tcconf} $args ]
         if { $ind eq -1 } {
             puts "Error: invalid option"
-            puts {Usage: print [db|bm|dict|generic|script|vuconf|vucreated|vustatus|vucomplete|datagen|tcconf]}
+            puts {Usage: print [db|bm|ci||dict|generic|script|vuconf|vucreated|vustatus|vucomplete|datagen|tcconf]}
             return
         }
         switch $args {
@@ -815,6 +815,39 @@ proc print { args } {
             }
             bm {
                 puts "Benchmark set to $bm"
+            }
+            ci {
+                puts "CI Dictionary Settings"
+                upvar #0 cidict cidict
+                if {![info exists cidict] || $cidict eq ""} {
+                    puts "No CI configuration loaded"
+                } else {
+                    global rdbms
+
+                    # Resolve CI DB key by case-insensitive match
+                    set rkey ""
+                    foreach k [dict keys $cidict] {
+                        if {[string equal -nocase $k $rdbms]} {
+                            set rkey $k
+                            break
+                        }
+                    }
+                    set pretty [dict create]
+                    if {[dict exists $cidict common]} {
+                        dict set pretty common [dict get $cidict common]
+                    }
+
+                    if {$rkey ne ""} {
+                        set dbblock [dict get $cidict $rkey]
+                        dict for {section sectionDict} $dbblock {
+                            # Each section (build/install/test/pipeline) becomes its own table-style block
+                            dict set pretty "${rkey}/${section}" $sectionDict
+                        }
+                    } else {
+                        puts "Warning: no CI block found for $rdbms; available roots: [join [dict keys $cidict] {, }]"
+                    }
+                    pdict 2 $pretty
+                }
             }
             script {
                 if { [ string length $_ED(package) ] eq 0  } {

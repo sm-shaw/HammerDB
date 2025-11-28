@@ -252,6 +252,28 @@ namespace eval jobs {
         return
       }
     } 
+    set tokens [split $args]
+    set opt [expr {[llength $tokens] > 0 ? [lindex $tokens 0] : ""}]
+    if {[llength $tokens] >= 1 && [string equal -nocase $opt "diff"]} {
+        set argc [llength $tokens]
+        if {$argc < 3 || $argc > 4} {
+            puts "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            return
+        }
+        set good_pid  [lindex $tokens 1]
+        set bad_pid   [lindex $tokens 2]
+        set weighting [expr {$argc == 4 ? [lindex $tokens 3] : "false"}]
+	if {![string is boolean -strict $weighting]} {
+            puts "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            return
+        }
+        set ratio [jobs_profile_diff $good_pid $bad_pid $weighting]
+        if {$ratio ne ""} { 
+	return $ratio 
+	} else {
+        return "null"
+	}
+    } 
     switch [ llength $args ] {
       0 {
         set res [ getjob "" ]
@@ -315,7 +337,7 @@ namespace eval jobs {
         } 
       }
       default {
-        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id \] - type \"help jobs\""
+        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id | jobs diff goodpid badpid \[true|false\]\] - type \"help jobs\""
       }
     }
   }
@@ -2509,12 +2531,52 @@ proc job_profile_id { args } {
         }
         1 {
             set tmp_ppid $args
+            # profileid all: returns all used profile ids.
+            if {[string equal -nocase $tmp_ppid "all"]} {
+                # match 'jobs' output style
+                if {[dict exists $genericdict commandline jobsoutput]} {
+                    set outputformat [dict get $genericdict commandline jobsoutput]
+                } else {
+                    set outputformat "text"
+                }
+
+                set profileids {}
+                if {[catch {
+                    set profileids [hdbjobs eval {
+                        SELECT DISTINCT(profile_id)
+                        FROM JOBMAIN
+                        WHERE profile_id > 0
+                        ORDER BY profile_id ASC
+                    }]
+                } err]} {
+                    putscli "Error querying profile ids: $err"
+                    return
+                }
+
+                if {[llength $profileids] == 0} {
+                    putscli "No performance profiles found"
+                    return
+                }
+
+                if {[string equal -nocase $outputformat "JSON"]} {
+                    # print as JSON array like 'jobs'
+                    if {[catch {package require huddle}]} {}
+                    if {[catch {package require json}]} {}
+                    set h [huddle compile {list} $profileids]
+                    puts [huddle jsondump $h]
+                } else {
+                    # plain list, one per line (like 'jobs' text mode)
+                    puts [join $profileids "\n"]
+                }
+                return
+            }
+
             if { ![string is integer -strict $tmp_ppid ] } {
                 putscli "Error: Performance profile id should be an integer"
             } else {
                 set jobs_profile_id $tmp_ppid
                 putscli "Setting performance profile id to $jobs_profile_id"
-		dict set genericdict "commandline" "jobs_profile_id" $jobs_profile_id
+                dict set genericdict "commandline" "jobs_profile_id" $jobs_profile_id
                 Dict2SQLite "generic" $genericdict
             }
         }
@@ -2582,6 +2644,170 @@ return $huddleobj
             putscli "Error :profile accepts one integer argument"
         }
 }	
+}
+# Compare two performance profiles and return signed ratio:
+# Always prints an unweighted summary. If weighting=true, also prints a weighted summary
+# using w = max(1.0, activevu / phys_cores) with phys_cores = ceil(logical/2), no upper cap.
+
+# Compare two performance profiles and return signed ratio:
+#   ratio = (avg_bad - avg_good) / avg_good
+# Weighting:
+#   weighting = "true"  → weighted, phys_cores auto = ceil(logical/2)
+#             = "false" → unweighted
+# Weighted w = max(1.0, activevu / phys_cores)  (no cap)
+
+proc jobs_profile_diff {good_pid bad_pid weighting} {
+    # ---- validate ids ----
+    if {![string is integer -strict $good_pid] || $good_pid < 1} {
+        putscli "Error: good profile id must be an integer > 0"
+        return
+    }
+    if {![string is integer -strict $bad_pid] || $bad_pid < 1} {
+        putscli "Error: bad profile id must be an integer > 0"
+        return
+    }
+    # ---- boolean weighting only ----
+    if {![string is true $weighting] && ![string is false $weighting]} {
+        putscli "Error: weighting must be true or false"
+        return
+    }
+    set do_weight [string is true $weighting]
+
+    # ---- helpers ----
+    proc __collect_profile_points {pid mapVar jobsVar} {
+        upvar 1 $mapVar m
+        upvar 1 $jobsVar jl
+        set m [dict create]
+        set jl {}
+        set jobs [hdbjobs eval "SELECT DISTINCT JOBID FROM JOBMAIN WHERE profile_id=$pid"]
+        if {[llength $jobs] == 0} { return "empty" }
+        foreach jid $jobs {
+            hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jid ORDER BY timestamp} {
+                set jr [getjobresult $jid 1]
+                if {[lindex $jr 1] eq "Jobid has no test result"} { continue }
+                if {[string match "Geometric*" [lindex $jr 2]]} { continue }
+                if {![string match "TEST RESULT*" [lindex $jr 3]]} { continue }
+                lassign [getnopmtpm $jr] _jid _ts avu_str nopm _tpm _desc
+                if {![regexp -- {\d+} $avu_str avu_num]} { continue }
+                scan $avu_num "%d" avu
+                if {![string is integer -strict $nopm]} {
+                    if {![regexp -- {\d+} $nopm nopm_num]} { continue }
+                    scan $nopm_num "%d" nopm
+                }
+                dict set m $avu $nopm
+                lappend jl $jid
+            }
+        }
+        return "ok"
+    }
+
+    proc __logical_cpus {} {
+        if {![catch {exec nproc} logical_raw]} {
+            set logical [string trim $logical_raw]
+            if {[string is integer -strict $logical] && $logical > 0} { return $logical }
+        }
+        if {[file exists /proc/cpuinfo]} {
+            set f [open /proc/cpuinfo r]
+            set count 0
+            while {[gets $f line] >= 0} {
+                if {[string match -nocase "processor*" $line]} { incr count }
+            }
+            close $f
+            if {$count > 0} { return $count }
+        }
+        if {![catch {exec sysctl -n hw.logicalcpu} logical_raw2]} {
+            set logical [string trim $logical_raw2]
+            if {[string is integer -strict $logical] && $logical > 0} { return $logical }
+        }
+        return ""
+    }
+
+    # Format ratio with sign; avoid ±0.00 by bumping precision if needed
+    proc __fmt_ratio {r {decs 2}} {
+        set s [format "%.*f" $decs $r]
+        if {$s eq "0.00" || $s eq "-0.00" || $s eq "+0.00"} {
+            if {$r == 0.0} { return "0.00" }
+            set s4 [format "%+.4f" $r]
+            if {$s4 eq "+0.0000" || $s4 eq "-0.0000"} { return "0.0000" }
+            return $s4
+        }
+        if {$r > 0} { return "+$s" }
+        return $s
+    }
+
+    # ---- collect points ----
+    if {[__collect_profile_points $good_pid good_map good_jobs] eq "empty"} {
+        putscli "Error: no jobs found for good profile id $good_pid"
+        return
+    }
+    if {[__collect_profile_points $bad_pid bad_map bad_jobs] eq "empty"} {
+        putscli "Error: no jobs found for bad profile id $bad_pid"
+        return
+    }
+
+    # ---- intersect VU points ----
+    array set seen {}
+    foreach av [dict keys $good_map] { set seen($av) 1 }
+    set matched {}
+    foreach av [dict keys $bad_map] {
+        if {[info exists seen($av)]} { lappend matched $av }
+    }
+    if {[llength $matched] == 0} {
+        putscli "Error: the two profiles have no overlapping activevu points"
+        return
+    }
+    set matched [lsort -integer -unique $matched]
+
+    # ---- unweighted (always print) ----
+    set g_sum_u 0.0
+    set b_sum_u 0.0
+    foreach av $matched {
+        set g_sum_u [expr {$g_sum_u + [dict get $good_map $av]}]
+        set b_sum_u [expr {$b_sum_u + [dict get $bad_map  $av]}]
+    }
+    set n [llength $matched]
+    set g_avg_u [expr {$g_sum_u / $n}]
+    set b_avg_u [expr {$b_sum_u / $n}]
+    if {$g_avg_u <= 0.0} {
+        putscli "Error: good profile average NOPM is zero; cannot compute ratio"
+        return
+    }
+    set ratio_u [expr {($b_avg_u - $g_avg_u) / $g_avg_u}]
+    putscli [format "Profiles compared (unweighted): matched=%d, avg_good=%.0f, avg_bad=%.0f" $n $g_avg_u $b_avg_u]
+
+    # ---- weighted (optional) ----
+    if {$do_weight} {
+        set logical [__logical_cpus]
+        if {$logical eq ""} {
+            putscli "Error: CPU-weighted requested but logical CPU count not found; using unweighted only"
+            return [__fmt_ratio $ratio_u 2]
+        }
+        set phys_cores [expr {int(ceil($logical / 2.0))}]
+        set g_sum 0.0
+        set b_sum 0.0
+        set w_sum 0.0
+        foreach av $matched {
+            set w [expr {max(1.0, double($av)/double($phys_cores))}]  ;# linear, no cap
+            set g_sum [expr {$g_sum + $w * [dict get $good_map $av]}]
+            set b_sum [expr {$b_sum + $w * [dict get $bad_map  $av]}]
+            set w_sum [expr {$w_sum + $w}]
+        }
+        if {$w_sum > 0.0} {
+            set g_avg [expr {$g_sum / $w_sum}]
+            set b_avg [expr {$b_sum / $w_sum}]
+            if {$g_avg > 0.0} {
+                set ratio_w [expr {($b_avg - $g_avg) / $g_avg}]
+                putscli [format "Profiles compared (weighted linear, no cap): matched=%d, phys_cores=%d, avg_good=%.0f, avg_bad=%.0f" \
+                                 $n $phys_cores $g_avg $b_avg]
+                return [__fmt_ratio $ratio_w 2]
+            }
+        }
+        # fallback
+        return [__fmt_ratio $ratio_u 2]
+    }
+
+    # return unweighted result
+    return [__fmt_ratio $ratio_u 2]
 }
 }
 namespace import jobs::*
