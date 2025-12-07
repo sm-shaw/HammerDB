@@ -325,8 +325,8 @@ namespace eval jobs {
           puts $res
         } elseif { [ string equal $cmd "getchart" ] } {
           set charttype $param3
-          if { ![string equal $charttype "result" ] && ![string equal $charttype "timing" ] && ![string equal $charttype "tcount" ]  && ![string equal $charttype "metrics" ] && ![string equal $charttype "profile" ] } {
-            puts "Error: Jobs Three Parameter Usage: jobs jobid getchart \[ result | timing | tcount | metrics | profile \]"
+          if { ![string equal $charttype "result" ] && ![string equal $charttype "timing" ] && ![string equal $charttype "tcount" ]  && ![string equal $charttype "metrics" ] && ![string equal $charttype "profile" ] && ![string match "diff:*" $charttype] } {
+            puts "Error: Jobs Three Parameter Usage: jobs jobid getchart \[ result | timing | tcount | metrics | profile | diff:pid \]"
           } else {
             set ctype "chart=$charttype"
             set res [getjob "jobid=$jobid&$cmd&$ctype" ]
@@ -1845,7 +1845,7 @@ namespace eval jobs {
 	Oracle { color1 "#D00000" color2 "#ff6868" } MySQL {color1 "#FF7900" color2 "#ffbc80" } ]
     set color1 "#808080"
     set color2 "#bfbfbf"
-    switch $chart {
+    switch -glob $chart {
       "result" {
         set chartdata [ getjobresult $jobid $vuid ]
         if { [ llength $chartdata ] eq 2 && [ string match [ lindex $chartdata 1 ] "Jobid has no test result" ] } {
@@ -2174,8 +2174,144 @@ namespace eval jobs {
           }
          return $html
       }
+         diff:* {
+             # chart = "diff:<other_profileid>"
+             set parts [split $chart ":"]
+             if {[llength $parts] != 2} {
+                 set html "Error: chart type diff should be diff:profileid"
+                 return
+             }
+
+             # first profile id comes from jobid
+             set profileid1 $jobid
+             # second profile id from diff:PROFILEID
+             set profileid2 [lindex $parts 1]
+
+             # --- get profile1 series (same as 'profile' block logic) ---
+             set lineseries1_1 [list]
+             set lineseries2_1 [list]
+             set xaxisvals1    [list]
+             set profiles1 [get_job_profile $profileid1]
+             if {$profiles1 eq {}} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+             set profdict1 [huddle get_stripped $profiles1]
+             dict for {job profiledata} $profdict1 {
+                 set dbdescription1 [dict get $profiledata db]
+                 set timestamp1     [dict get $profiledata tstamp]
+                 dict for {k v} $profiledata {
+                     switch $k {
+                         "nopm"     { lappend lineseries1_1 $v }
+                         "tpm"      { lappend lineseries2_1 $v }
+                         "activevu" { lappend xaxisvals1    $v }
+                         default    { ; }
+                     }
+                 }
+             }
+             if {[llength $xaxisvals1] < 2} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+
+             # --- get profile2 series ---
+             set lineseries1_2 [list]
+             set lineseries2_2 [list]
+             set xaxisvals2    [list]
+             set profiles2 [get_job_profile $profileid2]
+             if {$profiles2 eq {}} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+             set profdict2 [huddle get_stripped $profiles2]
+             dict for {job profiledata} $profdict2 {
+                 set dbdescription2 [dict get $profiledata db]
+                 set timestamp2     [dict get $profiledata tstamp]
+                 dict for {k v} $profiledata {
+                     switch $k {
+                         "nopm"     { lappend lineseries1_2 $v }
+                         "tpm"      { lappend lineseries2_2 $v }
+                         "activevu" { lappend xaxisvals2    $v }
+                         default    { ; }
+                     }
+                 }
+             }
+             if {[llength $xaxisvals2] < 2} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+
+             # ---- ensure Active VU sets match ----
+             if {$xaxisvals1 ne $xaxisvals2} {
+                 set html "Error: Profiles $profileid1 and $profileid2 have different Active VU sets"
+                 return
+             }
+             set xaxisvals $xaxisvals1
+
+             # use dbdescription from profile1 (should match profile2)
+             set dbdescription $dbdescription1
+
+             # colours based on DB
+             foreach colour {color1 color2} {set $colour [dict get $chartcolors $dbdescription $colour]}
+
+             # --- Build combined diff chart ---
+             set line [ticklecharts::chart new]
+             set ::ticklecharts::htmlstdout "True"
+
+             $line SetOptions \
+                 -title  [subst {text "$dbdescription Performance Profile Compare $profileid1 vs $profileid2"}] \
+                 -tooltip {show "True"} \
+                 -legend  {bottom "5%" left "40%"}
+
+             $line Xaxis -name "Active VU" -data [list $xaxisvals] -axisLabel [list show "True"]
+             $line Yaxis -name "Transactions" -position "left" -axisLabel {formatter {"{value}"}}
+
+             # profile1: solid
+             $line Add "lineSeries" -name "NOPM $profileid1" -data [list $lineseries1_1] \
+                 -itemStyle [subst {color $color1 opacity 0.90}]
+             $line Add "lineSeries" -name "TPM $profileid1" -data [list $lineseries2_1] \
+                 -itemStyle [subst {color $color2 opacity 0.90}]
+
+             # profile2: dashed
+             $line Add "lineSeries" -name "NOPM $profileid2" -data [list $lineseries1_2] \
+                 -itemStyle [subst {color $color1 opacity 0.60}] \
+                 -lineStyle {type "dashed"}
+             $line Add "lineSeries" -name "TPM $profileid2" -data [list $lineseries2_2] \
+                 -itemStyle [subst {color $color2 opacity 0.60}] \
+                 -lineStyle {type "dashed"}
+
+             # --- Numeric summary using jobs_profile_diff (profile2 vs profile1) ---
+             set ratio [jobs_profile_diff $profileid1 $profileid2 true]
+             set summary ""
+             if {$ratio ne ""} {
+                 # strip any trailing % if your formatter adds it
+                 regsub {%$} $ratio "" cleanRatio
+                 # handle things like "+0.12" or "-0.08"
+                 catch { set r [expr {double($cleanRatio)}] } err
+                 if {[info exists r]} {
+                     if {$r < 0} {
+                         set status "FAIL"
+                     } else {
+                         set status "PASS"
+                     }
+                     # format as percentage with sign
+                     set pct [format "%.2f%%" [expr {$r * 100.0}]]
+                     set summary "Compare summary (profile $profileid2 vs $profileid1): $pct $status"
+                 } else {
+                     set summary "Compare summary (profile $profileid2 vs $profileid1): $cleanRatio"
+                 }
+             }
+
+             set html [$line toHTML -title "Performance Profile Compare $profileid1 vs $profileid2"]
+
+             # prepend summary if we have one
+             if {$summary ne ""} {
+                 set html "<div style=\"font-family: sans-serif; margin-bottom: 0.5em;\">$summary</div>\n$html"
+             }
+             return $html
+         }
       default {
-        set html "Error: chart type should be metrics, profile, result, tcount or timing"
+        set html "Error: chart type should be metrics, profile, result, tcount, timing, diff:pid1:pid2"
         return
       }
     }
