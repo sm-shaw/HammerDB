@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ci>
     <common>
-        <listen_port>5000</listen_port>
-        <clone_cmd>git clone</clone_cmd>
-        <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
-        <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
+            <listen_port>5000</listen_port>
+            <clone_cmd>git clone</clone_cmd>
+            <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
+            <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
+            <diff_threshold>0.025</diff_threshold>
     </common>
 
     <MariaDB>

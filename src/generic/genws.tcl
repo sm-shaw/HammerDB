@@ -1,6 +1,8 @@
 proc putscli { output } {
-    puts $output
-    TclReadLine::print "\r"
+#Suppress output in the Web Service
+#Uncomment to debug
+#    puts $output
+#    TclReadLine::print "\r"
 }
 
 proc is-dict {value} {
@@ -70,11 +72,21 @@ proc wapp-page-style.css {} {
   margin: 0;
   padding: 0;
   padding-left: 20px;
+  padding-top: 20px;
   background-color: #f9f9f9;
   font-family: 'Roboto', sans-serif;
   font-size: 14px;
   color: #333;
   line-height: 1.6;
+}
+
+td.status {
+  text-align: center;
+  vertical-align: middle;
+}
+td.status img {
+  display: block;
+  margin: 0 auto;
 }
 
 h1, h2, h3 {

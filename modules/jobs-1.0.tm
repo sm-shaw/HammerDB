@@ -1,6 +1,6 @@
 package provide jobs 1.0
 namespace eval jobs {
-  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart
+  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-logo-full.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart
   interp alias {} job {} jobs
 
   proc commify {x} {
@@ -446,7 +446,7 @@ namespace eval jobs {
       <title>HammerDB Results</title>
       </head>
       <body>
-      <p><img src='%unsafe($logoimg)' width='347' height='60'></p>
+      <p><img src='%unsafe($logoimg)' width='55' height='60'></p>
     }
   }
 
@@ -463,7 +463,7 @@ namespace eval jobs {
       <title>hdb_%html($jobid)</title>
       </head>
       <body>
-      <p><img src='%unsafe($logoimg)' width='347' height='60'></p>
+      <p><img src='%unsafe($logoimg)' width='55' height='60'></p>
     }
   }
 
@@ -497,11 +497,16 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIIAAPwCBMT+xATCBASCBARCBAQCBEQCBAAAACH5BAEAAAAA
-      LAAAAAAQABAAAAM2CLrc/itAF8RkdVyVye4FpzUgJwijORCGUhDDOZbLG6Nd
-      2xjwibIQ2y80sRGIl4IBuWk6Af4EACH+aENyZWF0ZWQgYnkgQk1QVG9HSUYg
-      UHJvIHZlcnNpb24gMi41DQqpIERldmVsQ29yIDE5OTcsMTk5OC4gQWxsIHJp
-      Z2h0cyByZXNlcnZlZC4NCmh0dHA6Ly93d3cuZGV2ZWxjb3IuY29tADs=
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwABZ/QAAWf0AWMpoScAAAGnSURBVDhPtdRPaxNRFIbx31QiVGrTulCh1K0L
+Fy4FTcG4CF1UaBT8JkJ145+FFtSvoiIRkVBd2NiNn8CdZCeknWAoxmrGxWQmM9NEo+gDWdz33Ptw
+Zubk8o8JikFKUxnrBioCZ4ZpW2TbvufqwsIJxgo/KOnYwE2B48XykC94LLTphm/ZQl7YsKjkhUAl
+l0+mZdZVK/aSYCSMO3vzB7KEltCVpNOZNO7Y+AsZXDLvVrKIO2wqi7SZ+M6y/EAHJ9Mk0nPUsqow
+7nCgPqWsb2BdyRI+pmlgzoG69JGne9Q+rlvV8NVZnC7UKzLvcDlf89l35/FwuI5lNS+9cs4RW5jP
+nYjiWR19lCyRAyWf1NzGnTGyU8UjCYmwnUsDSyKvNZXV3J9S1pYKI9vFKi6k0t/LmIkd8dg8s+CY
+tsBccR92MTv8jefQ2NSFAo+K+4ac+KUs5olqfFmMPkpoU+R9dtdURHZ0PUiW+cvhnUX7GgIXc/kk
+Ijsia1btJlF+bFbs6arirkgvV8vTE7in63JW5lCHWd5a0HdNoCIYDn78f2858NTa6Mr6r/wEzJFz
+C8GtSUkAAAAASUVORK5CYII=
     }]
   }
 
@@ -509,11 +514,17 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIIAAASC/PwCBMQCBEQCBIQCBAAAAAAAAAAAACH5BAEAAAAA
-      LAAAAAAQABAAAAMuCLrc/hCGFyYLQjQsquLDQ2ScEEJjZkYfyQKlJa2j7AQn
-      MM7NfucLze1FLD78CQAh/mhDcmVhdGVkIGJ5IEJNUFRvR0lGIFBybyB2ZXJz
-      aW9uIDIuNQ0KqSBEZXZlbENvciAxOTk3LDE5OTguIEFsbCByaWdodHMgcmVz
-      ZXJ2ZWQuDQpodHRwOi8vd3d3LmRldmVsY29yLmNvbQA7
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAACxMAAAsTAQCanBgAAAH6SURBVDhPrZVBTxNhEIaf+XZRpAFiwBgt0TR6
+8U49YRtbTXqURNT/QMKBEi6QNHCUcCHpfxA51OMeLEkb9dL+BBOikV48EMBiQbrjYWm7fG2sEJ7T
+fvPOvNmZfDsr9GAnmRwcdxovBZ1WmET0LoCo1IAqyoef/o2tWKnUsGvFDhymJ1+DrAsStbUwiu6C
+ZoeL1c1wvG2oOUz9U3wDZDac0B/NR6Yqc7KCD2Ba4cuZAchsUHt24qxNwbw7l3dBFP/NcLG6KTvJ
+5OC4e/S138z6oehuZGDsgbllfs/0MnNX13AXlsFxOkHHwV1Yxl1dC6cCIEi0frI3YxBe2CIAB/uY
+dAZ3MReYOg7uYg6TzsDBvp0NgKDT8iv1+BvCPVtsGyRS+OVtgPbz6dsVaDbtClT5Lofp+B9BXFuE
+86bAP80I5njavjZXhSH4nLqxWvbL25hEqjPTXqjUnKVY9AnCI1tzs0uYp8/bbfqfS8jEfUwihdy+
+g/+lbJcAFI0iBTsKwMgoftHrzKzZDIyLHoyM2tlnSOHKLjboj6GBsYcmVio1HGHeli+KEbLG844N
+wNDHynvQvJ30/2g+8Ahtm8hUZe5ypsH6ap26FuzRs/grX1kHmbC1MIruOsJ8681adBkC+JnM9frJ
+3gzoNKFfACo1gaoihci1m1vG847t2r87XMAQUQqvWAAAAABJRU5ErkJggg==
     }]
   }
 
@@ -521,12 +532,19 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-   R0lGODlhEAAQAIIAAPwCBDRy7AQ2rFyq/EyWzEyW3Jzi9KTK/CH5BAEAAAAA
-   LAAAAAAQABAAAAM7CArRLiuyQYQtxcpg8goDBn3VRo1KQAzo5EUg+4WtYo3B
-   UUpbV/OcF28mHKZORokmyWQ2minDrrmU+BMAIf5oQ3JlYXRlZCBieSBCTVBU
-   b0dJRiBQcm8gdmVyc2lvbiAyLjUNCqkgRGV2ZWxDb3IgMTk5NywxOTk4LiBB
-   bGwgcmlnaHRzIHJlc2VydmVkLg0KaHR0cDovL3d3dy5kZXZlbGNvci5jb20A
-   Ow==
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAJUSURBVDhPvZTNS1RhFMZ/586MX43DOBrRLiQl
+DKOFSBARVLgIXAW1FIIEaeF/kOY+ZhVFQUjtoqiNEVhIQdGiIr8WBUHt/MCKQJw7933PaTFzR+eq
+QRQ9cHi55z7neZ9zDvfCP4YkE0mYIe4DJwHSR3khgiU5fwQ/x6TOYv69mH+bmky+T+K3DnWW0wjP
+8ILF4TiTOe6fJ7kxgmQihs2QRiiigqlANUSlODNDOsmPsbtggWGM3igKuDd9iLvT3bgowDToPSGN
+w0l+jB0FdYGCwYSp8Gp+P7emurgx1cnL+b2ggjomfjzNFZJ17CZonnExaUeFTOCIojJRFJIRX209
+aG82N56sYydBXaAHkxHzAl4o7ClRdiFRFNKeDTEFVDDPSOlJtidZv00QTxEljYKp0JGtuCtHZTqy
+UcWhB1FJS0gxWV4nqPMMojIQbxSFfIvD+xDVEoUWD35z66YyUHrQOrhVoyZoCzSYl2tbyKBCAORb
+1sk3lwisTqxyuuCa3adhu6BnFKWrjqyVOY6dX+XqhTWozi8RXRth22isIwA6xz5z8gmVXPxV4ALM
+C1+Wcly+08dGaZ2bQ4sc7AgxH1Rad5ULzfGzyWW6g0sry0HFnYxhktvqKt7mu895Vr6HLH8r8eZj
+Y9U9mK9uWwUsyJXQK7WWTelHq87qhg6nepbpO7DEsc41zh5Zhyqn0i61MajSvzlDlUdUb0xGvslx
+fegrty+u0NZsm67qTkB5XJuhGeJep86JTx02b6IagAPi0wUkc/Gz+ZSpl8XWkdWHwl/+K/8LfgF7
+51H30c40eAAAAABJRU5ErkJggg==
     }]
   }
 
@@ -534,20 +552,97 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIUAAPwCBPy2BPSqBPSeBPS6HPSyDPSmBPzSXPzGNOyOBPSy
-      FPzujPzaPOyWBPy+DPyyDPy+LPzKTPzmZPzeTPSaFOSGBNxuBNxmBPzWVPzq
-      dPzmXPzePPzaRPzeRPS2FNxqBPzWNOyeBPTCLPzOJNxyBPzGHNReBOR6BOR2
-      BNRmBMxOBMxWBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-      AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAEAAAAALAAAAAAQABAAAAZz
-      QIBwSCwahYHA8SgYLIuEguFJFBwQCSpAMVgwEo2iI/mAECKSCYFCqVguF0BA
-      gFlkNBsGZ9PxXD5EAwQTEwwMICAhcUYJInkgIyEWSwMRh5ACJEsVE5EhJQQm
-      S40nKCQWAilHCSelQhcqsUatRisqWkt+QQAh/mhDcmVhdGVkIGJ5IEJNUFRv
-      R0lGIFBybyB2ZXJzaW9uIDIuNQ0KqSBEZXZlbENvciAxOTk3LDE5OTguIEFs
-      bCByaWdodHMgcmVzZXJ2ZWQuDQpodHRwOi8vd3d3LmRldmVsY29yLmNvbQA7
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAADsQAAA7EAZUrDhsAAAHwSURBVDhP5ZNBS1RRGIaf90z3Xq6jDEJYERFU
+C6kgbZM7NSOinyG1aeVC3I7uhaCgXfQzBAsaBS1FsoikRS4igmgWjjYzMjPe87W4zjReonDts3y/
+53znfIdz4MShbJDFNihYNZoFkDXmNE4l63TjskEWq0VFiSmJKVNUzNazOL8czvhSVPel8JVfJc4K
+WDY4il8l9kvhS1+K6n45nHF4zUrEkiY4CCe6ZdsgQDbUlQzZBkG3Qyu8LXRHIsZr1iFb6RS9Htjr
+nrMAZsiq4ROh8XZZ0phVw6dm6d37N/kzmB521stW5FeJaYXzQo8O411g0eCKYLgjd2GwKfgC3AUK
+aWbPCJrT6U7L0T0ZC9mFx8HM7rux5oIjHWUrKxwX5dwn2u/QDNlStCvR98cIIBeDC4HcYZiAb0Ky
+D9bqqGb80mijIGGdh+1L4Vud6r1FfBFy/dBoQaMGrQb4JJVcDoIIojxEASQ7sP8VS2prbrQxQvdP
+8WuXn8tdmOT7Z9j9Cebbpb8jB4UBOD+IJd9euJHtSY78lPz1deoV2Cv/vxmkzl4ZahXoubbejjsn
+NCs623o/zUFzSnvlc1R3/j1ybz/Wd/oHQfRYV4fmpTl/pGEbs6Lj44dhc/4m0iWMAbB82lA1JVa2
+HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
     }]
   }
 
   proc wapp-page-logo.png {} {
+  #uses width 55, height 60
+    wapp-mimetype image/png
+    wapp-cache-control max-age=3600
+    wapp-unsafe [ binary decode base64 {
+      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
+      XmHAAAAAAElFTkSuQmCC
+    }]
+  }
+
+  proc wapp-page-logo-full.png {} {
+  #uses width 347, height 60
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
@@ -1039,13 +1134,20 @@ namespace eval jobs {
           set jobtype "Schema Check"
         } elseif { [ string match -nocase "*rampup*" $output1 ] || [ string match -nocase "*scale\ factor*" $output1 ]} {
           set jobtype "Benchmark Run"
+          #We already matched db, for a benchmark run, add the version
+          set temp_db [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]]
+          if { [ string match "*DBVersion*" $temp_db ] } {
+          set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_db match header version ]
+          if { $matcheddbversion } {
+          set db "$db ($version)"
+          }
+          }
           set jobresult [ getjobresult $job 1 ]
           if { [ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ] } {
 		;
 		} else {
           if { $bm eq "TPROC-C" } {
            lassign [ getnopmtpm $jobresult ] jobid tstamp activevu nopm tpm dbdescription
-	    
 		} else {
            set ctind 0
            foreach ct {jobid tstamp geomean queryset} { 
@@ -1088,8 +1190,8 @@ namespace eval jobs {
 	}
 	}
 	}
-	if {$bm eq "TPROC-C"} { append tprocccombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($nopm)</td><td>%unsafe($statusimg)</td></tr>\n} ]
-           } else { append tprochcombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($geo)</td><td>%unsafe($statusimg)</td></tr>\n} ]
+	if {$bm eq "TPROC-C"} { append tprocccombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($nopm)</td><td class='status'>%unsafe($statusimg)</td></tr>\n} ]
+           } else { append tprochcombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($geo)</td><td class='status'>%unsafe($statusimg)</td></tr>\n} ]
 	   }
 	}
       wapp-subst $tprocccombined
@@ -1099,9 +1201,13 @@ namespace eval jobs {
       }
       set profcount 0
       wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
+      wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Select exactly two profiles, then click <b>Compare Profiles</b>.</p>}
+      wapp-subst {<form method="GET" action="%html([wapp-param BASE_URL]/jobs)">}
+      wapp-subst {<input type="hidden" name="cmd" value="profilediff">}
+      wapp-subst {<div style="max-width:800px;">}
       wapp-subst {<table>\n}
-      wapp-subst {<th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th>\n}
-        set profileids [ join [ hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc} ]]
+      wapp-subst {<tr><th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th><th>Diff</th></tr>\n}
+      set profileids [ join [ hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc} ]]
       foreach profileid $profileids {
         incr profcount
 	set url "[wapp-param BASE_URL]/jobs?profileid=$profileid"
@@ -1121,13 +1227,22 @@ namespace eval jobs {
         set maxurl "[wapp-param BASE_URL]/jobs?jobid=$maxjob&index"
         set maxnopm $v
 	set maxdb [ dict get $profiledata db ]
+        #We already matched db, for a benchmark run, add the version
+        set temp_db [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$maxjob AND VU=1} ]]
+        if { [ string match "*DBVersion*" $temp_db ] } {
+        set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_db match header version ]
+        if { $matcheddbversion } {
+        set maxdb "$maxdb ($version)"
+        }
+        }
         set maxtpm [ dict get $profiledata tpm ]
         set maxavu [ dict get $profiledata activevu ]
 	}}}}
-        wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td></td></tr>\n}
+        wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td><input type="checkbox" name="diff_%html($profileid)" value="1"></td></tr>\n}
 	}
 	}
       wapp-subst {</table>\n}
+      wapp-subst {<div style="margin-top:6px; text-align:right;"><button type="submit" style="padding:4px 10px;">Compare Profiles</button></div>}
       if { $profcount eq 0 } {
         wapp-subst {%html(No performance profiles found)\ in database file %html([ getdatabasefile ])}
       }
@@ -1149,13 +1264,51 @@ namespace eval jobs {
       if { $paramlen >= 1 && $paramlen <= 3 } {
         foreach a $params {
           lassign [split $a =] key value
+          if {$key eq "diff"} {
+          dict lappend paramdict $key $value
+            } else {
           dict append paramdict $key $value
+		}
         }
       } else {
         dict set jsondict error message "Usage: jobs?query=parameter"
         wapp-2-json 2 $jsondict
         return
       }
+          if {[dict exists $paramdict cmd] && [dict get $paramdict cmd] eq "profilediff"} {
+
+            # collect selected profile IDs from diff_*
+            set difflist {}
+            foreach k [dict keys $paramdict] {
+              if {[string match "diff_*" $k]} {
+                set pid [string range $k 5 end]   ;# strip "diff_"
+                if {[string is integer -strict $pid]} {
+                  lappend difflist $pid
+                }
+              }
+            }
+            if {[llength $difflist] != 2} {
+              wapp-subst {<p style="color:#b00; font-weight:600;">Please select exactly 2 profiles to compare.</p>}
+              common-footer
+              return
+            }
+          lassign $difflist a b
+          set chart [ jobs $a getchart diff:$b ]
+          wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+          wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+          foreach l [ split $chart \n ] {
+  if {[string match "*Compare summary*" $l]} {
+              set d "<div style=\"margin:10px 0; padding:8px 12px; background:#e6f4ea; color:#1e7f34; border-left:4px solid #2da44e; font-weight:600;\">$l</div>"
+              continue
+            }
+            if { [ string match [ string trim $l ] <body> ] } {
+              set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>\n\t$d"
+            }
+            wapp-subst {%unsafe($l)\n}
+          }
+          common-footer
+          return
+          }
       if { $paramlen eq 3 } {
         if { [ dict keys $paramdict ] != "jobid timing vu" } {
           dict set jsondict error message "Jobs Three Parameter Usage: jobs?jobid=JOBID&timing&vu=VUID"
@@ -1210,7 +1363,7 @@ namespace eval jobs {
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
              foreach l [ split [ getchart $profileid 0 "profile" ] \n] {
              if { [ string match [ string trim $l ] <body> ] } {
-                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>"
                 }
         wapp-subst {%unsafe($l)\n}
 	}
@@ -1522,7 +1675,7 @@ namespace eval jobs {
               wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
               foreach l [ split [ getchart $jobid $vuid "result" ] \n] {
                 if { [ string match [ string trim $l ] <body> ] } {
-                  set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+                  set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>"
                 }
                 wapp-subst {%unsafe($l)\n}
               }
@@ -1537,7 +1690,7 @@ namespace eval jobs {
                 wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
                 foreach l [ split [ getchart $jobid $vuid "timing" ] \n] {
                   if { [ string match [ string trim $l ] <body> ] } {
-                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>"
                   }
                   wapp-subst {%unsafe($l)\n}
                 }
@@ -1562,7 +1715,7 @@ namespace eval jobs {
                       wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
                       foreach l [ split [ getchart $jobid $vuid "tcount" ] \n] {
                         if { [ string match [ string trim $l ] <body> ] } {
-                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>"
                         }
                         wapp-subst {%unsafe($l)\n}
                       }
@@ -1577,7 +1730,7 @@ namespace eval jobs {
                       wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
                       foreach l [ split [ getchart $jobid $vuid "metrics" ] \n] {
                         if { [ string match [ string trim $l ] <body> ] } {
-                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='55' height='60'></p>"
                         }
                         wapp-subst {%unsafe($l)\n}
                       }
@@ -2213,7 +2366,6 @@ namespace eval jobs {
                  set html "Error: Not enough data for performance profile chart type"
                  return
              }
-
              # --- get profile2 series ---
              set lineseries1_2 [list]
              set lineseries2_2 [list]
@@ -2241,12 +2393,49 @@ namespace eval jobs {
                  return
              }
 
-             # ---- ensure Active VU sets match ----
-             if {$xaxisvals1 ne $xaxisvals2} {
-                 set html "Error: Profiles $profileid1 and $profileid2 have different Active VU sets"
-                 return
-             }
-             set xaxisvals $xaxisvals1
+              # ---- align Active VU sets (intersection) ----
+              
+              # Build maps for profile1
+              set map_nopm1 [dict create]
+              set map_tpm1  [dict create]
+              for {set i 0} {$i < [llength $xaxisvals1]} {incr i} {
+                  dict set map_nopm1 [lindex $xaxisvals1 $i] [lindex $lineseries1_1 $i]
+                  dict set map_tpm1  [lindex $xaxisvals1 $i] [lindex $lineseries2_1 $i]
+              }
+              
+              # Build maps for profile2
+              set map_nopm2 [dict create]
+              set map_tpm2  [dict create]
+              for {set i 0} {$i < [llength $xaxisvals2]} {incr i} {
+                  dict set map_nopm2 [lindex $xaxisvals2 $i] [lindex $lineseries1_2 $i]
+                  dict set map_tpm2  [lindex $xaxisvals2 $i] [lindex $lineseries2_2 $i]
+              }
+              
+              # Intersection in profile1 order
+              set xaxisvals [list]
+              set lineseries1_1_f [list]; set lineseries2_1_f [list]
+              set lineseries1_2_f [list]; set lineseries2_2_f [list]
+              
+              foreach av $xaxisvals1 {
+                  if {[dict exists $map_nopm2 $av]} {
+                      lappend xaxisvals $av
+                      lappend lineseries1_1_f [dict get $map_nopm1 $av]
+                      lappend lineseries2_1_f [dict get $map_tpm1  $av]
+                      lappend lineseries1_2_f [dict get $map_nopm2 $av]
+                      lappend lineseries2_2_f [dict get $map_tpm2  $av]
+                  }
+              }
+              
+              # Replace originals with filtered series
+              set lineseries1_1 $lineseries1_1_f
+              set lineseries2_1 $lineseries2_1_f
+              set lineseries1_2 $lineseries1_2_f
+              set lineseries2_2 $lineseries2_2_f
+              
+              if {[llength $xaxisvals] < 2} {
+                  set html "Error: Not enough overlapping Active VU points to compare"
+                  return
+              }
 
              # use dbdescription from profile1 (should match profile2)
              set dbdescription $dbdescription1
@@ -2284,27 +2473,39 @@ namespace eval jobs {
              set ratio [jobs_profile_diff $profileid1 $profileid2 true]
              set summary ""
              if {$ratio ne ""} {
-                 # strip any trailing % if your formatter adds it
                  regsub {%$} $ratio "" cleanRatio
-                 # handle things like "+0.12" or "-0.08"
-                 catch { set r [expr {double($cleanRatio)}] } err
+                 catch { set r [expr {double($cleanRatio)}] }
                  if {[info exists r]} {
-                     if {$r < 0} {
+
+                     # threshold (ratio) from cidict, default 0.025
+		     upvar #0 cidict cidict
+                     if {![info exists cidict]} {
+                     set cidict [ SQLite2Dict "ci" ]
+			}
+                     set threshold_value 0.025
+                         if {[dict exists $cidict common diff_threshold]} {
+                             set threshold_value [dict get $cidict common diff_threshold]
+                         } 
+                     if {![string is double -strict $threshold_value] || $threshold_value < 0.0} {
+                         set threshold_value 0.025
+                     }
+
+                     if {$r < (0.0 - $threshold_value)} {
                          set status "FAIL"
                      } else {
                          set status "PASS"
                      }
-                     # format as percentage with sign
-                     set pct [format "%.2f%%" [expr {$r * 100.0}]]
-                     set summary "Compare summary (profile $profileid2 vs $profileid1): $pct $status"
+
+                     # ratio with sign (no %)
+                     set delta [format "%+.2f" $r]
+                     set summary "Compare summary (profile $profileid1 vs $profileid2): Δ = $delta $status (threshold $threshold_value)"
                  } else {
-                     set summary "Compare summary (profile $profileid2 vs $profileid1): $cleanRatio"
+                     set summary "Compare summary (profile $profileid1 vs $profileid2): $cleanRatio"
                  }
              }
 
              set html [$line toHTML -title "Performance Profile Compare $profileid1 vs $profileid2"]
 
-             # prepend summary if we have one
              if {$summary ne ""} {
                  set html "<div style=\"font-family: sans-serif; margin-bottom: 0.5em;\">$summary</div>\n$html"
              }
@@ -2837,26 +3038,22 @@ proc jobs_profile_diff {good_pid bad_pid weighting} {
         return "ok"
     }
 
-    proc __logical_cpus {} {
-        if {![catch {exec nproc} logical_raw]} {
-            set logical [string trim $logical_raw]
-            if {[string is integer -strict $logical] && $logical > 0} { return $logical }
+        proc __logical_cpus {jobid} {
+        if {![string is integer -strict $jobid] || $jobid < 1} {
+            return ""
         }
-        if {[file exists /proc/cpuinfo]} {
-            set f [open /proc/cpuinfo r]
-            set count 0
-            while {[gets $f line] >= 0} {
-                if {[string match -nocase "processor*" $line]} { incr count }
+        if {![catch {
+            set cpucount [join [hdbjobs eval {
+                SELECT cpucount FROM JOBSYSTEM WHERE JOBID=$jobid
+            }]]
+        }]} {
+            set cpucount [string trim $cpucount]
+            if {[string is integer -strict $cpucount] && $cpucount > 0} {
+                return $cpucount
             }
-            close $f
-            if {$count > 0} { return $count }
-        }
-        if {![catch {exec sysctl -n hw.logicalcpu} logical_raw2]} {
-            set logical [string trim $logical_raw2]
-            if {[string is integer -strict $logical] && $logical > 0} { return $logical }
         }
         return ""
-    }
+        }
 
     # Format ratio with sign; avoid ±0.00 by bumping precision if needed
     proc __fmt_ratio {r {decs 2}} {
@@ -2913,7 +3110,7 @@ proc jobs_profile_diff {good_pid bad_pid weighting} {
 
     # ---- weighted (optional) ----
     if {$do_weight} {
-        set logical [__logical_cpus]
+        set logical [__logical_cpus [lindex $good_jobs 0]]
         if {$logical eq ""} {
             putscli "Error: CPU-weighted requested but logical CPU count not found; using unweighted only"
             return [__fmt_ratio $ratio_u 2]

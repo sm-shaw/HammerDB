@@ -266,18 +266,32 @@ proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
 proc ciset {args} {
     global cidict
 
-    # We need exactly 4 arguments: top section key value
-    if {[llength $args] != 4} {
+    # Accept either:
+    #   ciset top section key value   (nested)
+    # or
+    #   ciset top key value           (flat, e.g. common)
+    set argc [llength $args]
+    if {$argc != 4 && $argc != 3} {
         putscli "Error: Invalid number of arguments"
         putscli "Usage: ciset top section key value"
+        putscli "   or: ciset top key value"
         putscli "Example: ciset MariaDB build repo_url https://github.com/new/repo.git"
+        putscli "Example: ciset common diff_threshold 0.03"
         return
     }
 
-    set top     [lindex $args 0]
-    set section [lindex $args 1]
-    set key     [lindex $args 2]
-    set val     [lindex $args 3]
+    if {$argc == 4} {
+        set top     [lindex $args 0]
+        set section [lindex $args 1]
+        set key     [lindex $args 2]
+        set val     [lindex $args 3]
+    } else {
+        # 3-arg form: top key value (flat table like common)
+        set top     [lindex $args 0]
+        set section ""
+        set key     [lindex $args 1]
+        set val     [lindex $args 2]
+    }
 
     # --- Case-insensitive match for top-level (common / MariaDB / MySQL / PostgreSQL etc.) ---
     set matchTop ""
@@ -297,6 +311,36 @@ proc ciset {args} {
     # Normalise to canonical key from cidict (e.g. MariaDB, not mariadb)
     set top $matchTop
 
+    if {$argc == 3} {
+        # Flat: validate key under top
+        if {![dict exists $cidict $top $key]} {
+            putscli "CI ERROR: Key '$key' not found under '$top'"
+            putscli "Available: [join [dict keys [dict get $cidict $top]] ,]"
+            return
+        }
+
+        set previous [dict get $cidict $top $key]
+        if {$previous eq $val} {
+            putscli "Value unchanged ($val) — no update needed."
+            return
+        }
+
+        dict set cidict $top $key $val
+        putscli "Changed $top/$key from \"$previous\" to \"$val\""
+
+        # Persist to SQLite: table = top (e.g. common)
+        if {[catch {
+            SQLiteUpdateKeyValue_ci "ci" $top $key $val
+        } err]} {
+            putscli "CI ERROR: Failed to update SQLite: $err"
+        }
+
+        remote_command [concat ciset $top $key [list \{$val\}]]
+        return
+    }
+
+    # ---- existing 4-arg behaviour (nested) ----
+
     # Validate level 2
     if {![dict exists $cidict $top $section]} {
         putscli "CI ERROR: Section '$section' not found under '$top'"
@@ -311,30 +355,21 @@ proc ciset {args} {
         return
     }
 
-    # Get previous value
     set previous [dict get $cidict $top $section $key]
-
-    # Check if unchanged
     if {$previous eq $val} {
         putscli "Value unchanged ($val) — no update needed."
         return
     }
 
-    # Update dict
     dict set cidict $top $section $key $val
-
     putscli "Changed $top/$section/$key from \"$previous\" to \"$val\""
 
-    # Persist to SQLite: namespace "ci"
     if {[catch {
         SQLiteUpdateKeyValue_ci "ci" "${top}_${section}" $key $val
     } err]} {
         putscli "CI ERROR: Failed to update SQLite: $err"
-    } else {
-        # putscli "Saved to SQLite: table=${top}_${section}, key=$key"
     }
 
-    # Broadcast remotely
     remote_command [concat ciset $top $section $key [list \{$val\}]]
 }
 
