@@ -4,8 +4,9 @@
             <listen_port>5000</listen_port>
             <clone_cmd>git clone</clone_cmd>
             <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
-            <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
+            <commit_msg_cmd>git log -1 --pretty=format:%h\ %s</commit_msg_cmd>
             <diff_threshold>0.025</diff_threshold>
+            <use_sudo>true</use_sudo>
     </common>
 
     <MariaDB>
@@ -36,6 +37,7 @@
             <run_sql_cmd>./bin/mariadb -S {socket} --skip-ssl -vvv -e "{sql}"</run_sql_cmd>
             <change_password>ALTER USER 'root'@'localhost' IDENTIFIED BY 'maria'</change_password>
             <shutdown>shutdown</shutdown>
+            <sudo>true</sudo>
         </install>
 
         <test>

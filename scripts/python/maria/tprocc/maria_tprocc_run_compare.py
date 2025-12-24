@@ -67,7 +67,8 @@ print("TEST STARTED")
 
 import tclpy
 
-vcpu_list = [1, 8, 16, 24, 32, 40, 48, 56, 64]
+end_vu = (os.cpu_count() or 1) + 8
+vcpu_list = [1] + list(range(4, end_vu + 1, 4))
 
 for z in vcpu_list:
     loadscript()

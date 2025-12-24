@@ -45,7 +45,10 @@ diset tpcc maria_allwarehouse false
 diset tpcc maria_timeprofile false
 diset tpcc maria_purge true
 puts "TEST STARTED"
-foreach z { 1 8 16 24 32 40 48 56 64 } {
+set end_vu  [ expr { [ numberOfCPUs ] + 8 } ]
+set vu_list {1}
+for {set z 4} {$z <= $end_vu} {incr z 4} { lappend vu_list $z }
+foreach z $vu_list {
 loadscript
 vuset vu $z
 vuset logtotemp 1

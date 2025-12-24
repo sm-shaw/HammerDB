@@ -146,16 +146,332 @@ tr:nth-child(even) {
 }
 }
 
-proc wapp-page-_dumpdb {} {
-    set jmdump [ concat [ hdbjobs eval {SELECT * FROM JOBMAIN} ] ]]
-    set jtdump [ concat [ hdbjobs eval {SELECT * FROM JOBTIMING} ]]
-    set jcdump [ concat [ hdbjobs eval {SELECT * FROM JOBTCOUNT} ]]
-    set jodump [ concat [ hdbjobs eval {SELECT * FROM JOBOUTPUT} ]]
-    set jcdump [ concat [ hdbjobs eval {SELECT * FROM JOBCHART} ]]
-    set joboutput [ list $jmdump $jtdump $jcdump $jodump $jcdump ]
-    set huddleobj [ huddle compile {list} $joboutput ]
-    wapp-mimetype application/json
-    wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
+# ----------------------------
+# CI WAPP page (HTML-only field display, stable + wrap + correct dict pretty)
+# ----------------------------
+
+# Fallback if is-dict not available
+if {[info commands is-dict] eq ""} {
+    proc is-dict {d} { expr {![catch {dict size $d}]} }
+}
+
+proc normalize_pre_text {s} {
+    # CRLF/CR -> LF
+    regsub -all {\r\n} $s "\n" s
+    regsub -all {\r}   $s "\n" s
+
+    # Expand literal escapes if present
+    if {![string match "*\n*" $s] && [string match "*\\n*" $s]} {
+        regsub -all {\\n} $s "\n" s
+        regsub -all {\\t} $s "\t" s
+    }
+
+    return $s
+}
+
+proc split_cmake_records {s} {
+    # If already multiline, leave it alone
+    if {[string first "\n" $s] != -1} {
+        return $s
+    }
+
+    # Literally split on "--"
+    set s [string map {"--" "\n--"} $s]
+
+    # Trim leading newline if introduced
+    if {[string match "\n--*" $s]} {
+        set s [string range $s 1 end]
+    }
+
+    return $s
+}
+
+# Heuristic: a "real" nested dict must have dict-size AND "sane" keys.
+# Prevents command-lists like {git log -1 --pretty=%B} being mis-read as dicts.
+proc is_real_nested_dict {x} {
+    if {[catch {dict size $x}]} { return 0 }
+    foreach k [dict keys $x] {
+        # accept typical dict keys: letters/underscore then letters/digits/underscore
+        if {![regexp {^[A-Za-z_][A-Za-z0-9_]*$} $k]} { return 0 }
+    }
+    return 1
+}
+
+# Quote a scalar value so "anything with spaces" stays together as { ... } on one line.
+proc tcl_quote_value {v} {
+    # If value contains whitespace or Tcl-special separators, brace it.
+    if {[regexp {\s|[{};"\[\]]} $v]} {
+        # Avoid double-bracing if it's already a single braced group representation
+        return "{${v}}"
+    }
+    return $v
+}
+
+# Pretty print Tcl dicts in Tcl-dict style (preserves "key {value with spaces}" on one line,
+# and nests dicts as "key { ... }").
+proc pretty_tcl_dict {d {indent 0}} {
+    if {![is_real_nested_dict $d]} {
+        return $d
+    }
+
+    set pad [string repeat "  " $indent]
+    set out ""
+
+    dict for {k v} $d {
+        if {[is_real_nested_dict $v]} {
+            append out "${pad}$k {\n"
+            append out [pretty_tcl_dict $v [expr {$indent+1}]]
+            append out "${pad}}\n"
+        } else {
+            append out "${pad}$k [tcl_quote_value $v]\n"
+        }
+    }
+    return $out
+}
+
+proc getcirow_id {ci_id} {
+    set ci [dict create]
+    if {[catch {
+        hdbjobs eval {SELECT
+            ci_id, refname, profile_id,
+            clone_cmd, clone_output,
+            build_cmd, build_output,
+            install_cmd, install_output,
+            package_cmd, commit_msg,
+            status, timestamp, end_timestamp,
+            cidict
+        FROM JOBCI
+        WHERE ci_id=$ci_id} r {
+            foreach k [array names r] { dict set ci $k $r($k) }
+            break
+        }
+    } err]} {
+        return [list error "Error querying JOBCI: $err"]
+    }
+    if {[dict size $ci] == 0} {
+        return [list error "CI run not found for ci_id $ci_id"]
+    }
+    return $ci
+}
+
+proc getcirow {refname} {
+    set ci [dict create]
+    if {[catch {
+        hdbjobs eval {SELECT
+            ci_id, refname, profile_id,
+            clone_cmd, clone_output,
+            build_cmd, build_output,
+            install_cmd, install_output,
+            package_cmd, commit_msg,
+            status, timestamp, end_timestamp,
+            cidict
+        FROM JOBCI
+        WHERE refname=$refname
+        ORDER BY ci_id DESC
+        LIMIT 1} r {
+            foreach k [array names r] { dict set ci $k $r($k) }
+            break
+        }
+    } err]} {
+        return [list error "Error querying JOBCI: $err"]
+    }
+    if {[dict size $ci] == 0} {
+        return [list error "CI refname not found: $refname"]
+    }
+    return $ci
+}
+
+proc wapp-page-ci {} {
+    set B [wapp-param BASE_URL]
+
+    # parse query
+    set query [wapp-param QUERY_STRING]
+    set params [split $query &]
+    set paramdict [dict create]
+    foreach a $params {
+        if {$a eq ""} continue
+        lassign [split $a =] k v
+        dict set paramdict $k $v
+    }
+
+    # need ci_id or refname
+    if {![dict exists $paramdict ci_id] && ![dict exists $paramdict refname]} {
+        wapp-subst {<p>Usage: ci?ci_id=INTEGER | ci?refname=TEXT</p>}
+        return
+    }
+
+    # resolve CI row
+    if {[dict exists $paramdict ci_id]} {
+        set ci_id [dict get $paramdict ci_id]
+        set ci [getcirow_id $ci_id]
+    } else {
+        set refname [dict get $paramdict refname]
+        set ci [getcirow $refname]
+        if {[is-dict $ci]} { set ci_id [dict get $ci ci_id] }
+    }
+
+    if {![is-dict $ci]} {
+        wapp-subst {<p>%html([lindex $ci 1])</p>}
+        return
+    }
+
+    set refname [dict get $ci refname]
+
+    # HTML header
+    wapp-content-security-policy {
+        default-src 'self';
+        style-src 'self' 'unsafe-inline' *;
+        img-src * data:;
+        script-src 'self' 'unsafe-inline';
+    }
+    wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+    wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
+    wapp-subst {<h3 class="title">CI:%html($refname)</h3>}
+
+    # if no index -> overview page
+    if {![dict exists $paramdict index]} {
+
+        # Human-readable labels for CI fields
+        set field_labels [dict create \
+            summary        "Summary" \
+            status         "Status" \
+            timestamp      "Start time" \
+            end_timestamp  "End time" \
+            commit_msg     "Commit message" \
+            clone_cmd      "Clone command" \
+            clone_output   "Clone output" \
+            build_cmd      "Build command" \
+            build_output   "Build output" \
+            install_cmd    "Install command" \
+            install_output "Install output" \
+            package_cmd    "Package command" \
+            cidict         "CI dictionary" \
+        ]
+
+        set fields {
+            summary
+            status
+            timestamp
+            end_timestamp
+            commit_msg
+            clone_cmd
+            clone_output
+            build_cmd
+            build_output
+            install_cmd
+            install_output
+            package_cmd
+            cidict
+        }
+
+        wapp-subst {<ol style="margin:0; padding-left:1.5em;">\n}
+        foreach f $fields {
+            set url "$B/ci?ci_id=$ci_id&index=$f"
+            set label [dict get $field_labels $f]
+            wapp-subst {<li style="margin:0; padding:0;"><a href='%html($url)'>%html($label)</a></li>\n}
+        }
+        wapp-subst {</ol>\n}
+
+        # Performance profile
+        set pid [dict get $ci profile_id]
+        if {$pid ne "" && $pid != 0} {
+            set purl "$B/jobs?profileid=$pid"
+            wapp-subst {<p style="margin:12px 0 0 0;"><b>Performance Profile</b></p>\n}
+            wapp-subst {<p style="margin:0;"><a href='%html($purl)'>Profile %html($pid)</a></p>\n}
+        }
+
+        # Jobs between CI start/end
+        set start_ts [dict get $ci timestamp]
+        set end_ts   [dict get $ci end_timestamp]
+        if {$end_ts eq ""} { set end_ts $start_ts }
+
+        wapp-subst {<p style="margin:14px 0 0 0;"><b>Jobs between CI start/end</b></p>\n}
+        wapp-subst {<p style="margin:0 0 8px 0;">%html($start_ts) → %html($end_ts)</p>\n}
+
+        wapp-subst {<ol style="margin:0; padding-left:1.5em;">\n}
+        hdbjobs eval {
+            SELECT jobid
+            FROM JOBMAIN
+            WHERE timestamp >= $start_ts
+              AND timestamp <= $end_ts
+            ORDER BY timestamp ASC
+        } {
+            set jurl "$B/jobs?jobid=$jobid&index=output"
+            wapp-subst {<li style="margin:0; padding:0;"><a href='%html($jurl)'>%html($jobid)</a></li>\n}
+        }
+        wapp-subst {</ol>\n}
+
+        wapp-subst {<p style="margin-top:14px;"><a href='%html($B)/'>Job Index</a></p>\n}
+        return
+    }
+
+    # ----------------------------
+    # Field display page
+    # ----------------------------
+    set field [dict get $paramdict index]
+
+    set allowed {
+        summary status timestamp end_timestamp commit_msg
+        clone_cmd clone_output
+        build_cmd build_output
+        install_cmd install_output
+        package_cmd
+        cidict
+    }
+
+    if {[lsearch -exact $allowed $field] < 0} {
+        wapp-subst {<p>Unknown CI field.</p>}
+        return
+    }
+
+    set back "$B/ci?ci_id=$ci_id"
+    wapp-subst {<p style="margin:0 0 10px 0;"><a href='%html($back)'>Back</a></p>\n}
+    wapp-subst {<h4>%html($field)</h4>\n}
+
+    # summary is short
+    if {$field eq "summary"} {
+        wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">}
+        foreach k {ci_id refname profile_id status timestamp end_timestamp} {
+            wapp-subst "%html($k): %html([dict get $ci $k])\n"
+        }
+        wapp-subst {</pre>}
+        return
+    }
+
+    set val [dict get $ci $field]
+
+    if {$val eq ""} {
+        wapp-subst {<p><i>(empty)</i></p>}
+        return
+    }
+
+
+# Normalise line endings first
+if {$field in {clone_output build_output install_output}} {
+    set val [normalize_pre_text $val]
+}
+
+# Only build_output: split glued CMake records
+if {$field eq "build_output"} {
+    set val [split_cmake_records $val]
+}
+
+
+    # Pretty print cidict (3+ level dict) in Tcl-dict style
+    if {$field eq "cidict"} {
+        set val [pretty_tcl_dict $val]
+    }
+
+    # truncate long outputs
+    set max 2000000
+    if {[string length $val] > $max} {
+        wapp-subst {<p><i>Showing first %html($max) bytes of %html([string length $val]).</i></p>\n}
+        set val [string range $val 0 [expr {$max-1}]]
+    }
+
+    # IMPORTANT: wrap long lines in <pre>
+    wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">%html($val)</pre>}
+    return
 }
 
 proc get_ws_port {} {

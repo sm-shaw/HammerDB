@@ -397,6 +397,17 @@ proc citmp {} {
     }
 }
 
+proc ci_latest_id {refname} {
+   set ci_id ""
+   if {[catch {
+      set ci_id [hdbjobs eval {SELECT ci_id FROM JOBCI WHERE refname=$refname ORDER BY ci_id DESC LIMIT 1}]
+   } err]} {
+      putscli "Warning: failed to query latest ci_id for refname $refname: $err"
+      return ""
+   }
+   return $ci_id
+}
+
 proc cilisten {} {
     global rdbms cidict
     if {[info exists ::listen_socket]} {
@@ -433,30 +444,6 @@ proc cilisten {} {
 
     set port [dict get $cidict common listen_port]
     putscli "Starting CI GitHub webhook listener on port $port..."
-
-    # Ensure JOBTEST table exists
-    if {[catch {
-        hdbjobs eval {
-            CREATE TABLE IF NOT EXISTS JOBTEST (
-                refname TEXT PRIMARY KEY,
-                jobid TEXT,
-                clone_cmd TEXT,
-                clone_output TEXT,
-                build_cmd TEXT,
-                build_output TEXT,
-                install_cmd TEXT,
-                install_output TEXT,
-                package_cmd TEXT,
-                commit_msg TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')),
-                FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid)
-            );
-        }
-    } err]} {
-        putscli "Error creating JOBTEST table: $err"
-        return
-    }
 
     # Accept new connections
     proc handle_connection {sock addr port} {
@@ -505,47 +492,40 @@ proc cilisten {} {
         }
     }
 
-    # Process webhook payload and enqueue job
-    proc process_request {sock headers body cidict} {
-        global rdbms
-        set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
-        set overwrite  [dict get $cidict $rdbms build overwrite]
-        set json_data  [json::json2dict $body]
-        set inserted   0
+# Process webhook payload and enqueue job
+proc process_request {sock headers body cidict} {
+    global rdbms
+    set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
+    set overwrite  [dict get $cidict $rdbms build overwrite]
+    set json_data  [json::json2dict $body]
+    set inserted   0
 
-        if {[dict exists $json_data ref]} {
-            set ref [dict get $json_data ref]
-            if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
+    if {[dict exists $json_data ref]} {
+        set ref [dict get $json_data ref]
 
-                set exists 0
-                hdbjobs eval "SELECT * FROM JOBTEST WHERE refname = '$name'" values {
-                    if {!$overwrite} {
-                        set exists 1
-                        putscli "Ref $name already present with status $values(status)"
-                        putscli "Overwrite=false; ignoring"
-                    } else {
-                        set exists 0
-                        putscli "Ref $name already present with status $values(status)"
-                        putscli "Overwrite=true; deleting existing record"
-                        hdbjobs eval "DELETE FROM JOBTEST WHERE refname = '$name'"
-                    }
+        if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
+
+            if {$overwrite} {
+                putscli "Overwrite=true; deleting existing records for $name"
+                if {[catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}} derr]} {
+                    putscli "Error deleting existing JOBCI rows for $name: $derr"
                 }
-                if {$exists eq 0} {
-                    if {[catch {
-                        hdbjobs eval {
-                            INSERT OR IGNORE INTO JOBTEST (refname) VALUES ($name);
-                        }
-                    } err]} {
-                        putscli "Error inserting into JOBTEST: $err"
-                    } else {
-                        set inserted 1
-                        putscli "Recorded: $name ($type)\r"
-                    }
-                }
+            } else {
+                putscli "Overwrite=false; recording additional run for $name"
+            }
+
+            if {[catch {
+                hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($name,$cidict)}
+            } err]} {
+                putscli "Error inserting into JOBCI: $err"
+            } else {
+                set inserted 1
+                putscli "Recorded: $name ($type)\r"
             }
         }
+    }
 
-        # HTTP 200 response
+ # HTTP 200 response 
         if {[lsearch -exact [chan names] $sock] != -1} {
             puts $sock "HTTP/1.1 200 OK"
             puts $sock "Content-Type: text/plain"
@@ -625,7 +605,7 @@ proc cipush {refname} {
 }
 
 # Line-oriented output reader; sets ::pipe_done on EOF
-proc handle_output {pipe} {
+proc handle_output-orig {pipe} {
     if {[eof $pipe]} {
         fileevent $pipe readable {}
         putscli "command complete."
@@ -636,6 +616,21 @@ proc handle_output {pipe} {
         putscli "$line"
     }
 }
+
+proc handle_output {pipe} {
+    if {[eof $pipe]} {
+        fileevent $pipe readable {}
+        putscli "command complete."
+        set ::pipe_done 1
+        return
+    }
+
+    if {[gets $pipe line] >= 0} {
+        putscli $line
+        if {[info exists ::pipe_output]} { append ::pipe_output "$line\n" }
+    }
+}
+
 
 # Raw output reader for tests; no extra newlines; completion signaled via doneVar
 proc handle_test_output_orig {pipe doneVar} {
@@ -715,11 +710,16 @@ proc mariadb_clone {cidict refname} {
     }
 
     # Save command
-    if {[catch {
-        hdbjobs eval { UPDATE JOBTEST SET clone_cmd = $shell_cmd WHERE refname = $refname; }
-    } err]} {
-        putscli "Error saving clone_cmd: $err"
-    }
+   if {[catch {
+       set ci_id [ci_latest_id $refname]
+       if {$ci_id ne ""} {
+           hdbjobs eval { UPDATE JOBCI SET clone_cmd = $shell_cmd WHERE ci_id = $ci_id }
+       } else {
+           putscli "Error saving clone_cmd: no JOBCI row found for refname $refname"
+       }
+   } err]} {
+       putscli "Error saving clone_cmd: $err"
+   }
 
     putscli "Running clone command..."
     putscli $shell_cmd
@@ -743,12 +743,8 @@ proc mariadb_clone {cidict refname} {
             }
         }
 
-        #
-        # FIXED BLOCK — DO NOT FORCE FAILURE ON CLOSE NOISE
-        #
         if {[catch {close $pipe} close_err]} {
             append pipe_output "\rError closing pipe: $close_err\n"
-            # DO NOT: set clone_status "CLONE FAILED"
         }
 
     } clone_err]} {
@@ -756,30 +752,25 @@ proc mariadb_clone {cidict refname} {
         append pipe_output "\rFailed to start clone: $clone_err\n"
     }
 
-    # --- Save result ---
-    if {$clone_status eq "CLONE FAILED"} {
-        putscli "Clone failed."
-        putscli "Full clone output:"
-        putscli $pipe_output
-        catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET status = 'CLONE FAILED',
-                    clone_output = $pipe_output
-                WHERE refname = $refname;
-            }
-        }
-    } else {
-        putscli "Clone succeeded."
-        catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET clone_output = $pipe_output
-                WHERE refname = $refname;
-            }
-        }
-    }
-
+   if {$clone_status eq "CLONE FAILED"} {
+      putscli "Clone failed."
+      putscli "Full clone output:"
+      putscli $pipe_output
+      catch {
+         set ci_id [ci_latest_id $refname]
+         if {$ci_id ne ""} {
+            hdbjobs eval { UPDATE JOBCI SET status = 'CLONE FAILED', clone_output = $pipe_output WHERE ci_id = $ci_id }
+         }
+      }
+   } else {
+      putscli "Clone succeeded."
+      catch {
+         set ci_id [ci_latest_id $refname]
+         if {$ci_id ne ""} {
+            hdbjobs eval { UPDATE JOBCI SET clone_output = $pipe_output WHERE ci_id = $ci_id }
+         }
+      }
+   }
     return $clone_status
 }
 
@@ -796,9 +787,14 @@ proc mariadb_build {cidict refname} {
 
     # Persist command
     if {[catch {
-        hdbjobs eval { UPDATE JOBTEST SET build_cmd = $shell_cmd WHERE refname = $refname; }
+       set ci_id [ci_latest_id $refname]
+       if {$ci_id ne ""} {
+          hdbjobs eval { UPDATE JOBCI SET build_cmd = $shell_cmd WHERE ci_id = $ci_id }
+       } else {
+          putscli "Error saving build_cmd: no JOBCI row found for refname $refname"
+       }
     } err]} {
-        putscli "Error saving build_cmd: $err"
+       putscli "Error saving build_cmd: $err"
     }
 
     putscli "Running build command..."
@@ -836,20 +832,17 @@ proc mariadb_build {cidict refname} {
     if {$build_status eq "BUILD FAILED"} {
         putscli "Build failed at line: $failed_line"
         catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET status = 'BUILD FAILED',
-                    build_output = $pipe_output
-                WHERE refname = $refname;
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET status = 'BUILD FAILED', build_output = $pipe_output WHERE ci_id = $ci_id }
             }
         }
     } else {
         putscli "Build succeeded."
         catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET build_output = $pipe_output
-                WHERE refname = $refname;
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET build_output = $pipe_output WHERE ci_id = $ci_id }
             }
         }
     }
@@ -865,9 +858,14 @@ proc mariadb_package {cidict refname} {
     set raw_cmd   [dict get $cidict $rdbms build package_cmd]
     set shell_cmd "cd \"$local_dir\" && $raw_cmd 2>&1"
 
-    # Persist command
+    # Persist command  
     if {[catch {
-        hdbjobs eval { UPDATE JOBTEST SET package_cmd = $shell_cmd WHERE refname = $refname; }
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval { UPDATE JOBCI SET package_cmd = $shell_cmd WHERE ci_id = $ci_id }
+        } else {
+            putscli "Error saving package_cmd: no JOBCI row found for refname $refname"
+        }
     } err]} {
         putscli "Error saving package_cmd: $err"
     }
@@ -897,24 +895,20 @@ proc mariadb_package {cidict refname} {
         set failed_line "Failed to start packaging command: $package_err"
         set package_status "PACKAGE FAILED"
     }
-
     if {$package_status eq "PACKAGE FAILED"} {
         putscli "Packaging failed at line: $failed_line"
         catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET status = 'PACKAGE FAILED',
-                    package_output = $pipe_output
-                WHERE refname = $refname;
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET status = 'PACKAGE FAILED', package_output = $pipe_output WHERE ci_id = $ci_id }
             }
         }
     } else {
         putscli "Packaging succeeded."
         catch {
-            hdbjobs eval {
-                UPDATE JOBTEST
-                SET package_output = $pipe_output
-                WHERE refname = $refname;
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET package_output = $pipe_output WHERE ci_id = $ci_id }
             }
         }
     }
@@ -925,25 +919,24 @@ proc mariadb_commit_msg {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
     set local_dir      "$local_dir_root/[string map {/ _} $refname]"
-    set commit_msg ""
 
     set raw_commit_cmd [dict get $cidict common commit_msg_cmd]
-    set commit_cmd     "cd \"$local_dir\" && $raw_commit_cmd"
-    if {[catch {
-        set commit_msg [exec bash -c $commit_cmd]
-        hdbjobs eval {
-            UPDATE JOBTEST SET commit_msg = $commit_msg WHERE refname = $refname;
-        }
-    } err]} {
+    set commit_cmd "cd \"$local_dir\" && $raw_commit_cmd"
+
+    if {[catch { set commit_msg [exec bash -c "$commit_cmd"] } err]} {
         set comm_msg "Could not fetch commit message: $err"
     } else {
+        set commit_msg [string trim $commit_msg]
         set comm_msg "Commit message: $commit_msg"
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} { hdbjobs eval { UPDATE JOBCI SET commit_msg = $commit_msg WHERE ci_id = $ci_id } }
     }
     return $comm_msg
 }
 
 proc mariadb_install {cidict refname} {
     global rdbms
+
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
     set local_dir      "$local_dir_root/[string map {/ _} $refname]"
     set install_dir    [dict get $cidict $rdbms install install_dir]
@@ -969,7 +962,26 @@ proc mariadb_install {cidict refname} {
 
     putscli "Installing package $first_file to $install_dir"
 
+    # Save install command
+    catch {
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval { UPDATE JOBCI SET install_cmd = $shell_cmd WHERE ci_id = $ci_id }
+        } else {
+            putscli "Error saving install_cmd: no JOBCI row found for refname $refname"
+        }
+    } err
+    if {[info exists err] && $err ne ""} {
+        putscli "Error saving install_cmd: $err"
+    }
+
+    putscli "Running install command..."
+    putscli $shell_cmd
+
+    # Capture output via handle_output (same pattern as clone)
     set ::pipe_done 0
+    set ::pipe_output ""
+
     if {[catch {
         set pipe [open "|bash -c \"$safe_cmd\"" "r"]
         fconfigure $pipe -blocking 0 -buffering line
@@ -977,12 +989,29 @@ proc mariadb_install {cidict refname} {
         vwait ::pipe_done
         close $pipe
     } install_err]} {
+
         putscli "Install failed: $install_err"
-        hdbjobs eval { UPDATE JOBTEST SET status = 'INSTALL FAILED' WHERE refname = $refname; }
+
+        # Save status + whatever output we captured (plus the error)
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                set out $::pipe_output
+                if {$out ne ""} { append out "\n" }
+                append out "ERROR: $install_err"
+                hdbjobs eval { UPDATE JOBCI SET status = 'INSTALL FAILED', install_output = $out WHERE ci_id = $ci_id }
+            }
+        }
         return "INSTALL FAILED"
     } else {
+        # Save install output + status
         catch {
-            hdbjobs eval { UPDATE JOBTEST SET status = 'installed' WHERE refname = $refname; }
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                set out $::pipe_output
+                if {$out ne ""} { append out "\n" }
+                hdbjobs eval { UPDATE JOBCI SET status = 'INSTALLED', install_output = $out WHERE ci_id = $ci_id }
+            }
         }
         return "INSTALL SUCCEEDED"
     }
@@ -995,14 +1024,24 @@ proc mariadb_init {cidict refname} {
     # Discover basedir
     if {![dict exists $install_section install_dir]} {
         putscli "DB init failed: <install_dir> missing in XML"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "INIT FAILED"
     }
     set parent [dict get $install_section install_dir]
     set candidates [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $candidates] == 0} {
         putscli "DB init failed: no mariadb-* directories under $parent"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "INIT FAILED"
     }
     set basedir ""; set newest -1
@@ -1014,21 +1053,35 @@ proc mariadb_init {cidict refname} {
     # Validate installer
     if {![dict exists $install_section installer]} {
         putscli "DB init failed: <installer> missing in XML"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "INIT FAILED"
     }
     set installer      [dict get $install_section installer]
     set installer_path [file join $basedir $installer]
     if {![file exists $installer_path]} {
         putscli "DB init failed: installer not found at $installer_path"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "INIT FAILED"
     }
 
     # Copy base config
     if {![dict exists $install_section base_config_file]} {
-        putscli "DB init failed: <base_config_file> missing in XML"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "INIT FAILED"
     }
     set defaults_src [dict get $install_section base_config_file]
@@ -1126,12 +1179,22 @@ proc mariadb_init {cidict refname} {
         }
     }
     if {$init_status eq "INIT FAILED"} {
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'INIT FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
     } else {
         set init_status "INIT SUCCEEDED"
-        catch {hdbjobs eval { UPDATE JOBTEST SET status = 'initialized' WHERE refname = $refname; }}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET status = 'INITIALIZED' WHERE ci_id = $ci_id }
+            }
+        }
     }
-    return $init_status
+    return $init_status 
 }
 
 proc mariadb_start {cidict refname} {
@@ -1143,7 +1206,12 @@ proc mariadb_start {cidict refname} {
     set candidates [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $candidates] == 0} {
         putscli "DB start failed: no mariadb-* directories under $parent"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'START FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'START FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "START FAILED"
     }
     set basedir ""; set newest -1
@@ -1155,7 +1223,12 @@ proc mariadb_start {cidict refname} {
     # Validate start command
     if {![dict exists $install start_cmd]} {
         putscli "DB start failed: <start_cmd> missing in XML"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'START FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'START FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "START FAILED"
     }
     set start_cmd [dict get $install start_cmd]
@@ -1265,7 +1338,12 @@ proc mariadb_start {cidict refname} {
         vwait ::pipe_done
     } err]} {
         putscli "DB start failed to spawn: $err"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = 'START FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'START FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "START FAILED"
     }
 
@@ -1279,7 +1357,7 @@ proc mariadb_run_sql {cidict refname key} {
 
     if {![dict exists $install $key]} {
         putscli "RUN_SQL $key: missing <$key> in XML"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = '$KEY FAILED' WHERE refname = '$refname';"}
+        catch {hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE refname = $refname}}
         return "$KEY FAILED"
     }
 
@@ -1288,7 +1366,12 @@ proc mariadb_run_sql {cidict refname key} {
     set dirs   [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $dirs] == 0} {
         putscli "RUN_SQL $key: no mariadb-* under $parent"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = '$KEY FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "$KEY FAILED"
     }
     set basedir ""; set newest -1
@@ -1316,13 +1399,23 @@ proc mariadb_run_sql {cidict refname key} {
         if {[catch {close $pipe} errMsg]} { set close_status $errMsg }
     } errMsg]} {
         putscli "RUN_SQL $key failed to spawn: $errMsg"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = '$KEY FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "$KEY FAILED"
     }
 
     if {$close_status ne "OK"} {
         putscli "RUN_SQL $key error: $close_status"
-        catch {hdbjobs eval "UPDATE JOBTEST SET status = '$KEY FAILED' WHERE refname = '$refname';"}
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+            }
+        }
         return "$KEY FAILED"
     }
 
@@ -1333,7 +1426,7 @@ proc mariadb_run_sql {cidict refname key} {
 proc mariadb_start_tests {cidict refname workload} {
     global rdbms
 
-    hdbjobs eval "UPDATE JOBTEST SET status = 'running' WHERE refname = '$refname';"
+    hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE refname = $refname}
     putscli "MariaDB is up and running for $refname"
     putscli "Pausing for 10 seconds before running tests for $refname"
     after 10000
@@ -1342,12 +1435,18 @@ proc mariadb_start_tests {cidict refname workload} {
     set key [string tolower $workload]
     if {$key ni {"oltp" "olap"}} {
         putscli "Test failed: workload must be 'oltp' or 'olap' (got '$workload')"
-        hdbjobs eval "UPDATE JOBTEST SET status = 'TEST FAILED' WHERE refname = '$refname';"
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'TEST FAILED' WHERE ci_id = $ci_id}
+        }
         return "TEST FAILED"
     }
     if {![dict exists $cidict $rdbms test $key]} {
         putscli "Test failed: <$key> missing under <$rdbms>/<test> in XML"
-        hdbjobs eval "UPDATE JOBTEST SET status = 'TEST FAILED' WHERE refname = '$refname';"
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'TEST FAILED' WHERE ci_id = $ci_id}
+        }
         return "TEST FAILED"
     }
     set script_raw [string map {\" {}} [dict get $cidict $rdbms test $key]]
@@ -1358,31 +1457,47 @@ proc mariadb_start_tests {cidict refname workload} {
     }
     if {![file exists $script_abs]} {
         putscli "Test failed: script not found: $script_abs"
-        hdbjobs eval "UPDATE JOBTEST SET status = 'TEST FAILED' WHERE refname = '$refname';"
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'TEST FAILED' WHERE ci_id = $ci_id}
+        }
         return "TEST FAILED"
     }
     catch {exec chmod +x -- $script_abs}
 
     putscli "Running Tests ($key)"
-    putscli "sudo bash -c \"$script_abs\""
-
+    #If user is root sudo is needed otherwise access is denied
+    set sudo ""
+    if {[info exists cidict] && [dict exists $cidict common use_sudo]} {
+        if {[string is true [dict get $cidict common use_sudo]]} {
+            set sudo "sudo "
+        }
+    }
+    putscli "${sudo}bash -c \"$script_abs\""
     set doneVar "::pipe_done_tests_[clock milliseconds]"
     set $doneVar 0
-
     if {[catch {
-        set pipe [open "|sudo bash -c \"$script_abs 2>&1\"" "r"]
+        set pipe [open "|${sudo}bash -c \"$script_abs 2>&1\"" "r"]
         fconfigure $pipe -translation binary -buffering none -blocking 0
         fileevent $pipe readable [list handle_test_output $pipe $doneVar]
         vwait $doneVar
         close $pipe
     } err]} {
         putscli "Test failed: $err"
-        hdbjobs eval "UPDATE JOBTEST SET status = 'TEST FAILED' WHERE refname = '$refname';"
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'TEST FAILED' WHERE ci_id = $ci_id}
+        }
         return "TEST FAILED"
     }
-
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status='COMPLETE', end_timestamp=datetime(CURRENT_TIMESTAMP,'localtime') WHERE ci_id = $ci_id}
+        }
+putscli "refname is $refname"
+putscli "ci_id is $ci_id"
     putscli "Test sequence complete ($key)"
-    return "TEST STARTED"
+    return "TEST COMPLETE"
 }
 
 proc mariadb_compare {cidict refname} {
@@ -1400,7 +1515,12 @@ proc mariadb_compare {cidict refname} {
     }
     set build_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
     set bad_tag   [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
-    set repo      [file join $build_root $bad_tag]
+    hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+    }
+    set repo [file join $build_root $bad_tag]
     set is_commit 0
     if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
         if {[regexp {^[0-9a-fA-F]{7,40}$} $bad_tag]} {
@@ -1437,9 +1557,13 @@ proc mariadb_compare {cidict refname} {
     }
     set bad_pid  $pid_base
     set good_pid [expr {$pid_base + 1}]
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
+    }
 
     # Try to bump based on existing jobs in JOBMAIN
-    if {![catch { hdbjobs eval "SELECT max(profile_id) FROM JOBMAIN" } maxpid]} {
+    if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
         set maxpid [string trim $maxpid]
         if {$maxpid ne "" && $maxpid ne "null" && [string is integer -strict $maxpid]} {
             set bad_pid  [expr {$maxpid + 1}]
@@ -1468,6 +1592,11 @@ proc mariadb_compare {cidict refname} {
     proc __compare_run_once {ham_root runner_abs tag pid} {
         set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
         putscli "RUNNER: $run"
+        set ci_id [ci_latest_id $tag]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
+        }
+
         set doneVar "::compare_run_done_[clock milliseconds]"
         set $doneVar 0
         if {[catch {
@@ -1477,9 +1606,14 @@ proc mariadb_compare {cidict refname} {
             vwait $doneVar
             close $pipe
         } rerr]} {
-            putscli "RUNNER FAILED: $rerr"
+            putscli "COMPARE FAILED: $rerr"
             return 0
         }
+        set ci_id [ci_latest_id $tag]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status='COMPLETE', end_timestamp=datetime(CURRENT_TIMESTAMP,'localtime') WHERE ci_id = $ci_id}
+        }
+        putscli "TEST COMPLETE"
         return 1
     }
 
@@ -1543,6 +1677,12 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
     set good_tag [string trim $good_tag]
+    hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($good_tag,$cidict)}
+    set ci_id [ci_latest_id $good_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+        hdbjobs eval {UPDATE JOBCI SET profile_id = $good_pid WHERE ci_id = $ci_id}
+    }
     putscli "COMPARE PRECHECK -> bad=$bad_tag  good=$good_tag"
     set co_good "cd $repo && git checkout -f $good_tag"
     putscli $co_good
@@ -1679,18 +1819,17 @@ proc startwatcher {} { putscli "Job watcher start."; set ::watcher_running 1; jo
 proc initwatcher {listen_socket} { set ::listen_socket $listen_socket; startwatcher }
 
 # Execute next pending job
-proc run_next_pending_job {} {
-    global rdbms cidict
-    set refname ""
-
-    if {[catch {
-        set result [hdbjobs eval { SELECT refname FROM JOBTEST WHERE status = 'pending' ORDER BY timestamp ASC LIMIT 1; }]
-        if {[llength $result] > 0} { set refname [lindex $result 0] }
-    } err]} {
-        putscli "Error querying JOBTEST: $err"
-        return
-    }
-
+    proc run_next_pending_job {} {
+        global rdbms cidict
+        set refname ""
+    
+        if {[catch { 
+            set ci_id [hdbjobs eval { SELECT ci_id FROM JOBCI WHERE status = 'PENDING' ORDER BY timestamp ASC LIMIT 1; }]
+            if {$ci_id ne ""} { set refname [hdbjobs eval { SELECT refname FROM JOBCI WHERE ci_id = $ci_id }] }
+        } err]} {
+            putscli "Error querying JOBCI: $err"
+            return
+        }
     if {$refname eq ""} { return }
 
     putscli "Found pending job: $refname"
@@ -1698,12 +1837,15 @@ proc run_next_pending_job {} {
     stopwatcher
 
     if {[catch {
-        hdbjobs eval { UPDATE JOBTEST SET status = 'building' WHERE refname = $refname; }
+        if {$ci_id ne ""} {
+            hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id }
+        } else {
+            putscli "Error updating status to 'BUILDING': no JOBCI row found for refname $refname"
+        }
     } err]} {
-        putscli "Error updating status to 'building': $err"
+        putscli "Error updating status to 'BUILDING': $err"
         return
     }
-
     # clone
     set clone_cmd "[string tolower $rdbms]_clone"
     set clone_status [$clone_cmd $cidict $refname]
@@ -1814,8 +1956,6 @@ proc cistep {refname pipeline} {
     putscli "CI: running pipeline '$pipeline' for $refname"
     putscli "Pausing watcher for CI run"
     stopwatcher
-    # This UPDATE is best-effort; it’s fine if there’s no JOBTEST row for step_ref
-    catch { hdbjobs eval "UPDATE JOBTEST SET status = 'building' WHERE refname = '$step_ref';" }
 
     if {[catch { cisteps $cidict $step_ref $pipeline } err]} {
         putscli "CI: pipeline error: $err"

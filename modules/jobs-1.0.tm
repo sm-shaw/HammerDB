@@ -29,7 +29,6 @@ namespace eval jobs {
       # 0.XY show two decimal places
       set q [expr {entier($q * 100) / 100.0}]
     } else {
-      # r$ctypeound it out, its big
       set q [expr {round($q)}]
     }
 
@@ -99,6 +98,7 @@ namespace eval jobs {
         catch {hdbjobs eval {DROP TABLE JOBSYSTEM}}
         catch {hdbjobs eval {DROP TABLE JOBOUTPUT}}
         catch {hdbjobs eval {DROP TABLE JOBCHART}}
+        catch {hdbjobs eval {DROP TABLE JOBCI}}
         if [catch {hdbjobs eval {CREATE TABLE JOBMAIN(jobid TEXT primary key, db TEXT, bm TEXT, jobdict TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')),profile_id INTEGER NOT NULL DEFAULT 0)}} message ] {
           puts "Error creating JOBMAIN table in SQLite in-memory database : $message"
           return
@@ -118,7 +118,9 @@ namespace eval jobs {
           return
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBCHART table in SQLite in-memory database : $message"
-
+          return
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+          puts "Error creating JOBCI table in SQLite in-memory database : $message"
           return
         } else {
           catch {hdbjobs eval {CREATE INDEX JOBMAIN_IDX ON JOBMAIN(jobid)}}
@@ -128,6 +130,9 @@ namespace eval jobs {
           catch {hdbjobs eval {CREATE INDEX JOBSYSTEM_IDX ON JOBSYSTEM(jobid)}}
           catch {hdbjobs eval {CREATE INDEX JOBOUTPUT_IDX ON JOBOUTPUT(jobid)}}
           catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
+          catch {hdbjobs eval {CREATE INDEX JOBCI_REF_IDX ON JOBCI(refname)}}
+          catch {hdbjobs eval {CREATE INDEX JOBCI_PROFILE_IDX ON JOBCI(profile_id)}}
+
           puts "Initialized new Jobs in-memory database"
         }
       } else {
@@ -157,6 +162,9 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBCHART table in SQLite on-disk database : $message"
               return
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+              puts "Error creating JOBCI table in SQLite on-disk database : $message"
+              return
             } else {
               catch {hdbjobs eval {CREATE INDEX JOBMAIN_IDX ON JOBMAIN(jobid)}}
               catch {hdbjobs eval {CREATE INDEX JOBTIMING_IDX ON JOBTIMING(jobid)}}
@@ -165,6 +173,8 @@ namespace eval jobs {
               catch {hdbjobs eval {CREATE INDEX JOBSYSTEM_IDX ON JOBSYSTEM(jobid)}}
               catch {hdbjobs eval {CREATE INDEX JOBOUTPUT_IDX ON JOBOUTPUT(jobid)}}
               catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
+              catch {hdbjobs eval {CREATE INDEX JOBCI_REF_IDX ON JOBCI(refname)}}
+              catch {hdbjobs eval {CREATE INDEX JOBCI_PROFILE_IDX ON JOBCI(profile_id)}}
               puts "Initialized new Jobs on-disk database $sqlite_db"
             }
           } else {
@@ -1135,13 +1145,12 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
         } elseif { [ string match -nocase "*rampup*" $output1 ] || [ string match -nocase "*scale\ factor*" $output1 ]} {
           set jobtype "Benchmark Run"
           #We already matched db, for a benchmark run, add the version
-          set temp_db [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]]
-          if { [ string match "*DBVersion*" $temp_db ] } {
-          set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_db match header version ]
+          if { [ string match "*DBVersion*" $output1 ] } {
+          set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $output1 match header version ]
           if { $matcheddbversion } {
           set db "$db ($version)"
-          }
-          }
+             } 
+          } 
           set jobresult [ getjobresult $job 1 ]
           if { [ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ] } {
 		;
@@ -1195,10 +1204,10 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
 	   }
 	}
       wapp-subst $tprocccombined
-      wapp-subst {</table>\n}
       if { $tprocccombined eq {} } {
-        wapp-subst {%html(No TPROC-C jobs found)\ in database file %html([ getdatabasefile ])}
+      wapp-subst {<tr><td colspan="6">No TPROC-C runs found in database file %html([ getdatabasefile ])</td></tr>\n}
       }
+      wapp-subst {</table>\n}
       set profcount 0
       wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
       wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Select exactly two profiles, then click <b>Compare Profiles</b>.</p>}
@@ -1241,11 +1250,11 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
         wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td><input type="checkbox" name="diff_%html($profileid)" value="1"></td></tr>\n}
 	}
 	}
+      if { $profcount eq 0 } {
+        wapp-subst {<tr><td colspan="8">No performance profiles found in database file %html([ getdatabasefile ])</td></tr>\n}
+      }
       wapp-subst {</table>\n}
       wapp-subst {<div style="margin-top:6px; text-align:right;"><button type="submit" style="padding:4px 10px;">Compare Profiles</button></div>}
-      if { $profcount eq 0 } {
-        wapp-subst {%html(No performance profiles found)\ in database file %html([ getdatabasefile ])}
-      }
       wapp-subst {<h3 class="title">TPROC-H</h3>}
       wapp-trim {
         <div class='hammerdb' data-title='TPROC-H'>
@@ -1254,10 +1263,23 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
       wapp-subst {<table>\n}
       wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>Geomean</th><th>Status</th>\n}
       wapp-subst $tprochcombined
-      wapp-subst {</table>\n}
       if { $tprochcombined eq {} } {
-        wapp-subst {%html(No TPROC-H jobs found)\ in database file %html([ getdatabasefile ])}
+        wapp-subst {<tr><td colspan="6">No TPROC-H jobs found in database file %html([ getdatabasefile ])</td></tr>\n}
       }
+      wapp-subst {</table>\n}
+      #Add CI 
+      wapp-subst {<h3 class="title">CI</h3>}
+      wapp-subst {<table>\n}
+      wapp-subst {<th>CI ID</th><th>Ref</th><th>Date</th><th>Status</th>\n}
+      set cicount [join [hdbjobs eval {SELECT COUNT(*) FROM JOBCI}]]
+      if {$cicount eq 0} {
+           wapp-subst {<tr><td colspan="4">No CI runs found in database file %html([ getdatabasefile ])</td></tr>\n}
+      } else { 
+          hdbjobs eval {SELECT ci_id, refname, timestamp, status FROM JOBCI ORDER BY ci_id ASC} {
+                wapp-subst {<tr><td><a href="%url(/ci?ci_id=$ci_id)">%html($ci_id)</a></td><td>%html($refname)</td><td>%html($timestamp)</td><td>%html($status)</td></tr>\n}
+          }
+        }
+      wapp-subst {</table>\n}
       main-footer
       return
     } else {
@@ -1298,7 +1320,7 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
           wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
           foreach l [ split $chart \n ] {
   if {[string match "*Compare summary*" $l]} {
-              set d "<div style=\"margin:10px 0; padding:8px 12px; background:#e6f4ea; color:#1e7f34; border-left:4px solid #2da44e; font-weight:600;\">$l</div>"
+          set d "<div style=\"margin:10px 0 10px 60px; padding:8px 12px; background:transparent; color:inherit; border-left:4px solid #d0d7de; font-weight:600; max-width:900px;\">$l</div>"
               continue
             }
             if { [ string match [ string trim $l ] <body> ] } {
@@ -2503,14 +2525,32 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
                      set summary "Compare summary (profile $profileid1 vs $profileid2): $cleanRatio"
                  }
              }
-
              set html [$line toHTML -title "Performance Profile Compare $profileid1 vs $profileid2"]
 
+             # Neutralise the green "success" wrapper emitted by toHTML (first <div ...>)
+             if {[regexp {^<div([^>]*)>} $html -> attrs]} {
+                 if {[regexp {style="([^"]*)"} $attrs -> st]} {
+                     # prepend overrides to existing style
+                     set newst "background-color: transparent !important; border-left: 0 !important; $st"
+                     set newattrs [regsub {style="[^"]*"} $attrs "style=\"$newst\""]
+                 } else {
+                     # add a style attribute if none exists
+                     set newattrs "$attrs style=\"background-color: transparent !important; border-left: 0 !important;\""
+                 }
+                 regsub {^<div[^>]*>} $html "<div$newattrs>" html
+             }
+
              if {$summary ne ""} {
-                 set html "<div style=\"font-family: sans-serif; margin-bottom: 0.5em;\">$summary</div>\n$html"
+                 if {[info exists status] && $status eq "FAIL"} {
+                     set bannerStyle "font-family:sans-serif; margin-bottom:0.5em; padding:10px; font-weight:bold; background-color:#fdecea; color:#b00020; border-left:6px solid #e74c3c;"
+                 } else {
+                     set bannerStyle "font-family:sans-serif; margin-bottom:0.5em; padding:10px; font-weight:bold; background-color:#e6f4ea; color:#1e7e34; border-left:6px solid #2ecc71;"
+                 }
+                 set html "<div style=\"$bannerStyle\">$summary</div>\n$html"
              }
              return $html
-         }
+       }
+
       default {
         set html "Error: chart type should be metrics, profile, result, tcount, timing, diff:pid1:pid2"
         return
@@ -2600,7 +2640,6 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
     	hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jobres} {
 	set jobresult [ getjobresult $jobres 1 ]
     if { [ lindex $jobresult 1 ] eq "Jobid has no test result" } {
-#NO RESULT 
 	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict} $jobresult ]]
         continue
       } elseif { [ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
