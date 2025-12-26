@@ -282,6 +282,7 @@ proc getcirow {refname} {
 }
 
 proc wapp-page-ci {} {
+    wapp-allow-xorigin-params
     set B [wapp-param BASE_URL]
 
     # parse query
@@ -293,7 +294,6 @@ proc wapp-page-ci {} {
         lassign [split $a =] k v
         dict set paramdict $k $v
     }
-
     # need ci_id or refname
     if {![dict exists $paramdict ci_id] && ![dict exists $paramdict refname]} {
         wapp-subst {<p>Usage: ci?ci_id=INTEGER | ci?refname=TEXT</p>}
@@ -318,12 +318,7 @@ proc wapp-page-ci {} {
     set refname [dict get $ci refname]
 
     # HTML header
-    wapp-content-security-policy {
-        default-src 'self';
-        style-src 'self' 'unsafe-inline' *;
-        img-src * data:;
-        script-src 'self' 'unsafe-inline';
-    }
+    wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
     wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
     wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
     wapp-subst {<h3 class="title">CI:%html($refname)</h3>}

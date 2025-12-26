@@ -1276,7 +1276,8 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
            wapp-subst {<tr><td colspan="4">No CI runs found in database file %html([ getdatabasefile ])</td></tr>\n}
       } else { 
           hdbjobs eval {SELECT ci_id, refname, timestamp, status FROM JOBCI ORDER BY ci_id ASC} {
-                wapp-subst {<tr><td><a href="%url(/ci?ci_id=$ci_id)">%html($ci_id)</a></td><td>%html($refname)</td><td>%html($timestamp)</td><td>%html($status)</td></tr>\n}
+		  set url "[wapp-param BASE_URL]/ci?ci_id=$ci_id" 
+		  wapp-subst {<tr><td><a href='%html($url)'>%html($ci_id)</a></td><td>%html($refname)</td><td>%html($timestamp)</td><td>%html($status)</td></tr>\n}
           }
         }
       wapp-subst {</table>\n}
