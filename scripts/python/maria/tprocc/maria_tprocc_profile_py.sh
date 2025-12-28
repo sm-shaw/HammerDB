@@ -8,7 +8,6 @@ if [[ -z "${TMP:-}" ]]; then
     echo "TMP not set — defaulting to $TMP"
 fi
 
-# REFNAME and PROFILEID are provided by the bisect/CI driver
 : "${REFNAME:?need REFNAME in env}"
 : "${PROFILEID:?need PROFILEID in env}"
 

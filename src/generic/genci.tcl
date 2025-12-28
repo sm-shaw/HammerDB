@@ -667,6 +667,35 @@ proc handle_test_output {pipe doneVar} {
     }
 }
 
+proc system_memory_mb {} {
+    set mem_kb 0
+    if {[catch {
+        set f [open "/proc/meminfo" r]
+        while {[gets $f line] >= 0} {
+            if {[regexp {^MemTotal:\s+(\d+)\s+kB} $line -> kb]} {
+                set mem_kb $kb
+                break
+            }
+        }
+        close $f
+    }]} {
+        return 0
+    }
+    return [expr {$mem_kb / 1024}]
+}
+
+proc calc_buffer_pool_mb {} {
+    set mem_mb [system_memory_mb]
+    if {$mem_mb <= 0} { return 0 }
+
+    set bp_mb [expr {int($mem_mb / 2)}]
+
+    if {$bp_mb < 1024}   { set bp_mb 1024 }
+    if {$bp_mb > 262144} { set bp_mb 262144 }
+
+    return $bp_mb
+}
+
 proc mariadb_clone {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
@@ -1254,6 +1283,12 @@ proc mariadb_start {cidict refname} {
         set redo_val [file join $basedir $redo_val]
     }
 
+    # Buffer pool sizing
+    set bp_cfg ""
+    if {[dict exists $install innodb_buffer_pool_size]} {
+    set bp_cfg [string trim [dict get $install innodb_buffer_pool_size]]
+    }
+
     # Build argument list
     set argnames [expr {[dict exists $install start_args] ? [dict get $install start_args] : {defaults_file basedir datadir innodb_log_group_home_dir}}]
     set arglist {}
@@ -1305,6 +1340,23 @@ proc mariadb_start {cidict refname} {
             putscli "Warning: start_args '$argname' has no value in XML"
         }
     }
+
+   # innodb_buffer_pool_size override (start-time only)
+   set bp_mb 1000
+   if {$bp_cfg eq "" || [string equal -nocase $bp_cfg "auto"]} {
+       set bp_mb [calc_buffer_pool_mb]
+       if {$bp_mb > 0} {
+       putscli "Auto-tune: innodb_buffer_pool_size=${bp_mb}M"
+     }
+   } elseif {[string is integer -strict $bp_cfg]} {
+       set bp_mb $bp_cfg
+       putscli "User override: innodb_buffer_pool_size=${bp_mb}M"
+   } else {
+       putscli "WARNING: invalid innodb_buffer_pool_size='$bp_cfg' (expected auto or MB integer)"
+   }
+   if {$bp_mb > 0} {
+       lappend arglist "--innodb-buffer-pool-size=${bp_mb}M"
+   }
 
     if {$want_basedir} {
         lappend arglist "--basedir=\"$basedir\""
@@ -1498,6 +1550,154 @@ putscli "refname is $refname"
 putscli "ci_id is $ci_id"
     putscli "Test sequence complete ($key)"
     return "TEST COMPLETE"
+}
+
+proc mariadb_profile {cidict refname} {
+    global rdbms
+    if {(![info exists ::env(TMP)] || $::env(TMP) eq "") &&
+        [info exists ::env(TMPDIR)] && $::env(TMPDIR) ne ""} {
+        set ::env(TMP) $::env(TMPDIR)
+    }
+    ci_check_tmp
+
+    # Resolve build root and current tag
+    if {![dict exists $cidict $rdbms build local_dir_root]} {
+        putscli "PROFILE FAILED: <$rdbms>/<build>/<local_dir_root> missing"
+        return "PROFILE FAILED"
+    }
+    set build_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set bad_tag [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
+
+    # Ensure exactly ONE JOBCI row exists for this run:
+    # - If caller already created it (queued / WAPP), reuse it.
+    # - If not (direct cistep/cisteps), create it once.
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id eq ""} {
+        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
+        set ci_id [ci_latest_id $bad_tag]
+    }
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+    } else {
+        putscli "PROFILE FAILED: could not create/find JOBCI row for $bad_tag"
+        return "PROFILE FAILED"
+    }
+    set repo [file join $build_root $bad_tag]
+    set is_commit 0
+    if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
+        if {[regexp {^[0-9a-fA-F]{7,40}$} $bad_tag]} {
+            set is_commit 1
+        }
+    }
+    if {[file isdirectory $repo]} {
+        putscli "PROFILE FAILED: repo already exists: $repo"
+        return "PROFILE FAILED"
+    }
+
+    # Runner script path from XML (<$rdbms>/<test>/<profile>)
+    if {![dict exists $cidict $rdbms test profile]} {
+        putscli "PROFILE FAILED: <$rdbms>/<test>/<profile> missing in XML"
+        return "PROFILE FAILED"
+    }
+    set runner_raw [string map {\" {}} [dict get $cidict $rdbms test profile]]
+    set ham_root [pwd]  ;# runner expects ./hammerdbcli in cwd
+    if {[file pathtype $runner_raw] eq "relative"} {
+        set runner_abs [file join $ham_root $runner_raw]
+    } else {
+        set runner_abs $runner_raw
+    }
+    if {![file exists $runner_abs]} {
+        putscli "PROFILE FAILED: runner not found: $runner_abs"
+        return "PROFILE FAILED"
+    }
+    catch {exec chmod +x -- $runner_abs}
+
+    # Profile ids: default base from XML
+    set pid_base 999
+    if {[dict exists $cidict $rdbms pipeline profileid]} {
+        set pid_base [dict get $cidict $rdbms pipeline profileid]
+    }
+    set bad_pid  $pid_base
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
+    }
+
+    # Try to bump based on existing jobs in JOBMAIN
+    if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
+        set maxpid [string trim $maxpid]
+        if {$maxpid ne "" && $maxpid ne "null" && [string is integer -strict $maxpid]} {
+            set bad_pid  [expr {$maxpid + 1}]
+        }
+    }
+
+    putscli "PROFILE PROFILEIDS $bad_pid"
+
+    # Helper to run the runner once (no 2>&1, wait for completion, no extra blank lines)
+    proc __profile_run_once {ham_root runner_abs tag pid} {
+        set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
+        putscli "RUNNER: $run"
+        set ci_id [ci_latest_id $tag]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
+        }
+
+        set doneVar "::profile_run_done_[clock milliseconds]"
+        set $doneVar 0
+        if {[catch {
+            set pipe [open "|bash -c \"$run\"" "r"]
+            fconfigure $pipe -translation binary -buffering none -blocking 0
+            fileevent  $pipe readable [list handle_test_output $pipe $doneVar]
+            vwait $doneVar
+            close $pipe
+        } rerr]} {
+            putscli "PROFILE FAILED: $rerr"
+            return 0
+        }
+        set ci_id [ci_latest_id $tag]
+        if {$ci_id ne ""} {
+            hdbjobs eval {UPDATE JOBCI SET status='COMPLETE', end_timestamp=datetime(CURRENT_TIMESTAMP,'localtime') WHERE ci_id = $ci_id}
+        }
+        putscli "TEST COMPLETE"
+        return 1
+    }
+
+    set co_bad "cd $repo && git checkout -f $bad_tag"
+    putscli $co_bad
+    set ::pipe_done 0
+    if {[catch {
+        set p [open "|bash -c \"$co_bad\"" "r"]
+        fconfigure $p -blocking 0 -buffering line
+        fileevent  $p readable [list handle_output $p]
+        vwait ::pipe_done
+        close $p
+    } err]} {
+        putscli "CHECKOUT FAILED: $err"
+        return "PROFILE FAILED"
+    }
+
+    # 1) Run profile on BAD tag (current)
+    set cst [mariadb_clone $cidict $bad_tag]
+    if {$cst eq "CLONE FAILED"}   { return "PROFILE FAILED" }
+    set bst [mariadb_build $cidict $bad_tag]
+    if {$bst eq "BUILD FAILED"}   { return "PROFILE FAILED" }
+    set pst [mariadb_package $cidict $bad_tag]
+    if {$pst eq "PACKAGE FAILED"} { return "PROFILE FAILED" }
+    set ist [mariadb_install $cidict $bad_tag]
+    if {$ist eq "INSTALL FAILED"} { return "PROFILE FAILED" }
+    set int [mariadb_init $cidict $bad_tag]
+    if {$int eq "INIT FAILED"} { return "PROFILE FAILED" }
+    set stop_st [mariadb_run_sql $cidict $bad_tag shutdown]
+    if {$stop_st ne "SHUTDOWN SUCCEEDED"} { return "PROFILE FAILED" }
+    set sst [mariadb_start $cidict $bad_tag]
+    if {$sst eq "START FAILED"} { return "PROFILE FAILED" }
+    putscli "Pausing for 10 seconds before running tests for $refname"
+    after 10000
+    set rsy [mariadb_run_sql $cidict $bad_tag change_password]
+    if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "PROFILE FAILED" }
+    if {![__profile_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
+        return "PROFILE FAILED"
+    }
 }
 
 proc mariadb_compare {cidict refname} {
@@ -2042,6 +2242,12 @@ proc cisteps {cidict refname pipeline_name} {
                 set st  [$cmd $cidict $refname $workload]
                 putscli $st
                 if {$st eq "TEST FAILED"} { return }
+            }
+            profile {
+                set cmd "[string tolower $rdbms]_profile"
+                set st  [$cmd $cidict $refname]
+                putscli $st
+                if {$st eq "PROFILE FAILED"} { return }
             }
             compare {
                 set cmd "[string tolower $rdbms]_compare"

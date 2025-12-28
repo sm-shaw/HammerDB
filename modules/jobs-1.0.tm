@@ -1268,12 +1268,12 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
       }
       wapp-subst {</table>\n}
       #Add CI 
-      wapp-subst {<h3 class="title">CI</h3>}
+      wapp-subst {<h3 class="title">AUTOMATION</h3>}
       wapp-subst {<table>\n}
       wapp-subst {<th>CI ID</th><th>Ref</th><th>Date</th><th>Status</th>\n}
       set cicount [join [hdbjobs eval {SELECT COUNT(*) FROM JOBCI}]]
       if {$cicount eq 0} {
-           wapp-subst {<tr><td colspan="4">No CI runs found in database file %html([ getdatabasefile ])</td></tr>\n}
+           wapp-subst {<tr><td colspan="4">No Automated CI runs found in database file %html([ getdatabasefile ])</td></tr>\n}
       } else { 
           hdbjobs eval {SELECT ci_id, refname, timestamp, status FROM JOBCI ORDER BY ci_id ASC} {
 		  set url "[wapp-param BASE_URL]/ci?ci_id=$ci_id" 

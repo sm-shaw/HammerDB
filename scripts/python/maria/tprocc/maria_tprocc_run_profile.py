@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# maintainer: Pooja Jain (Python compare variant)
+# maintainer: Pooja Jain 
 
 import os
 import sys
 
-# Maintain compatibility if compare.sh didn't set TMP
 tmpdir = os.getenv("TMP")
 if not tmpdir:
     tmpdir = os.path.join(os.getcwd(), "TMP")
@@ -18,7 +17,6 @@ else:
 
 print("SETTING CONFIGURATION")
 
-# PROFILEID must be provided by the CI/bisect driver
 profileid = os.getenv("PROFILEID")
 if not profileid:
     print("ERROR: PROFILEID not set in environment")

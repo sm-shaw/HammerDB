@@ -1,6 +1,5 @@
 #!/bin/tclsh
 # maintainer: Pooja Jain
-# Maintain compatibility if compare.sh didn't set TMP
 if {![info exists ::env(TMP)] || $::env(TMP) eq ""} {
     set ::env(TMP) "[pwd]/TMP"
     file mkdir $::env(TMP)

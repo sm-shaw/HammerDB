@@ -6,7 +6,6 @@ if [[ -z "${TMP:-}" ]]; then
     mkdir -p "$TMP"
     echo "TMP not set — defaulting to $TMP"
 fi
-# REFNAME and PROFILEID are provided by the bisect driver
 : "${REFNAME:?need REFNAME in env}"
 : "${PROFILEID:?need PROFILEID in env}"
 echo "BUILD HAMMERDB SCHEMA"
@@ -19,7 +18,7 @@ echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
 echo "RUN HAMMERDB TEST"
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
-./hammerdbcli auto ./scripts/tcl/maria/tprocc/maria_tprocc_run_compare.tcl 
+./hammerdbcli auto ./scripts/tcl/maria/tprocc/maria_tprocc_run_profile.tcl 
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
 echo "DROP HAMMERDB SCHEMA"
 ./hammerdbcli auto ./scripts/tcl/maria/tprocc/maria_tprocc_deleteschema.tcl
