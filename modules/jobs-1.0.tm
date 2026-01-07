@@ -1,6 +1,6 @@
 package provide jobs 1.0
 namespace eval jobs {
-  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-logo-full.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart
+  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-logo-full.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart home-common-header common-header common-footer getdatabasefile
   interp alias {} job {} jobs
 
   proc commify {x} {
@@ -119,7 +119,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBCHART table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
           puts "Error creating JOBCI table in SQLite in-memory database : $message"
           return
         } else {
@@ -162,7 +162,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBCHART table in SQLite on-disk database : $message"
               return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
               puts "Error creating JOBCI table in SQLite on-disk database : $message"
               return
             } else {
@@ -640,6 +640,46 @@ proc jobs {args} {
     }
   }
 
+proc home-common-header {} {
+    wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+
+    set B [wapp-param BASE_URL]
+    set url "/style.css"
+    set logoimg "$B/logo.png"
+    set automate_url "$B/automate"
+
+    wapp-subst {
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="%url($url)" rel="stylesheet">
+<title>HammerDB Results</title>
+</head>
+<body>
+
+<p style="margin:12px 16px 6px 16px;">
+  <img src="%unsafe($logoimg)" width="55" height="60">
+</p>
+
+<div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="title" style="margin:0;">HammerDB Results</h3>
+    <a href="%html($automate_url)"
+       style="margin-top:2px;
+              padding:6px 14px;
+              border:1px solid #bbb;
+              border-radius:4px;
+              text-decoration:none;
+              font-weight:500;">
+      Run Automation
+    </a>
+  </div>
+</div>
+}
+}
+
   proc common-header {} {
     wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
     set url "/style.css"
@@ -679,7 +719,7 @@ proc jobs {args} {
     set B [wapp-param BASE_URL]
     set dbfile [ getdatabasefile ]
     set size "[ commify [ hdbjobs eval {SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()} ]]" 
-    wapp-subst {<h3 class="title">Env</h3>}
+    wapp-subst {<h3 class="title">ENV</h3>}
       wapp-subst {<table>\n}
       wapp-subst {<th>SQLite</th><th>Size (bytes)</th><th>Web Service</th>\n}
       wapp-subst {<tr><td>%html($dbfile)</td><td>%html($size)</td></td><td><a href='%html($B)/env'>Configuration</a></td></tr>\n}
@@ -1339,13 +1379,6 @@ proc wapp-page-jobs {} {
         expr {$v eq "1" || $v eq "true" || $v eq "yes" || $v eq "on"}
     }
 
-    proc __html_page_head {B title} {
-        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-        wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
-        wapp-subst "<h3 class='title'>%html($title)</h3>\n"
-    }
-
     proc __pre_block {s} {
         # Truncate very large outputs to avoid hanging browsers
         set max 2000000
@@ -1398,8 +1431,7 @@ proc wapp-page-jobs {} {
     # ----------------------------
     if {$paramlen eq 0 || $query eq ""} {
         set topjobs [gettopjobs]
-        common-header
-
+        home-common-header
         wapp-subst {<h3 class="title">TPROC-C</h3>}
         wapp-trim {<div class='hammerdb' data-title='TPROC-C'>}
 
@@ -1550,6 +1582,7 @@ proc wapp-page-jobs {} {
         wapp-subst {<div style="margin-top:6px; text-align:right;"><button type="submit" style="padding:4px 10px;">Compare Profiles</button></div>}
         wapp-subst {</div></form>\n}
 
+
         # TPROC-H
         wapp-subst {<h3 class="title">TPROC-H</h3>}
         wapp-trim {<div class='hammerdb' data-title='TPROC-H'>}
@@ -1560,22 +1593,6 @@ proc wapp-page-jobs {} {
             wapp-subst {<tr><td colspan="6">No TPROC-H jobs found in database file %html([getdatabasefile])</td></tr>\n}
         }
         wapp-subst {</table>\n}
-
-        # Automation (JOBCI)
-        wapp-subst {<h3 class="title">AUTOMATION</h3>}
-        wapp-subst {<table>\n}
-        wapp-subst {<th>CI ID</th><th>Ref</th><th>Date</th><th>Status</th>\n}
-        set cicount [join [hdbjobs eval {SELECT COUNT(*) FROM JOBCI}]]
-        if {$cicount eq 0} {
-            wapp-subst {<tr><td colspan="4">No Automated CI runs found in database file %html([getdatabasefile])</td></tr>\n}
-        } else {
-            hdbjobs eval {SELECT ci_id, refname, timestamp, status FROM JOBCI ORDER BY ci_id ASC} {
-                set url "$B/ci?ci_id=$ci_id"
-                wapp-subst {<tr><td><a href='%html($url)'>%html($ci_id)</a></td><td>%html($refname)</td><td>%html($timestamp)</td><td>%html($status)</td></tr>\n}
-            }
-        }
-        wapp-subst {</table>\n}
-
         main-footer
         return
     }

@@ -446,12 +446,12 @@ proc cilisten {} {
     putscli "Starting CI GitHub webhook listener on port $port..."
 
     # Accept new connections
-    proc handle_connection {sock addr port} {
-        global cidict
-        puts "$sock $addr $port"
-        fconfigure $sock -translation crlf -buffering line -blocking 1
-        fileevent $sock readable [list read_request $sock $cidict]
-    }
+proc handle_connection {sock addr port} {
+    global cidict
+    # putscli "Webhook connection from $addr:$port ($sock)"   ;# uncomment for debug
+    fconfigure $sock -translation crlf -buffering line -blocking 1
+    fileevent $sock readable [list read_request $sock $cidict]
+}
 
     # Read HTTP request (headers + body)
     proc read_request {sock cidict} {
@@ -495,10 +495,18 @@ proc cilisten {} {
 # Process webhook payload and enqueue job
 proc process_request {sock headers body cidict} {
     global rdbms
+
     set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
     set overwrite  [dict get $cidict $rdbms build overwrite]
     set json_data  [json::json2dict $body]
     set inserted   0
+
+    # Default pipeline keeps existing behaviour
+    set pipeline "BUILD"
+    if {[dict exists $json_data hammerdb pipeline]} {
+        set pipeline [string toupper [string trim [dict get $json_data hammerdb pipeline]]]
+        if {$pipeline eq ""} { set pipeline "BUILD" }
+    }
 
     if {[dict exists $json_data ref]} {
         set ref [dict get $json_data ref]
@@ -515,28 +523,28 @@ proc process_request {sock headers body cidict} {
             }
 
             if {[catch {
-                hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($name,$cidict)}
+                hdbjobs eval {INSERT INTO JOBCI (refname,pipeline,cidict) VALUES ($name,$pipeline,$cidict)}
             } err]} {
                 putscli "Error inserting into JOBCI: $err"
             } else {
                 set inserted 1
-                putscli "Recorded: $name ($type)\r"
+                putscli "Recorded: $name ($type) pipeline=$pipeline\r"
             }
         }
     }
 
- # HTTP 200 response 
-        if {[lsearch -exact [chan names] $sock] != -1} {
-            puts $sock "HTTP/1.1 200 OK"
-            puts $sock "Content-Type: text/plain"
-            puts $sock "Content-Length: 2"
-            puts $sock "Connection: close"
-            puts $sock ""
-            puts $sock "OK"
-            flush $sock
-            close $sock
-        }
+    # HTTP 200 response
+    if {[lsearch -exact [chan names] $sock] != -1} {
+        puts $sock "HTTP/1.1 200 OK"
+        puts $sock "Content-Type: text/plain"
+        puts $sock "Content-Length: 2"
+        puts $sock "Connection: close"
+        puts $sock ""
+        puts $sock "OK"
+        flush $sock
+        close $sock
     }
+}
 
     set listen_socket [socket -server handle_connection $port]
     putscli "CI webhook listening on port $port"
@@ -2014,103 +2022,177 @@ proc job_watcher {} {
         set ::watcher_running 0
     }
 }
-proc stopwatcher {} { putscli "Job watcher stop.";  set ::watcher_running 0 }
-proc startwatcher {} { putscli "Job watcher start."; set ::watcher_running 1; job_watcher }
-proc initwatcher {listen_socket} { set ::listen_socket $listen_socket; startwatcher }
+
+proc stopwatcher {} {
+    putscli "Job watcher stop."
+    set ::watcher_running 0
+    return
+}
+
+proc startwatcher {} {
+    putscli "Job watcher start."
+    set ::watcher_running 1
+    job_watcher
+    return
+}
+
+proc initwatcher {listen_socket} {
+    set ::listen_socket $listen_socket
+    startwatcher
+    return
+}
 
 # Execute next pending job
-    proc run_next_pending_job {} {
-        global rdbms cidict
-        set refname ""
-    
-        if {[catch { 
-            set ci_id [hdbjobs eval { SELECT ci_id FROM JOBCI WHERE status = 'PENDING' ORDER BY timestamp ASC LIMIT 1; }]
-            if {$ci_id ne ""} { set refname [hdbjobs eval { SELECT refname FROM JOBCI WHERE ci_id = $ci_id }] }
-        } err]} {
-            putscli "Error querying JOBCI: $err"
-            return
-        }
-    if {$refname eq ""} { return }
+# Execute next pending job
+proc run_next_pending_job {} {
+    global rdbms cidict
 
-    putscli "Found pending job: $refname"
-    putscli "Pausing watcher for build"
-    stopwatcher
+    set ci_id   ""
+    set refname ""
+    set pipeline "BUILD"
 
+    # --------------------------------------------------
+    # Find oldest PENDING job
+    # --------------------------------------------------
     if {[catch {
+        set ci_id [hdbjobs eval {
+            SELECT ci_id
+            FROM JOBCI
+            WHERE status = 'PENDING'
+            ORDER BY timestamp ASC
+            LIMIT 1
+        }]
+
         if {$ci_id ne ""} {
-            hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id }
-        } else {
-            putscli "Error updating status to 'BUILDING': no JOBCI row found for refname $refname"
+            set refname  [hdbjobs eval { SELECT refname  FROM JOBCI WHERE ci_id = $ci_id }]
+            set pipeline [hdbjobs eval { SELECT pipeline FROM JOBCI WHERE ci_id = $ci_id }]
         }
     } err]} {
-        putscli "Error updating status to 'BUILDING': $err"
+        putscli "Error querying JOBCI: $err"
         return
     }
-    # clone
-    set clone_cmd "[string tolower $rdbms]_clone"
-    set clone_status [$clone_cmd $cidict $refname]
-    putscli $clone_status
-    if {$clone_status eq "CLONE FAILED"} { startwatcher; return }
 
-    # build
-    set build_cmd "[string tolower $rdbms]_build"
-    set build_status [$build_cmd $cidict $refname]
-    putscli $build_status
-    if {$build_status eq "BUILD FAILED"} { startwatcher; return }
+    if {$ci_id eq "" || $refname eq ""} {
+        return
+    }
 
-    # package
-    set package_cmd "[string tolower $rdbms]_package"
-    set package_status [$package_cmd $cidict $refname]
-    putscli $package_status
-    if {$package_status eq "PACKAGE FAILED"} { startwatcher; return }
+    # Normalize pipeline
+    set pipeline [string toupper [string trim $pipeline]]
+    if {$pipeline eq ""} { set pipeline "BUILD" }
 
-    # commit message
-    set commit_cmd "[string tolower $rdbms]_commit_msg"
-    set commit_message [$commit_cmd $cidict $refname]
-    putscli $commit_message
+    putscli "Found pending job: $refname"
+    putscli "Pausing watcher for run"
+    stopwatcher
 
-    # install
-    set install_cmd "[string tolower $rdbms]_install"
-    set install_status [$install_cmd $cidict $refname]
-    putscli $install_status
-    if {$install_status eq "INSTALL FAILED"} { startwatcher; return }
+    # --------------------------------------------------
+    # Mark as BUILDING immediately (UI feedback)
+    # --------------------------------------------------
+    if {[catch {
+        hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id }
+    } err]} {
+        putscli "Error updating status to BUILDING: $err"
+        startwatcher
+        return
+    }
 
-    # init
-    set init_cmd "[string tolower $rdbms]_init"
-    set init_status [$init_cmd $cidict $refname]
-    putscli $init_status
-    if {$init_status eq "INIT FAILED"} { startwatcher; return }
+    # --------------------------------------------------
+    # PIPELINE DISPATCH
+    # --------------------------------------------------
+    switch -exact -- $pipeline {
 
-    # start
-    set start_cmd "[string tolower $rdbms]_start"
-    set start_status [$start_cmd $cidict $refname]
-    putscli $start_status
-    if {$start_status eq "START FAILED"} { startwatcher; return }
+        PROFILE {
+            putscli "Dispatching pipeline='profile' for $refname"
+            if {[catch {
+                cisteps $cidict $refname profile
+            } err]} {
+                putscli "CI PROFILE pipeline failed: $err"
+            }
+            startwatcher
+            return
+        }
 
-    # change password
-    set run_cmd "[string tolower $rdbms]_run_sql"
-    set run_status [$run_cmd $cidict $refname change_password]
-    putscli $run_status
-    if {$run_status eq "CHANGE_PASSWORD FAILED"} { startwatcher; return }
+        COMPARE {
+            putscli "Dispatching pipeline='compare' for $refname"
+            if {[catch {
+                cisteps $cidict $refname compare
+            } err]} {
+                putscli "CI COMPARE pipeline failed: $err"
+            }
+            startwatcher
+            return
+        }
 
-    # shutdown
-    set run_cmd "[string tolower $rdbms]_run_sql"
-    set run_status [$run_cmd $cidict $refname shutdown]
-    putscli $run_status
-    if {$run_status eq "SHUTDOWN FAILED"} { startwatcher; return }
+        default {
+            # --------------------------------------------------
+            # EXISTING BUILD PATH (UNTOUCHED)
+            # --------------------------------------------------
 
-    # restart
-    set restart_status [$start_cmd $cidict $refname]
-    putscli $restart_status
-    if {$restart_status eq "START FAILED"} { startwatcher; return }
+            # clone
+            set clone_cmd "[string tolower $rdbms]_clone"
+            set clone_status [$clone_cmd $cidict $refname]
+            putscli $clone_status
+            if {$clone_status eq "CLONE FAILED"} { startwatcher; return }
 
-    # tests
-    set test_cmd "[string tolower $rdbms]_start_tests"
-    set test_status [$test_cmd $cidict $refname oltp]
-    putscli $test_status
-    if {$test_status eq "TEST FAILED"} { startwatcher; return }
+            # build
+            set build_cmd "[string tolower $rdbms]_build"
+            set build_status [$build_cmd $cidict $refname]
+            putscli $build_status
+            if {$build_status eq "BUILD FAILED"} { startwatcher; return }
 
-    startwatcher
+            # package
+            set package_cmd "[string tolower $rdbms]_package"
+            set package_status [$package_cmd $cidict $refname]
+            putscli $package_status
+            if {$package_status eq "PACKAGE FAILED"} { startwatcher; return }
+
+            # commit message
+            set commit_cmd "[string tolower $rdbms]_commit_msg"
+            putscli [$commit_cmd $cidict $refname]
+
+            # install
+            set install_cmd "[string tolower $rdbms]_install"
+            set install_status [$install_cmd $cidict $refname]
+            putscli $install_status
+            if {$install_status eq "INSTALL FAILED"} { startwatcher; return }
+
+            # init
+            set init_cmd "[string tolower $rdbms]_init"
+            set init_status [$init_cmd $cidict $refname]
+            putscli $init_status
+            if {$init_status eq "INIT FAILED"} { startwatcher; return }
+
+            # start
+            set start_cmd "[string tolower $rdbms]_start"
+            set start_status [$start_cmd $cidict $refname]
+            putscli $start_status
+            if {$start_status eq "START FAILED"} { startwatcher; return }
+
+            # change password
+            set run_cmd "[string tolower $rdbms]_run_sql"
+            set run_status [$run_cmd $cidict $refname change_password]
+            putscli $run_status
+            if {$run_status eq "CHANGE_PASSWORD FAILED"} { startwatcher; return }
+
+            # shutdown
+            set run_status [$run_cmd $cidict $refname shutdown]
+            putscli $run_status
+            if {$run_status eq "SHUTDOWN FAILED"} { startwatcher; return }
+
+            # restart
+            set restart_status [$start_cmd $cidict $refname]
+            putscli $restart_status
+            if {$restart_status eq "START FAILED"} { startwatcher; return }
+
+            # tests
+            set test_cmd "[string tolower $rdbms]_start_tests"
+            set test_status [$test_cmd $cidict $refname oltp]
+            putscli $test_status
+            if {$test_status eq "TEST FAILED"} { startwatcher; return }
+
+            startwatcher
+            return
+        }
+    }
 }
 
 # cistep <refname> <pipeline>
