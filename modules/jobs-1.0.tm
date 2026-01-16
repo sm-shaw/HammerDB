@@ -391,18 +391,28 @@ proc jobs {args} {
     # jobs <jobid> <cmd> [arg]
     set cmd [lindex $tokens 1]
 
-    # jobs <jobid> timing <vuid|vu=n>
-    if {[string equal -nocase $cmd "timing"]} {
-        if {$nt != 3} {
-            ::_jobs_usage_error "Error: Usage: jobs jobid timing vuid | jobs jobid timing vu=n"
-            return
-        }
+# jobs <jobid> timing [<vuid|vu=n>]
+if {[string equal -nocase $cmd "timing"]} {
+
+    # 2 tokens: jobs <jobid> timing
+    if {$nt == 2} {
+        set res [getjob "jobid=$jobid&timing"]
+        puts $res
+        return
+    }
+
+    # 3 tokens: jobs <jobid> timing <vuid|vu=n>
+    if {$nt == 3} {
         set vusel [lindex $tokens 2]
         if {[string is integer -strict $vusel]} { set vusel "vu=$vusel" }
         set res [getjob "jobid=$jobid&timing&$vusel"]
         puts $res
         return
     }
+
+    ::_jobs_usage_error "Error: Usage: jobs jobid timing | jobs jobid timing vuid | jobs jobid timing vu=n"
+    return
+}
 
     # jobs <jobid> getchart <type>
     if {[string equal -nocase $cmd "getchart"]} {
@@ -673,7 +683,7 @@ proc home-common-header {} {
               border-radius:4px;
               text-decoration:none;
               font-weight:500;">
-      Run Automation
+     AUTOMATION 
     </a>
   </div>
 </div>
@@ -2916,323 +2926,409 @@ if {$rawmode} {
     }
   }
 
-  proc getjob { query } {
+proc getjob { query } {
     global bm
     upvar #0 genericdict genericdict
+
+    # Output format (HammerDB uses "JSON" in places, keep both cases tolerant)
     if {[dict exists $genericdict commandline jobsoutput]} {
-      set outputformat [ dict get $genericdict commandline jobsoutput ]
+        set outputformat [dict get $genericdict commandline jobsoutput]
     } else {
-      set outputformat "text"
+        set outputformat "text"
     }
 
-    set params [ split $query & ]
-    set paramlen [ llength $params ]
-    if { $paramlen eq 0 } {
-      set joboutput [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-      set huddleobj [ huddle compile {list} $joboutput ]
-      if { $outputformat eq "JSON" } {
-        puts [ huddle jsondump $huddleobj ]
-      } else {
-        puts [ join $joboutput "\n" ]
-      }
-      return
-    } else {
-      if { $paramlen >= 1 && $paramlen <= 3 } {
-        foreach a $params {
-          lassign [split $a =] key value
-          dict append paramdict $key $value
+    # --- Parse query string into paramdict ---
+    set params   [split $query &]
+    set paramlen [llength $params]
+
+    # 0 params: list jobids
+    if {$paramlen == 0} {
+        set joboutput [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+        set huddleobj [huddle compile {list} $joboutput]
+        if {[string equal -nocase $outputformat "JSON"]} {
+            puts [huddle jsondump $huddleobj]
+        } else {
+            puts [join $joboutput "\n"]
         }
-      } else {
+        return
+    }
+
+    if {$paramlen < 1 || $paramlen > 3} {
         puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id\] - type \"help jobs\""
         return
-      }
-      if { $paramlen eq 3 } {
-        if { [ dict keys $paramdict ] != "jobid timing vu" && [ dict keys $paramdict ] != "jobid getchart chart" } {
-          puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid getchart chart \]"
-          return
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid timing vu" } {
-            set jobid [ dict get $paramdict jobid ]
-            set vuid [ dict get $paramdict vu ]
-            if [ string is entier $vuid ] {
-              unset -nocomplain jobtiming
-              set jobtiming [ dict create ]
-              hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and VU=$vuid and SUMMARY=0 ORDER BY RATIO_PCT DESC}  {
+    }
+
+    # IMPORTANT: reset paramdict every call (avoids cross-call bleed)
+    set paramdict [dict create]
+    foreach a $params {
+        if {$a eq ""} continue
+        # Support bare tokens like "timing" (no '=') AND key=value pairs
+        set parts [split $a =]
+        set key   [lindex $parts 0]
+        set value ""
+        if {[llength $parts] > 1} {
+            set value [join [lrange $parts 1 end] "="]
+        }
+        dict set paramdict $key $value
+    }
+
+    # ------------------------------------------------------------
+    # 3-parameter forms:
+    #   jobid=JOBID&timing&vu=VUID
+    #   jobid=JOBID&timing&VUID            (old CLI paths)
+    #   jobid=JOBID&getchart&chart=NAME
+    # ------------------------------------------------------------
+    if {$paramlen == 3} {
+
+        # ---- timing per VU ----
+        if {[dict exists $paramdict jobid] && [dict exists $paramdict timing]} {
+
+            set jobid [dict get $paramdict jobid]
+
+            # Accept:
+            #   vu=2         (normal)
+            #   VUID as bare token (key "2" with empty value)
+            set vuid ""
+
+            if {[dict exists $paramdict vu]} {
+                set vuid [dict get $paramdict vu]
+            } else {
+                # Look for any integer key in the dict (bare vuid token)
+                foreach k [dict keys $paramdict] {
+                    if {[string is integer -strict $k]} {
+                        set vuid $k
+                        break
+                    }
+                }
+            }
+
+            # Also tolerate vu value like "vu=2"
+            if {$vuid ne "" && [regexp -nocase {^vu=(\d+)$} $vuid -> vv]} {
+                set vuid $vv
+            }
+
+            if {$vuid eq "" || ![string is integer -strict $vuid]} {
+                puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid timing vu=n \]"
+                return
+            }
+
+            unset -nocomplain jobtiming
+            set jobtiming [dict create]
+
+            # Query JOBTIMING for specific VU (no SUMMARY rows)
+            hdbjobs eval {
+                SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct
+                FROM JOBTIMING
+                WHERE JOBID=$jobid AND VU=$vuid AND SUMMARY=0
+                ORDER BY RATIO_PCT DESC
+            } {
                 set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p50_ms $p50_ms sd $sd ratio_pct $ratio_pct"
                 dict append jobtiming $procname $timing
-              }
-              if { ![ dict size $jobtiming ] eq 0 } {
-                set huddleobj [ huddle compile {dict * dict} $jobtiming ]
-                if { $outputformat eq "JSON" } {
-                  return [ huddle jsondump $huddleobj ]
+            }
+
+            if {[dict size $jobtiming] != 0} {
+                set huddleobj [huddle compile {dict * dict} $jobtiming]
+                if {[string equal -nocase $outputformat "JSON"]} {
+                    return [huddle jsondump $huddleobj]
                 } else {
-                  return $jobtiming
+                    return $jobtiming
                 }
-              } else {
+            } else {
                 puts "No Timing Data for VU $vuid for JOB $jobid: jobs jobid timing vuid"
                 return
-              }
-            } else {
-              puts "Jobs Three Parameter Usage: jobs jobid timing vuid"
-              return
             }
-          } else {
-            if { [ dict keys $paramdict ] eq "jobid getchart chart" } {
-              set html [ getchart [ dict get $paramdict jobid ] 1 [ dict get $paramdict chart ] ]
-              return $html
-            } else {
-              puts "Jobs Three Parameter Usage: jobs jobid getchart chart"
-              return
-            }
-          }
         }
-      }
-    }
-    if { $paramlen eq 1 } {
-      if { [ dict keys $paramdict ] eq "joblist" } {
-        return [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-      } elseif { [ dict keys $paramdict ] eq "allresults" } {
-        set alljobs [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-	  set huddleobj [ huddle create ]
-        foreach jobres $alljobs {	
-    	hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jobres} {
-	set jobresult [ getjobresult $jobres 1 ]
-    if { [ lindex $jobresult 1 ] eq "Jobid has no test result" } {
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict} $jobresult ]]
-        continue
-      } elseif { [ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
-#TPROC-H RESULT only report first result for first VU
-        set ctind 0
-        foreach ct {jobid tstamp geomean queryset} {
-          set $ct [ lindex $jobresult $ctind ]
-          incr ctind
+
+        # ---- getchart ----
+        if {[dict exists $paramdict jobid] && [dict exists $paramdict getchart] && [dict exists $paramdict chart]} {
+            set html [getchart [dict get $paramdict jobid] 1 [dict get $paramdict chart]]
+            return $html
         }
-        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
-        set geo [ lindex $numbers 1]
-        set queries [ lindex $numbers 0]
-        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $queryset]
-	set querysets [ lindex $numbers 0]
-	set querytime [ lindex $numbers 1]
-	set tprochresult [list $jobres [ subst {db $db bm $bm tstamp {$timestamp} queries $queries querysets $querysets geomean $geo querytime $querytime} ]]
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict * dict} $tprochresult ]]
-        continue
-      } elseif { [ string match "TEST RESULT*" [ lindex $jobresult 3 ] ] } {
-#TPROC-C RESULT 
-        lassign [ getnopmtpm $jobresult ] jobid tstamp activevu nopm tpm dbdescription
-        set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
-	set tproccresult [list $jobres [ subst {db $db bm $bm tstamp {$timestamp} activevu $avu nopm $nopm tpm $tpm} ]]
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict * dict} $tproccresult ]]
-        continue
-}}}
-                  if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts [ huddle get_stripped $huddleobj ]
-                  }
-      } elseif { [ dict keys $paramdict ] eq "alltimestamps" } {
-        set alljobs [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-	  set huddleobj [ huddle create ]
-          foreach jobres $alljobs {
- 		set joboutput [ hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobres} ]
-		set huddleobj [ huddle combine $huddleobj [ huddle compile {dict} $joboutput ]]
-		}
-                  if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts [ huddle get_stripped $huddleobj ]
-                  }
-      } elseif { [ dict keys $paramdict ] eq "jobid" } {
-        set jobid [ dict get $paramdict jobid ]
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-        if { $query eq 0 } {
-          puts "Jobid $jobid does not exist"
-          return
-        } else {
-          set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-          set huddleobj [ huddle compile {list} $joboutput ]
-          if { $outputformat eq "JSON" } {
-            puts [ huddle jsondump $huddleobj ]
-          } else {
-            set res ""
-            set num 0
-            foreach row $joboutput {
-              if { $num == 0 } {
-                set res "Virtual User $row:"
-                incr num
-              } else {
-                set res "$res $row"
-                puts $res
-                set num 0
-              }
-            }
-          }
-        }
-      } else {
-        puts "Jobs One Parameter Usage: jobs jobid=TEXT"
+
+        puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid timing vu=n | jobs jobid getchart chart \]"
         return
-      }
-    } else {
-      if { [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" || [ dict keys $paramdict ] eq "jobid result" || [ dict keys $paramdict ] eq "jobid delete" || [ dict keys $paramdict ] eq "jobid timestamp" || [ dict keys $paramdict ] eq "jobid dict" || [ dict keys $paramdict ] eq "jobid timing" || [ dict keys $paramdict ] eq "jobid db" ||  [ dict keys $paramdict ] eq "jobid bm" || [ dict keys $paramdict ] eq "jobid tcount"  || [ dict keys $paramdict ] eq "jobid metrics"  ||  [ dict keys $paramdict ] eq "jobid system" } {
-        set jobid [ dict get $paramdict jobid ]
-        if { [ dict keys $paramdict ] eq "jobid vu" } {
-          set vuid [ dict get $paramdict vu ]
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid result" } {
-            set vuid 1
-          } else {
-            set vuid 0
-          }
-        }
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-        if { $query eq 0 } {
-          puts "Jobid $jobid for virtual user $vuid does not exist"
-          return
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" } {
-            set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-            set huddleobj [ huddle compile {list} $joboutput ]
-            if { $outputformat eq "JSON" } {
-              puts [ huddle jsondump $huddleobj ]
-            } else {
-              set res ""
-              set num 0
-              foreach row $joboutput {
-                if { $num == 0 } {
-                  set res "Virtual User $row:"
-                  incr num
-                } else {
-                  set res "$res $row"
-                  puts $res
-                  set num 0
+    }
+
+    # ------------------------------------------------------------
+    # 1-parameter forms
+    # ------------------------------------------------------------
+    if {$paramlen == 1} {
+        if {[dict exists $paramdict joblist]} {
+            return [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+        } elseif {[dict exists $paramdict allresults]} {
+            set alljobs [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+            set huddleobj [huddle create]
+            foreach jobres $alljobs {
+                hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jobres} {
+                    set jobresult [getjobresult $jobres 1]
+                    if {[lindex $jobresult 1] eq "Jobid has no test result"} {
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict} $jobresult]]
+                        continue
+                    } elseif {[string match "Geometric*" [lindex $jobresult 2]]} {
+                        # TPROC-H RESULT only report first result for first VU
+                        set ctind 0
+                        foreach ct {jobid tstamp geomean queryset} {
+                            set $ct [lindex $jobresult $ctind]
+                            incr ctind
+                        }
+                        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
+                        set geo     [lindex $numbers 1]
+                        set queries  [lindex $numbers 0]
+                        set numbers  [regexp -all -inline -- {[0-9]*\.?[0-9]+} $queryset]
+                        set querysets [lindex $numbers 0]
+                        set querytime [lindex $numbers 1]
+                        set tprochresult [list $jobres [subst {db $db bm $bm tstamp {$timestamp} queries $queries querysets $querysets geomean $geo querytime $querytime}]]
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict * dict} $tprochresult]]
+                        continue
+                    } elseif {[string match "TEST RESULT*" [lindex $jobresult 3]]} {
+                        # TPROC-C RESULT
+                        lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
+                        set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
+                        set tproccresult [list $jobres [subst {db $db bm $bm tstamp {$timestamp} activevu $avu nopm $nopm tpm $tpm}]]
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict * dict} $tproccresult]]
+                        continue
+                    }
                 }
-              }
+            }
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [huddle get_stripped $huddleobj]
             }
             return
-          }
-          if { [ dict keys $paramdict ] eq "jobid delete" } {
-            set joboutput [ hdbjobs eval {DELETE FROM JOBMAIN WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBCHART WHERE JOBID=$jobid} ]
-            puts "Deleted Jobid $jobid"
-          } else {
-            if { [ dict keys $paramdict ] eq "jobid result" } {
-              set joboutput [ getjobresult $jobid $vuid ]
-              #huddle JSON is list return at end
+        } elseif {[dict exists $paramdict alltimestamps]} {
+            set alljobs [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+            set huddleobj [huddle create]
+            foreach jobres $alljobs {
+                set joboutput [hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobres}]
+                set huddleobj [huddle combine $huddleobj [huddle compile {dict} $joboutput]]
+            }
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
             } else {
-              if { [ dict keys $paramdict ] eq "jobid timing" } {
-                set jobtiming [ getjobtiming $jobid ]
-                set huddleobj [ huddle compile {dict * dict} $jobtiming ]
-                if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                } else {
-                  puts $jobtiming
-                }
+                puts [huddle get_stripped $huddleobj]
+            }
+            return
+        } elseif {[dict exists $paramdict jobid]} {
+            set jobid [dict get $paramdict jobid]
+            set q [hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid}]
+            if {$q == 0} {
+                puts "Jobid $jobid does not exist"
                 return
-              } else {
-                if { [ dict keys $paramdict ] eq "jobid timestamp" } {
-                  set joboutput [ hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobid} ]
-                  #huddle JSON is dict return here
-                  set huddleobj [ huddle compile {dict} $joboutput ]
-                  if { $outputformat eq "JSON" } {
-                    puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts $joboutput
-                  }
-                  return
-                } else {
-                  if { [ dict keys $paramdict ] eq "jobid dict" } {
-                    set joboutput [ join [ hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                    #huddle JSON is dict*dict return here
-                    set huddleobj [ huddle compile {dict * dict} $joboutput ]
-                    if { $outputformat eq "JSON" } {
-                      puts [ huddle jsondump $huddleobj ]
-                    } else {
-                      puts $joboutput
-                    }
-                    return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid tcount" } {
-                      set jsondict [ getjobtcount $jobid ]
-                      #huddle JSON is dict*dict return here
-                      set huddleobj [ huddle compile {dict * dict} $jsondict ]
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid metrics" } {
-                      set jsondict [ getjobmetrics $jobid ]
-                      #huddle JSON is dict*dict return here
-                      set huddleobj [ huddle compile {dict * dict} $jsondict ]
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid system" } {
-                      set jsondict [ getjobsystem $jobid ]
-                      #huddle JSON is dict*dict return here
-                      set huddleobj [ huddle compile {list} $jsondict ]
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                    } else {
-                      if { [ dict keys $paramdict ] eq "jobid db" } {
-                      #A Timed run will include a query for a version string, add the version if we find it
-		      set temp_output [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]]
-		      if { [ string match "*DBVersion*" $temp_output ] } {
-        		set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version ]
-			if { $matcheddbversion } {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]] $version"
-			} else {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-			}
-			} else {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-			}
-                        #huddle JSON is list return at end
-                      } else {
-                        if { [ dict keys $paramdict ] eq "jobid bm" } {
-                          set joboutput [ join [ hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                          #huddle JSON is list return at end
-                        } else {
-                          set joboutput [ list $jobid "Cannot find Jobid output" ]
-                          #huddle JSON is list return at end
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
             }
-            #huddle list
-            set huddleobj [ huddle compile {list} $joboutput ]
-            if { $outputformat eq "JSON" } {
-              puts [ huddle jsondump $huddleobj ]
+            set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
             } else {
-              puts [ join $joboutput "\n" ]
+                set res ""
+                set num 0
+                foreach row $joboutput {
+                    if {$num == 0} {
+                        set res "Virtual User $row:"
+                        incr num
+                    } else {
+                        set res "$res $row"
+                        puts $res
+                        set num 0
+                    }
+                }
             }
-          }
+            return
+        } else {
+            puts "Jobs One Parameter Usage: jobs jobid=TEXT"
+            return
         }
-      } else {
+    }
+
+    # ------------------------------------------------------------
+    # 2-parameter forms
+    # ------------------------------------------------------------
+    # Allow order-independent handling, but keep original behaviour.
+    if {$paramlen == 2} {
+
+        # Must have jobid
+        if {![dict exists $paramdict jobid]} {
+            puts "Jobs Two Parameter Usage: jobs jobid status or jobs jobid db or jobs jobid bm or jobid system or jobs jobid timestamp or jobs jobid dict or jobs jobid vuid or jobs jobid result or jobs jobid timing or jobs jobid delete or jobs jobid metrics or jobs jobid system"
+            return
+        }
+
+        set jobid [dict get $paramdict jobid]
+
+        # vuid selection for output rows
+        if {[dict exists $paramdict vu]} {
+            set vuid [dict get $paramdict vu]
+        } elseif {[dict exists $paramdict result]} {
+            set vuid 1
+        } else {
+            set vuid 0
+        }
+
+        set q [hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]
+        if {$q == 0} {
+            puts "Jobid $jobid for virtual user $vuid does not exist"
+            return
+        }
+
+        # jobid + (vu|status): raw JOBOUTPUT for that VU
+        if {[dict exists $paramdict vu] || [dict exists $paramdict status]} {
+            set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                set res ""
+                set num 0
+                foreach row $joboutput {
+                    if {$num == 0} {
+                        set res "Virtual User $row:"
+                        incr num
+                    } else {
+                        set res "$res $row"
+                        puts $res
+                        set num 0
+                    }
+                }
+            }
+            return
+        }
+
+        # jobid + delete
+        if {[dict exists $paramdict delete]} {
+            hdbjobs eval {DELETE FROM JOBMAIN   WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBCHART  WHERE JOBID=$jobid}
+            puts "Deleted Jobid $jobid"
+            return
+        }
+
+        # jobid + result
+        if {[dict exists $paramdict result]} {
+            set joboutput [getjobresult $jobid $vuid]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
+        # jobid + timing  (SUMMARY across VUs)
+        if {[dict exists $paramdict timing]} {
+            set jobtiming [getjobtiming $jobid]
+            set huddleobj [huddle compile {dict * dict} $jobtiming]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jobtiming
+            }
+            return
+        }
+
+        # jobid + timestamp
+        if {[dict exists $paramdict timestamp]} {
+            set joboutput [hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobid}]
+            set huddleobj [huddle compile {dict} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $joboutput
+            }
+            return
+        }
+
+        # jobid + dict
+        if {[dict exists $paramdict dict]} {
+            set joboutput [join [hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid}]]
+            set huddleobj [huddle compile {dict * dict} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $joboutput
+            }
+            return
+        }
+
+        # jobid + tcount
+        if {[dict exists $paramdict tcount]} {
+            set jsondict [getjobtcount $jobid]
+            set huddleobj [huddle compile {dict * dict} $jsondict]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jsondict
+            }
+            return
+        }
+
+        # jobid + metrics
+        if {[dict exists $paramdict metrics]} {
+            set jsondict [getjobmetrics $jobid]
+            set huddleobj [huddle compile {dict * dict} $jsondict]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jsondict
+            }
+            return
+        }
+
+        # jobid + system
+        if {[dict exists $paramdict system]} {
+            set jsondict [getjobsystem $jobid]
+            set huddleobj [huddle compile {list} $jsondict]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jsondict
+            }
+            return
+        }
+
+        # jobid + db
+        if {[dict exists $paramdict db]} {
+            # A Timed run will include a query for a version string, add the version if we find it
+            set temp_output [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1}]]
+            if {[string match "*DBVersion*" $temp_output]} {
+                set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version]
+                if {$matcheddbversion} {
+                    set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]] $version"
+                } else {
+                    set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]"
+                }
+            } else {
+                set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]"
+            }
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
+        # jobid + bm
+        if {[dict exists $paramdict bm]} {
+            set joboutput [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid}]]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
         puts "Jobs Two Parameter Usage: jobs jobid status or jobs jobid db or jobs jobid bm or jobid system or jobs jobid timestamp or jobs jobid dict or jobs jobid vuid or jobs jobid result or jobs jobid timing or jobs jobid delete or jobs jobid metrics or jobs jobid system"
         return
-      }
     }
-  }
+}
 
 proc job_get_ppid {} {
         global jobs_profile_id
