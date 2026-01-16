@@ -957,18 +957,78 @@ proc mariadb_commit_msg {cidict refname} {
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
     set local_dir      "$local_dir_root/[string map {/ _} $refname]"
 
+    # Prepare commit message command
     set raw_commit_cmd [dict get $cidict common commit_msg_cmd]
-    set commit_cmd "cd \"$local_dir\" && $raw_commit_cmd"
+    set shell_cmd      "cd \"$local_dir\" && $raw_commit_cmd 2>&1"
 
-    if {[catch { set commit_msg [exec bash -c "$commit_cmd"] } err]} {
-        set comm_msg "Could not fetch commit message: $err"
-    } else {
-        set commit_msg [string trim $commit_msg]
-        set comm_msg "Commit message: $commit_msg"
+    # Persist command (best-effort; ignore if column not present)
+    catch {
         set ci_id [ci_latest_id $refname]
-        if {$ci_id ne ""} { hdbjobs eval { UPDATE JOBCI SET commit_msg = $commit_msg WHERE ci_id = $ci_id } }
+        if {$ci_id ne ""} {
+            # If you don't have commit_msg_cmd column, this will just be caught.
+            hdbjobs eval { UPDATE JOBCI SET commit_msg_cmd = $shell_cmd WHERE ci_id = $ci_id }
+        } else {
+            putscli "Error saving commit_msg_cmd: no JOBCI row found for refname $refname"
+        }
     }
-    return $comm_msg
+
+    putscli "Fetching commit message..."
+    putscli $shell_cmd
+
+    set safe_cmd [string map {\" \\\"} $shell_cmd]
+
+    set pipe_output ""
+    set commit_msg ""
+    set status "COMMIT_MSG SUCCEEDED"
+
+    if {[catch {
+        set pipe [open "|bash -c \"$safe_cmd\"" "r"]
+        fconfigure $pipe -blocking 1 -buffering line
+        while {[gets $pipe line] >= 0} {
+            append pipe_output "$line\n"
+            # Don't spam putscli with multi-line bodies unless you want it:
+            putscli $line
+        }
+        if {[catch {close $pipe} close_err]} {
+            append pipe_output "Commit msg command exited with error: $close_err\n"
+            set status "COMMIT_MSG FAILED"
+        }
+    } commit_err]} {
+        append pipe_output "Failed to start commit msg command: $commit_err\n"
+        set status "COMMIT_MSG FAILED"
+    }
+
+    # If succeeded, the output is the commit message (possibly multi-line)
+    if {$status eq "COMMIT_MSG SUCCEEDED"} {
+        set commit_msg [string trim $pipe_output]
+        if {$commit_msg eq ""} {
+            # Treat empty as failure because it's what you're seeing
+            set status "COMMIT_MSG FAILED"
+        }
+    }
+
+    # Persist results
+    if {$status eq "COMMIT_MSG FAILED"} {
+        putscli "Commit message fetch failed."
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                # If commit_msg_output doesn't exist, this will be caught and ignored.
+                hdbjobs eval { UPDATE JOBCI SET status = 'COMMIT_MSG FAILED', commit_msg_output = $pipe_output WHERE ci_id = $ci_id }
+            }
+        }
+        return "Could not fetch commit message: [string trim $pipe_output]"
+    } else {
+        putscli "Commit message fetched."
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval { UPDATE JOBCI SET commit_msg = $commit_msg WHERE ci_id = $ci_id }
+                catch { hdbjobs eval { UPDATE JOBCI SET commit_msg_output = $pipe_output WHERE ci_id = $ci_id } }
+            }
+        }
+        return "Commit message: $commit_msg"
+    }
 }
 
 proc mariadb_install {cidict refname} {
@@ -1530,7 +1590,7 @@ proc mariadb_start_tests {cidict refname workload} {
     set sudo ""
     if {[info exists cidict] && [dict exists $cidict common use_sudo]} {
         if {[string is true [dict get $cidict common use_sudo]]} {
-            set sudo "sudo "
+            set sudo "sudo -n "
         }
     }
     putscli "${sudo}bash -c \"$script_abs\""
@@ -1687,6 +1747,8 @@ proc mariadb_profile {cidict refname} {
     # 1) Run profile on BAD tag (current)
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "PROFILE FAILED" }
+    set cmst [mariadb_commit_msg $cidict $bad_tag]
+    if {$cmst eq "COMMIT_MSG FAILED"} { return "PROFILE FAILED" }
     set bst [mariadb_build $cidict $bad_tag]
     if {$bst eq "BUILD FAILED"}   { return "PROFILE FAILED" }
     set pst [mariadb_package $cidict $bad_tag]
@@ -2133,6 +2195,10 @@ proc run_next_pending_job {} {
             putscli $clone_status
             if {$clone_status eq "CLONE FAILED"} { startwatcher; return }
 
+            # commit message
+            set commit_cmd "[string tolower $rdbms]_commit_msg"
+            putscli [$commit_cmd $cidict $refname]
+
             # build
             set build_cmd "[string tolower $rdbms]_build"
             set build_status [$build_cmd $cidict $refname]
@@ -2144,10 +2210,6 @@ proc run_next_pending_job {} {
             set package_status [$package_cmd $cidict $refname]
             putscli $package_status
             if {$package_status eq "PACKAGE FAILED"} { startwatcher; return }
-
-            # commit message
-            set commit_cmd "[string tolower $rdbms]_commit_msg"
-            putscli [$commit_cmd $cidict $refname]
 
             # install
             set install_cmd "[string tolower $rdbms]_install"
@@ -2161,6 +2223,12 @@ proc run_next_pending_job {} {
             putscli $init_status
             if {$init_status eq "INIT FAILED"} { startwatcher; return }
 
+            # shutdown
+            set run_cmd "[string tolower $rdbms]_run_sql"
+            set run_status [$run_cmd $cidict $refname shutdown]
+            putscli $run_status
+            if {$run_status eq "SHUTDOWN FAILED"} { startwatcher; return }
+
             # start
             set start_cmd "[string tolower $rdbms]_start"
             set start_status [$start_cmd $cidict $refname]
@@ -2172,11 +2240,6 @@ proc run_next_pending_job {} {
             set run_status [$run_cmd $cidict $refname change_password]
             putscli $run_status
             if {$run_status eq "CHANGE_PASSWORD FAILED"} { startwatcher; return }
-
-            # shutdown
-            set run_status [$run_cmd $cidict $refname shutdown]
-            putscli $run_status
-            if {$run_status eq "SHUTDOWN FAILED"} { startwatcher; return }
 
             # restart
             set restart_status [$start_cmd $cidict $refname]

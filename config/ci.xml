@@ -6,7 +6,7 @@
             <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
             <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
             <diff_threshold>0.025</diff_threshold>
-            <use_sudo>true</use_sudo>
+            <use_sudo>false</use_sudo>
     </common>
     <MariaDB>
         <build>
@@ -32,11 +32,10 @@
             <start_cmd>bin/mariadbd</start_cmd>
             <start_args>defaults_file basedir datadir innodb_log_group_home_dir socket port</start_args>
             <socket>/tmp/mariadb.sock</socket>
-            <port>3307</port>
+            <port>3306</port>
             <run_sql_cmd>./bin/mariadb -S {socket} --skip-ssl -vvv -e "{sql}"</run_sql_cmd>
             <change_password>ALTER USER 'root'@'localhost' IDENTIFIED BY 'maria'</change_password>
             <shutdown>shutdown</shutdown>
-            <sudo>true</sudo>
         </install>
         <test>
             <oltp>scripts/tcl/maria/tprocc/maria_tprocc.sh</oltp>
