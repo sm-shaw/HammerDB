@@ -3,6 +3,8 @@
 # - Dropdown tags from GitHub API (cached)
 # - Custom ref supports refs/tags/..., refs/heads/..., and commit SHA
 # - Builds webhook payload and POSTs to cilisten endpoint
+# - PRG (POST/Redirect/GET style) behavior for GET: action=run redirects back to /automate
+# - Shows last run status banner (green/red) near the top (and stores last payload/response in memory)
 # - ASCII only
 
 package provide automate 1.0
@@ -37,7 +39,7 @@ namespace eval automate {
     proc __pre {s} {
         set s [__norm_pre $s]
         set esc [__html_escape $s]
-        wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">}
+        wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere; margin:0;">}
         wapp-unsafe $esc
         wapp-subst {</pre>}
         wapp-subst "\n"
@@ -48,6 +50,27 @@ namespace eval automate {
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
         wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
         wapp-subst "<h3 class='title'>%html($title)</h3>\n"
+
+        # Small, self-contained styles for this page (keeps form consistent)
+        wapp-subst {
+<style>
+.aut-wrap{max-width:980px;}
+.aut-form{max-width:720px;}
+.aut-ctl{width:100%; box-sizing:border-box; min-width:0;}
+.aut-row{margin-top:8px;}
+.aut-actions{margin-top:14px;}
+.aut-btn{padding:6px 14px;}
+.aut-banner{border:1px solid #ddd; padding:10px 12px; border-radius:6px; margin:10px 0 14px 0;}
+.aut-ok{background:#e7f6ea; border-color:#7ac189; color:#155724;}
+.aut-fail{background:#fdeaea; border-color:#e18b8b; color:#721c24;}
+.aut-mini{opacity:0.75; font-size:0.95em;}
+.aut-details{margin-top:8px;}
+.aut-details summary{cursor:pointer; font-weight:600;}
+.aut-kv{margin:0; padding:0;}
+.aut-kv b{display:inline-block; min-width:90px;}
+</style>
+}
+        wapp-subst "\n"
     }
 
     proc __is_sha1 {s} {
@@ -161,10 +184,6 @@ namespace eval automate {
 
     # ----------------------------
     # JSON helpers + payload builder
-    # Payload MUST match:
-    #   {"ref":"refs/tags/mariadb-12.2.1","hammerdb":{"pipeline":"profile"}}
-    # and allow commits:
-    #   {"ref":"144dead...","hammerdb":{"pipeline":"profile"}}
     # ----------------------------
     proc __json_escape {s} {
         set s [__norm_pre $s]
@@ -210,6 +229,97 @@ namespace eval automate {
     }
 
     # ----------------------------
+    # "Flash" last-run store (in-memory)
+    # Keeps refresh safe: after action=run we redirect back to /automate (no action=run)
+    # ----------------------------
+    variable __last_ts 0
+    variable __last_client ""
+    variable __last_ok 0
+    variable __last_http 0
+    variable __last_msg ""
+    variable __last_payload ""
+    variable __last_resp_body ""
+    variable __last_resp_err ""
+
+    proc __client_id {} {
+        # Remote address is usually available; fall back to empty
+        set ra ""
+        if {![catch {set ra [wapp-param REMOTE_ADDR]}]} {
+            return $ra
+        }
+        return ""
+    }
+
+    proc __store_last {ok http msg payload body err} {
+        variable __last_ts
+        variable __last_client
+        variable __last_ok
+        variable __last_http
+        variable __last_msg
+        variable __last_payload
+        variable __last_resp_body
+        variable __last_resp_err
+
+        set __last_ts [clock seconds]
+        set __last_client [__client_id]
+        set __last_ok $ok
+        set __last_http $http
+        set __last_msg $msg
+        set __last_payload $payload
+        set __last_resp_body $body
+        set __last_resp_err $err
+    }
+
+proc __render_last_if_any {} {
+    variable __last_ts
+    variable __last_client
+    variable __last_ok
+    variable __last_http
+    variable __last_msg
+    variable __last_payload
+    variable __last_resp_body
+    variable __last_resp_err
+
+    set now [clock seconds]
+    if {$__last_ts == 0} { return }
+
+    # Only show for same client, and only for 10 minutes
+    if {[__client_id] ne $__last_client} { return }
+    if {($now - $__last_ts) > 600} { return }
+
+    wapp-subst {<a id="runresult"></a>}
+    if {$__last_ok} {
+        wapp-subst {<div class="aut-banner aut-ok">}
+        wapp-subst "<p class='aut-kv'><b>Result:</b> SUCCESS</p>\n"
+    } else {
+        wapp-subst {<div class="aut-banner aut-fail">}
+        wapp-subst "<p class='aut-kv'><b>Result:</b> FAIL</p>\n"
+    }
+
+    if {$__last_http ne "" && $__last_http != 0} {
+        wapp-subst "<p class='aut-kv'><b>HTTP:</b> %html($__last_http)</p>\n"
+    }
+    if {$__last_msg ne ""} {
+        wapp-subst "<p class='aut-kv'><b>Info:</b> %html($__last_msg)</p>\n"
+    }
+
+    wapp-subst {<details class="aut-details">}
+    wapp-subst {<summary>Details</summary>}
+    wapp-subst {<div style="margin-top:8px;">}
+    wapp-subst {<p class="aut-mini"><b>Webhook payload</b></p>}
+    __pre $__last_payload
+
+    wapp-subst {<p class="aut-mini"><b>cilisten response</b></p>}
+    if {$__last_resp_err ne ""} {
+        __pre $__last_resp_err
+    } else {
+        __pre $__last_resp_body
+    }
+    wapp-subst {</div></details>}
+    wapp-subst {</div>}
+    wapp-subst "\n"
+}
+    # ----------------------------
     # Main page
     # ----------------------------
     proc wapp-page-automate {} {
@@ -253,7 +363,52 @@ namespace eval automate {
             set ref $ref_custom
         }
 
+        # ----------------------------------------
+        # If action=run, DO THE WORK then REDIRECT
+        # This avoids refresh resubmitting.
+        # ----------------------------------------
+        if {$action eq "run"} {
+            set ref_trim [string trim $ref]
+            set pl_trim  [string tolower [string trim $pipeline]]
+
+            if {$ref_trim eq ""} {
+                __store_last 0 0 "Ref is required." "" "" "Ref is required."
+                wapp-redirect "$B/automate#runresult"
+                return
+            }
+            if {$pl_trim ni {"profile" "compare"}} {
+                __store_last 0 0 "Pipeline must be profile or compare." "" "" "Bad pipeline."
+                wapp-redirect "$B/automate#runresult"
+                return
+            }
+
+            set payload [__make_payload $ref_trim $pl_trim]
+            set resp [__post_json $cilisten_url $payload]
+            set code [dict get $resp code]
+            set body [dict get $resp body]
+            set err  [dict get $resp err]
+
+            if {$err ne ""} {
+                __store_last 0 0 "POST failed (listener unreachable?)" $payload $body $err
+            } else {
+                # Success if HTTP 2xx
+                set ok 0
+                if {$code >= 200 && $code < 300} { set ok 1 }
+                __store_last $ok $code "Posted to cilisten endpoint" $payload $body ""
+            }
+
+            # Redirect back to clean page (no action=run). Refresh is safe.
+            wapp-redirect "$B/automate#runresult"
+            return
+        }
+
+        # Normal GET render
         __page_head $B "AUTOMATION"
+        wapp-subst {<div class="aut-wrap">}
+        wapp-subst "\n"
+
+        # Show last run banner (if any) near the top
+        __render_last_if_any
 
         # ----------------------------
         # Automation table (JOBCI) at top
@@ -307,14 +462,16 @@ namespace eval automate {
         }
 
         # ----------------------------
-        # Form (submits back to /automate)
+        # Form (submits back to /automate with action=run, then redirects)
         # ----------------------------
+        wapp-subst {<div class="aut-form">}
+        wapp-subst "\n"
         wapp-subst "<form method='GET' action='%html($B)/automate'>\n"
         wapp-subst {<input type='hidden' name='action' value='run'>}
         wapp-subst "\n"
 
         wapp-subst "<p><b>MariaDB ref</b></p>\n"
-        wapp-subst {<select name='tag_sel' style='min-width:420px;'>}
+        wapp-subst {<select class="aut-ctl" name="tag_sel">}
         wapp-subst "\n"
         foreach t $tags {
             set sel ""
@@ -327,10 +484,9 @@ namespace eval automate {
         wapp-subst {</select>}
         wapp-subst "\n"
 
-        # IMPORTANT: braces here prevent Tcl substituting $ref_custom into %html() prematurely
-        wapp-subst {<div style='margin-top:6px;'>}
+        wapp-subst {<div class="aut-row">}
         wapp-subst {<label>Custom ref (refs/tags/..., refs/heads/..., or commit SHA):</label><br>}
-        wapp-subst {<input type='text' name='ref_custom' value='%html($ref_custom)' style='min-width:520px;' placeholder='refs/heads/12.2 or 144dead8826f...'>}
+        wapp-subst {<input class="aut-ctl" type="text" name="ref_custom" value="%html($ref_custom)" placeholder="refs/heads/12.2 or 144dead8826f...">}
         wapp-subst {</div>}
         wapp-subst "\n"
 
@@ -346,60 +502,20 @@ namespace eval automate {
         wapp-subst "&nbsp;&nbsp;"
         wapp-subst "<label><input type='radio' name='pipeline' value='compare'$chk_compare> Compare (previous tag)</label>\n"
 
-        wapp-subst {<div style='margin-top:14px;'>}
-        wapp-subst "\n"
-        wapp-subst {<button type='submit' style='padding:4px 10px;'>GO</button>}
-        wapp-subst "\n"
+        wapp-subst {<div class="aut-actions">}
+        wapp-subst {<button class="aut-btn" type="submit">GO</button>}
         wapp-subst {</div>}
         wapp-subst "\n"
 
         wapp-subst {</form>}
         wapp-subst "\n"
-
-        wapp-subst {<p style='margin-top:12px; opacity:0.75;'>MVP: prototype build payload and POST it to cilisten. Monitor listener for progress.</p>}
-        wapp-subst "\n"
+        wapp-subst {<p class="aut-mini">MVP: build webhook payload and POST it to cilisten. Monitor listener for progress.</p>}
         wapp-subst "<p><a href='%html($B)/jobs'>Job Index</a></p>\n"
+        wapp-subst {</div>}
+        wapp-subst "\n"
 
-        # ----------------------------
-        # If action=run, validate and post
-        # ----------------------------
-        if {$action eq "run"} {
-
-            set ref [string trim $ref]
-            if {$ref eq ""} {
-                wapp-subst {<p style='color:#b00; font-weight:600;'>Ref is required.</p>}
-                wapp-subst "\n"
-                return
-            }
-
-            set pipeline [string tolower [string trim $pipeline]]
-            if {$pipeline ni {"profile" "compare"}} {
-                wapp-subst {<p style='color:#b00; font-weight:600;'>Pipeline must be profile or compare.</p>}
-                wapp-subst "\n"
-                return
-            }
-
-            set payload [__make_payload $ref $pipeline]
-
-            wapp-subst "<h4>Webhook payload</h4>\n"
-            __pre $payload
-
-            set resp [__post_json $cilisten_url $payload]
-            set code [dict get $resp code]
-            set body [dict get $resp body]
-            set err  [dict get $resp err]
-
-            wapp-subst "<h4>cilisten response</h4>\n"
-            if {$err ne ""} {
-                wapp-subst {<p style='color:#b00; font-weight:600;'>POST failed:</p>}
-                wapp-subst "\n"
-                __pre $err
-                wapp-subst "<p>Check cilisten is listening at: %html($cilisten_url)</p>\n"
-            } else {
-                wapp-subst "<p><b>HTTP:</b> %html($code)</p>\n"
-                __pre $body
-            }
-        }
+        wapp-subst {</div>}
+        wapp-subst "\n"
     }
 }
 
