@@ -1681,15 +1681,11 @@ proc mariadb_profile {cidict refname} {
     catch {exec chmod +x -- $runner_abs}
 
     # Profile ids: default base from XML
-    set pid_base 999
+    set pid_base 1000
     if {[dict exists $cidict $rdbms pipeline profileid]} {
         set pid_base [dict get $cidict $rdbms pipeline profileid]
     }
     set bad_pid  $pid_base
-    set ci_id [ci_latest_id $bad_tag]
-    if {$ci_id ne ""} {
-        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
-    }
 
     # Try to bump based on existing jobs in JOBMAIN
     if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
@@ -1697,6 +1693,11 @@ proc mariadb_profile {cidict refname} {
         if {$maxpid ne "" && $maxpid ne "null" && [string is integer -strict $maxpid]} {
             set bad_pid  [expr {$maxpid + 1}]
         }
+    }
+
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
     }
 
     putscli "PROFILE PROFILEIDS $bad_pid"
@@ -1821,16 +1822,12 @@ proc mariadb_compare {cidict refname} {
     catch {exec chmod +x -- $runner_abs}
 
     # Profile ids: default base from XML
-    set pid_base 999
+    set pid_base 1000
     if {[dict exists $cidict $rdbms pipeline compare_profileid]} {
         set pid_base [dict get $cidict $rdbms pipeline compare_profileid]
     }
     set bad_pid  $pid_base
     set good_pid [expr {$pid_base + 1}]
-    set ci_id [ci_latest_id $bad_tag]
-    if {$ci_id ne ""} {
-        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
-    }
 
     # Try to bump based on existing jobs in JOBMAIN
     if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
@@ -1839,6 +1836,11 @@ proc mariadb_compare {cidict refname} {
             set bad_pid  [expr {$maxpid + 1}]
             set good_pid [expr {$maxpid + 2}]
         }
+    }
+
+    set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id ne ""} {
+        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
     }
 
     putscli "COMPARE PROFILEIDS  $bad_pid $good_pid"

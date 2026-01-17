@@ -44,16 +44,16 @@
             <olap>scripts/tcl/maria/tproch/maria_tproch.sh</olap>
         </test>
         <pipeline>
-            <!-- Full end-to-end OLTP run (clone → build → package → install → init → start → run change_password/shutdown → restart → OLTP test) -->
+            <!-- Full end-to-end OLTP run (clone → build package install init start run change_password/shutdown restart OLTP test) -->
             <default>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart start_tests:oltp</default>
             <!-- New unified profile path: single profile -->
             <profile>profile</profile>
             <!-- Base profile id for compare; bad/good use pid and pid+1 (and may be bumped by JOBMAIN max(profile_id)) -->
-            <profileid>99</profileid>
+            <profileid>1000</profileid>
             <!-- New unified compare path: single 'compare' step calls mariadb_compare, which does bad+good runs and job diff -->
             <compare>compare</compare>
             <!-- Base profile id for compare; bad/good use pid and pid+1 (and may be bumped by JOBMAIN max(profile_id)) -->
-            <compare_profileid>99</compare_profileid>
+            <compare_profileid>1000</compare_profileid>
             <!-- Build + install pipeline only, no tests -->
             <build_no_test>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart</build_no_test>
             <!-- Restart DB and run OLTP tests -->
