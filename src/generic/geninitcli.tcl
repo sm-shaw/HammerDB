@@ -83,7 +83,7 @@ foreach { key } [ dict keys $dbdict ] {
     }
     set $dictname $dbconfdict
     set prefix [ dict get $dbdict $key prefix ]
-    lappend dbsrclist "$key/$prefix\opt.tcl" "$key/$prefix\oltp.tcl" "$key/$prefix\olap.tcl" "$key/$prefix\otc.tcl"
+    lappend dbsrclist "$key/$prefix\opt.tcl" "$key/$prefix\oltp.tcl" "$key/$prefix\olap.tcl" "$key/$prefix\otc.tcl" "$key/$prefix\ci.tcl" 
 }
 
 #get_xml_data
