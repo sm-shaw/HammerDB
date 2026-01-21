@@ -21,10 +21,10 @@
         <install>
             <install_package>tar -xvf</install_package>
             <installer>scripts/mariadb-install-db</installer>
-            <install_dir>/opt/hammerdb-ci/providers/mariadb</install_dir>
+            <install_dir>/opt/hammerdb-ci/providers/mariadb/installs</install_dir>
             <base_config_file>/opt/hammerdb-ci/providers/mariadb/config/maria.cnf</base_config_file>
             <defaults_file>/opt/hammerdb-ci/providers/mariadb/maria.cnf</defaults_file>
-            <basedir>/opt/hammerdb-ci/providers/mariadb</basedir>
+            <basedir>/opt/hammerdb-ci/providers/mariadb/installs</basedir>
             <datadir>data</datadir>
             <innodb_log_group_home_dir>redo</innodb_log_group_home_dir>
             <innodb_buffer_pool_size>auto</innodb_buffer_pool_size>

@@ -1,8 +1,36 @@
+proc mariadb_ci_id {cidict refname} {
+    global rdbms
+    # Ensure a JOBCI row exists for this run and return its ci_id.
+    # Reuses existing row when called from WAPP/cilisten; creates one when called directly.
+    set ci_id [ci_latest_id $refname]
+    if {$ci_id eq ""} {
+        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($refname,$cidict)}
+        set ci_id [ci_latest_id $refname]
+    }
+    return $ci_id
+}
+
+proc mariadb_ci_safe_ref {refname} {
+    # Safe directory component: replace slashes with underscores.
+    return [string map {/ _} $refname]
+}
+
+proc mariadb_normpath {p} {
+    # Collapse duplicate slashes and normalize path joins without changing semantics.
+    if {$p eq ""} {
+        return ""
+    }
+    return [file join {*}[file split $p]]
+}
+
+
 proc mariadb_clone {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
     set repo_url       [string map {\" {}} [dict get $cidict $rdbms build repo_url]]
-    set local_dir "$local_dir_root/[string map {/ _} $refname]"
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
     file mkdir $local_dir
 
     # --- Determine clone mode (tag/branch vs commit) ---
@@ -108,7 +136,9 @@ proc mariadb_clone {cidict refname} {
 proc mariadb_build {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
-    set local_dir      "$local_dir_root/[string map {/ _} $refname]"
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
 
     # Prepare build command
     set raw_cmd  [dict get $cidict $rdbms build build_cmd]
@@ -183,7 +213,9 @@ proc mariadb_build {cidict refname} {
 proc mariadb_package {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
-    set local_dir      "$local_dir_root/[string map {/ _} $refname]"
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
 
     # Prepare package command
     set raw_cmd   [dict get $cidict $rdbms build package_cmd]
@@ -249,7 +281,9 @@ proc mariadb_package {cidict refname} {
 proc mariadb_commit_msg {cidict refname} {
     global rdbms
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
-    set local_dir      "$local_dir_root/[string map {/ _} $refname]"
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
 
     # Prepare commit message command
     set raw_commit_cmd [dict get $cidict common commit_msg_cmd]
@@ -329,14 +363,18 @@ proc mariadb_install {cidict refname} {
     global rdbms
 
     set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
-    set local_dir      "$local_dir_root/[string map {/ _} $refname]"
-    set install_dir    [dict get $cidict $rdbms install install_dir]
-
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set install_root [mariadb_normpath [dict get $cidict $rdbms install install_dir]]
+    set install_dir  [file join $install_root "ci_${ci_id}_${safe_ref}"]
     # Validate target directory
-    if {![file exists $install_dir] || ![file isdirectory $install_dir] || ![file writable $install_dir]} {
-        putscli "Error: $install_dir missing, not a directory, or not writable"
+    if {![file exists $install_root] || ![file isdirectory $install_root] || ![file writable $install_root]} {
+        putscli "Error: $install_root missing, not a directory, or not writable"
         return "INSTALL FAILED"
     }
+
+    file mkdir $install_dir
 
     # Select package file
     set files [glob -nocomplain -directory $local_dir *.tar.gz]
@@ -411,6 +449,8 @@ proc mariadb_install {cidict refname} {
 proc mariadb_init {cidict refname} {
     global rdbms
     set install_section [dict get $cidict $rdbms install]
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
 
     # Discover basedir
     if {![dict exists $install_section install_dir]} {
@@ -423,7 +463,8 @@ proc mariadb_init {cidict refname} {
         }
         return "INIT FAILED"
     }
-    set parent [dict get $install_section install_dir]
+    set install_root [dict get $install_section install_dir]
+    set parent "$install_root/ci_${ci_id}_${safe_ref}"
     set candidates [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $candidates] == 0} {
         putscli "DB init failed: no mariadb-* directories under $parent"
@@ -591,9 +632,12 @@ proc mariadb_init {cidict refname} {
 proc mariadb_start {cidict refname} {
     global rdbms
     set install [dict get $cidict $rdbms install]
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
 
     # Discover basedir
-    set parent [dict get $install install_dir]
+    set install_root [dict get $install install_dir]
+    set parent "$install_root/ci_${ci_id}_${safe_ref}"
     set candidates [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $candidates] == 0} {
         putscli "DB start failed: no mariadb-* directories under $parent"
@@ -775,8 +819,11 @@ proc mariadb_run_sql {cidict refname key} {
         return "$KEY FAILED"
     }
 
-    # Discover basedir
-    set parent [dict get $install install_dir]
+    # Discover basedir (per-CI install dir)
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set install_root [mariadb_normpath [dict get $install install_dir]]
+    set parent [file join $install_root "ci_${ci_id}_${safe_ref}"]
     set dirs   [glob -nocomplain -types d -directory $parent mariadb-*]
     if {[llength $dirs] == 0} {
         putscli "RUN_SQL $key: no mariadb-* under $parent"
@@ -793,7 +840,7 @@ proc mariadb_run_sql {cidict refname key} {
 
     # Socket path
     set socket "/tmp/mariadb.sock"
-    if {[dict exists $install socket]} { set socket [dict get $install socket] }
+    if {[dict exists $install socket]} { set socket [mariadb_normpath [dict get $install socket]] }
 
     # Build client command (exact quoting)
     set sql     [dict get $install $key]
@@ -944,7 +991,7 @@ proc mariadb_profile {cidict refname} {
         putscli "PROFILE FAILED: could not create/find JOBCI row for $bad_tag"
         return "PROFILE FAILED"
     }
-    set repo [file join $build_root $bad_tag]
+    set repo [file join $build_root "ci_${ci_id}_${bad_tag}"]
     set is_commit 0
     if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
         if {[regexp {^[0-9a-fA-F]{7,40}$} $bad_tag]} {
@@ -997,7 +1044,7 @@ proc mariadb_profile {cidict refname} {
     putscli "PROFILE PROFILEIDS $bad_pid"
 
     # Helper to run the runner once (no 2>&1, wait for completion, no extra blank lines)
-    proc __profile_run_once {ham_root runner_abs tag pid} {
+    proc _profile_run_once {ham_root runner_abs tag pid} {
         set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
         putscli "RUNNER: $run"
         set ci_id [ci_latest_id $tag]
@@ -1060,7 +1107,7 @@ proc mariadb_profile {cidict refname} {
     after 10000
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "PROFILE FAILED" }
-    if {![__profile_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
+    if {![_profile_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
         return "PROFILE FAILED"
     }
 }
@@ -1095,7 +1142,7 @@ proc mariadb_compare {cidict refname} {
         putscli "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
         return "COMPARE FAILED"
     }
-    set repo [file join $build_root $bad_tag]
+    set repo [file join $build_root "ci_${ci_id}_${bad_tag}"]
     set is_commit 0
     if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
         if {[regexp {^[0-9a-fA-F]{7,40}$} $bad_tag]} {
@@ -1165,7 +1212,7 @@ proc mariadb_compare {cidict refname} {
     }
 
     # Helper to run the runner once (no 2>&1, wait for completion, no extra blank lines)
-    proc __compare_run_once {ham_root runner_abs tag pid} {
+    proc _compare_run_once {ham_root runner_abs tag pid} {
         set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
         putscli "RUNNER: $run"
         set ci_id [ci_latest_id $tag]
@@ -1226,7 +1273,7 @@ proc mariadb_compare {cidict refname} {
     after 10000
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
-    if {![__compare_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
+    if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
         return "COMPARE FAILED"
     }
 
@@ -1359,7 +1406,7 @@ proc mariadb_compare {cidict refname} {
     after 30000
 
     # 3) Run profile on GOOD tag
-    if {![__compare_run_once $ham_root $runner_abs $good_tag $good_pid]} {
+    if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid]} {
         return "COMPARE FAILED"
     }
     set stop_st [mariadb_run_sql $cidict $good_tag shutdown]

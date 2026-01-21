@@ -143,6 +143,17 @@ th {
 tr:nth-child(even) {
   background-color: #f9f9f9;
 }
+.aut-wrap {
+  max-width: 800px;
+}
+.aut-wrap table {
+  max-width: 100%;
+  margin: 1em 0;
+}
+.aut-banner {
+  width: 100%;
+  box-sizing: border-box;
+}
 }
 }
 
@@ -427,7 +438,12 @@ proc wapp-page-ci {} {
     if {$field eq "summary"} {
         wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">}
         foreach k {ci_id refname profile_id status timestamp end_timestamp} {
-            wapp-subst "%html($k): %html([dict get $ci $k])\n"
+        set v [dict get $ci $k]
+        if {$k eq "end_timestamp" && $v eq ""} {
+                wapp-subst "%html($k):\n"
+            } else {
+                wapp-subst "%html($k): %html($v)\n"
+            }
         }
         wapp-subst {</pre>}
         return
