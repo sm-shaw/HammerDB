@@ -1079,11 +1079,21 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
     set build_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
-    set bad_tag   [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
-    hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
+    set bad_tag [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
+
+    # Ensure exactly ONE JOBCI row exists for this run:
+    # - If caller already created it (queued / WAPP), reuse it.
+    # - If not (direct cistep/cisteps), create it once.
     set ci_id [ci_latest_id $bad_tag]
+    if {$ci_id eq ""} {
+        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
+        set ci_id [ci_latest_id $bad_tag]
+    }
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+    } else {
+        putscli "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
+        return "COMPARE FAILED"
     }
     set repo [file join $build_root $bad_tag]
     set is_commit 0
