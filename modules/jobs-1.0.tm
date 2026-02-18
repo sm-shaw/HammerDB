@@ -656,7 +656,7 @@ proc home-common-header {} {
     set B [wapp-param BASE_URL]
     set url "/style.css"
     set logoimg "$B/logo.png"
-    set automate_url "$B/automate"
+    set pipelines_url "$B/pipelines"
 
     wapp-subst {
 <!DOCTYPE html>
@@ -674,16 +674,16 @@ proc home-common-header {} {
 </p>
 
 <div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
+  <div style="display:flex; justify-content:flex-start; align-items:center; gap:12px;">
     <h3 class="title" style="margin:0;">HammerDB Results</h3>
-    <a href="%html($automate_url)"
+    <a href="%html($pipelines_url)"
        style="margin-top:2px;
               padding:6px 14px;
               border:1px solid #bbb;
               border-radius:4px;
               text-decoration:none;
               font-weight:500;">
-     AUTOMATION 
+     Pipelines
     </a>
   </div>
 </div>

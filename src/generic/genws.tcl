@@ -181,16 +181,22 @@ proc normalize_pre_text {s} {
 }
 
 proc split_cmake_records {s} {
-    # If already multiline, leave it alone
-    if {[string first "\n" $s] != -1} {
+    # 0) If there's no obvious CMake status marker, don't touch it
+    #    (prevents wrecking non-cmake output)
+    if {![string match "*-- *" $s]} {
         return $s
     }
 
-    # Literally split on "--"
-    set s [string map {"--" "\n--"} $s]
+    # 1) Fix glued percentage tokens: "done[ 2%]" -> "done\n[ 2%]"
+    regsub -all {([^\n])(\[[ \t]*[0-9]+%])} $s "\\1\n\\2" s
 
-    # Trim leading newline if introduced
-    if {[string match "\n--*" $s]} {
+    # 2) Fix glued cmake status lines:
+    #    "...GNU 13.3.0-- The CXX ..." -> "...GNU 13.3.0\n-- The CXX ..."
+    #    Only split on "-- " (cmake style), not every "--".
+    regsub -all {([^\n])--[ \t]+} $s "\\1\n-- " s
+
+    # 3) Clean up accidental leading newline
+    if {[string match "\n-- *" $s]} {
         set s [string range $s 1 end]
     }
 

@@ -526,59 +526,71 @@ proc handle_connection {sock addr port} {
         }
     }
 
-# Process webhook payload and enqueue job
-proc process_request {sock headers body cidict} {
-    global rdbms
+    # Process webhook payload and enqueue job
+    proc process_request {sock headers body cidict} {
+        global rdbms
 
-    set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
-    set overwrite  [dict get $cidict $rdbms build overwrite]
-    set json_data  [json::json2dict $body]
-    set inserted   0
+        set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
+        set overwrite  [dict get $cidict $rdbms build overwrite]
+        set json_data  [json::json2dict $body]
+        set inserted   0
 
-    # Default pipeline keeps existing behaviour
-    set pipeline "BUILD"
-    if {[dict exists $json_data hammerdb pipeline]} {
-        set pipeline [string toupper [string trim [dict get $json_data hammerdb pipeline]]]
-        if {$pipeline eq ""} { set pipeline "BUILD" }
-    }
+        # Default pipeline keeps existing behaviour
+        set pipeline "BUILD"
+        if {[dict exists $json_data hammerdb pipeline]} {
+            set pipeline [string toupper [string trim [dict get $json_data hammerdb pipeline]]]
+            if {$pipeline eq ""} { set pipeline "BUILD" }
+        }
 
-    if {[dict exists $json_data ref]} {
-        set ref [dict get $json_data ref]
+        if {[dict exists $json_data ref]} {
+            set ref [dict get $json_data ref]
 
-        if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
+            set matched 0
 
-            if {$overwrite} {
-                putscli "Overwrite=true; deleting existing records for $name"
-                if {[catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}} derr]} {
-                    putscli "Error deleting existing JOBCI rows for $name: $derr"
-                }
-            } else {
-                putscli "Overwrite=false; recording additional run for $name"
+            # First try existing refs/tags or refs/heads behaviour
+            if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
+                set matched 1
+            } elseif {[regexp {^[0-9a-fA-F]{7,40}$} $ref]} {
+                # Commit SHA support
+                set type "sha"
+                set name $ref
+                set matched 1
             }
 
-            if {[catch {
-                hdbjobs eval {INSERT INTO JOBCI (refname,pipeline,cidict) VALUES ($name,$pipeline,$cidict)}
-            } err]} {
-                putscli "Error inserting into JOBCI: $err"
-            } else {
-                set inserted 1
-                putscli "Recorded: $name ($type) pipeline=$pipeline\r"
+            if {$matched} {
+
+                if {$overwrite} {
+                    putscli "Overwrite=true; deleting existing records for $name"
+                    if {[catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}} derr]} {
+                        putscli "Error deleting existing JOBCI rows for $name: $derr"
+                    }
+                } else {
+                    putscli "Overwrite=false; recording additional run for $name"
+                }
+
+                if {[catch {
+                    hdbjobs eval {INSERT INTO JOBCI (refname,pipeline,cidict) VALUES ($name,$pipeline,$cidict)}
+                } err]} {
+                    putscli "Error inserting into JOBCI: $err"
+                } else {
+                    set inserted 1
+                    putscli "Recorded: $name ($type) pipeline=$pipeline\r"
+                }
             }
         }
-    }
 
-    # HTTP 200 response
-    if {[lsearch -exact [chan names] $sock] != -1} {
-        puts $sock "HTTP/1.1 200 OK"
-        puts $sock "Content-Type: text/plain"
-        puts $sock "Content-Length: 2"
-        puts $sock "Connection: close"
-        puts $sock ""
-        puts $sock "OK"
-        flush $sock
-        close $sock
+        # HTTP 200 response
+        if {[lsearch -exact [chan names] $sock] != -1} {
+            puts $sock "HTTP/1.1 200 OK"
+            puts $sock "Content-Type: text/plain"
+            puts $sock "Content-Length: 2"
+            puts $sock "Connection: close"
+            puts $sock ""
+            puts $sock "OK"
+            flush $sock
+            close $sock
+        }
     }
-}
 
     set listen_socket [socket -server handle_connection $port]
     putscli "CI webhook listening on port $port"
@@ -613,15 +625,18 @@ proc cistatus {} {
 
 proc cipush {refname} {
     global rdbms cidict
-    if {![info exists ::listen_socket]} {
-        putscli "CI listener not running; starting listener"
-        cilisten
-    }
-
     if {![info exists rdbms]} {
         puts "Error: RDBMS not set"
         return
+    } else {
+    set prefix [ find_prefix $rdbms ]
     }
+
+    if {![info exists ::listen_socket]} {
+        putscli "CI listener not running; starting listener"
+        cilisten $prefix
+    }
+
     if {![dict exists $cidict common listen_port] || ![dict exists $cidict $rdbms build repo_url]} {
         puts "Error: CI config missing required keys"
         return
@@ -631,8 +646,10 @@ proc cipush {refname} {
         set ref_type "tag"
     } elseif {[string match "refs/heads/*" $refname]} {
         set ref_type "branch"
+    } elseif {[regexp {^[0-9a-fA-F]{7,40}$} $refname]} {
+        set ref_type "sha"
     } else {
-        puts "Error: refname must start with 'refs/tags/' or 'refs/heads/'"
+        puts "Error: refname must start with 'refs/tags/' or 'refs/heads/' or be a commit SHA"
         return
     }
 
@@ -924,6 +941,13 @@ proc run_next_pending_job {} {
 # cistep <refname> <pipeline>
 proc cistep {refname pipeline} {
     global rdbms cidict
+    if {![info exists rdbms]} {
+        puts "Error: RDBMS not set"
+        return
+    } else {
+    set prefix [ find_prefix $rdbms ]
+    }
+
     if {$refname eq "" || $pipeline eq ""} {
         putscli "CI: usage: cistep <refname> <pipeline>"
         return
@@ -934,11 +958,17 @@ proc cistep {refname pipeline} {
     set step_ref $refname
     if {[string match "refs/tags/*"  $refname] || [string match "refs/heads/*" $refname]} {
         set step_ref [file tail $refname]
+    } elseif {[regexp {^[0-9a-fA-F]{7,40}$} $refname]} {
+        # commit SHA: keep as-is
+    } else {
+        putscli "CI: invalid refname '$refname' (must be refs/tags/*, refs/heads/*, or commit SHA)"
+        return
     }
 
     if {![info exists ::listen_socket]} {
         putscli "CI listener not running; starting listener"
-        cilisten
+        cilisten $prefix
+after 500
     }
 
     # Resolve RDBMS key by case-insensitive match

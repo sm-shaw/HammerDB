@@ -1,16 +1,8 @@
-# automate-1.0.tm
-# HammerDB Enterprise Automation / BaaS MVP page
-# - Dropdown tags from GitHub API (cached)
-# - Custom ref supports refs/tags/..., refs/heads/..., and commit SHA
-# - Builds webhook payload and POSTs to cilisten endpoint
-# - PRG (POST/Redirect/GET style) behavior for GET: action=run redirects back to /automate
-# - Shows last run status banner (green/red) near the top (and stores last payload/response in memory)
-# - ASCII only
+# pipelines-1.0.tm
+package provide pipelines 1.0
 
-package provide automate 1.0
-
-namespace eval automate {
-    namespace export wapp-page-automate
+namespace eval pipelines {
+    namespace export wapp-page-pipelines
 
     # ----------------------------
     # Small utilities (ASCII only)
@@ -49,7 +41,40 @@ namespace eval automate {
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
         wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
-        wapp-subst "<h3 class='title'>%html($title)</h3>\n"
+
+        # Decide button based on page title
+        set btn_label ""
+        set btn_url ""
+
+        if {$title eq "HammerDB Results"} {
+            set btn_label "Pipelines"
+            set btn_url "$B/pipelines"
+        } elseif {$title eq "HammerDB Pipelines"} {
+            set btn_label "Results"
+            set btn_url "$B/jobs"
+        }
+
+        # Header with optional button
+        if {$btn_label ne ""} {
+            wapp-subst {
+<div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
+    <div style="display:flex; justify-content:flex-start; align-items:center; gap:12px;">
+        <h3 class="title" style="margin:0;">%html($title)</h3>
+        <a href="%html($btn_url)"
+           style="margin-top:2px;
+                  padding:6px 14px;
+                  border:1px solid #bbb;
+                  border-radius:4px;
+                  text-decoration:none;
+                  font-weight:500;">
+            %html($btn_label)
+        </a>
+    </div>
+</div>
+}
+        } else {
+            wapp-subst "<h3 class='title'>%html($title)</h3>\n"
+        }
 
         # Small, self-contained styles for this page (keeps form consistent)
         wapp-subst {
@@ -210,7 +235,7 @@ namespace eval automate {
     }
 
     proc __post_json {url json} {
-        set headers [list Content-Type application/json User-Agent HammerDB-Automation]
+        set headers [list Content-Type application/json User-Agent HammerDB-Pipelines]
         set tok ""
         set code 0
         set body ""
@@ -230,7 +255,7 @@ namespace eval automate {
 
     # ----------------------------
     # "Flash" last-run store (in-memory)
-    # Keeps refresh safe: after action=run we redirect back to /automate (no action=run)
+    # Keeps refresh safe: after action=run we redirect back to /pipelines (no action=run)
     # ----------------------------
     variable __last_ts 0
     variable __last_client ""
@@ -270,7 +295,7 @@ namespace eval automate {
         set __last_resp_err $err
     }
 
-proc __render_last_if_any {} {
+proc __render_last_if_any {B} {
     variable __last_ts
     variable __last_client
     variable __last_ok
@@ -281,11 +306,69 @@ proc __render_last_if_any {} {
     variable __last_resp_err
 
     set now [clock seconds]
-    if {$__last_ts == 0} { return }
+    if {![info exists __last_ts] || $__last_ts == 0} { return }
 
     # Only show for same client, and only for 10 minutes
     if {[__client_id] ne $__last_client} { return }
     if {($now - $__last_ts) > 600} { return }
+
+    # Derive ref/pipeline from payload (so we can look up the latest JOBCI row)
+    set ref ""
+    set pipe ""
+    catch {
+        if {[regexp {\"ref\"\s*:\s*\"([^\"]+)\"} $__last_payload -> ref]} {
+            # ok
+        }
+        if {[regexp {\"pipeline\"\s*:\s*\"([^\"]+)\"} $__last_payload -> pipe]} {
+            set pipe [string toupper [string trim $pipe]]
+        }
+    }
+
+    # Find latest matching ci_id + live status
+    set ci_id ""
+    set live_status ""
+    if {$ref ne ""} {
+        if {$pipe ne ""} {
+            catch {
+                set ci_id [join [hdbjobs eval {
+                    SELECT ci_id FROM JOBCI
+                     WHERE refname = $ref AND pipeline = $pipe
+                     ORDER BY ci_id DESC LIMIT 1
+                }]]
+            }
+        } else {
+            catch {
+                set ci_id [join [hdbjobs eval {
+                    SELECT ci_id FROM JOBCI
+                     WHERE refname = $ref
+                     ORDER BY ci_id DESC LIMIT 1
+                }]]
+            }
+        }
+        set ci_id [string trim $ci_id]
+        if {$ci_id ne ""} {
+            catch {
+                set live_status [join [hdbjobs eval {
+                    SELECT status FROM JOBCI WHERE ci_id = $ci_id LIMIT 1
+                }]]
+            }
+            set live_status [string trim $live_status]
+        }
+    }
+
+    # Auto-refresh while running (or unknown) within 10 min window
+    set terminal [list COMPLETE "COMPARE FAILED" "PROFILE FAILED" "CLONE FAILED" "BUILD FAILED" "INSTALL FAILED" "INIT FAILED"]
+    set is_running 0
+    if {$ci_id ne ""} {
+        if {$live_status eq ""} {
+            set is_running 1
+        } elseif {[lsearch -exact $terminal $live_status] < 0} {
+            set is_running 1
+        }
+    }
+    if {$is_running} {
+        wapp-subst {<meta http-equiv="refresh" content="5">}
+    }
 
     wapp-subst {<a id="runresult"></a>}
     if {$__last_ok} {
@@ -301,6 +384,16 @@ proc __render_last_if_any {} {
     }
     if {$__last_msg ne ""} {
         wapp-subst "<p class='aut-kv'><b>Info:</b> %html($__last_msg)</p>\n"
+    }
+
+    if {$ci_id ne ""} {
+        set ci_url "/ci?ci_id=$ci_id"
+        wapp-subst "<p class='aut-kv'><b>Pipeid:</b> <a href='%html($ci_url)'>%html($ci_id)</a></p>\n"
+        if {$live_status ne ""} {
+            wapp-subst "<p class='aut-kv'><b>Status:</b> %html($live_status)</p>\n"
+        } else {
+            wapp-subst "<p class='aut-kv'><b>Status:</b> (pending)</p>\n"
+        }
     }
 
     wapp-subst {<details class="aut-details">}
@@ -322,7 +415,7 @@ proc __render_last_if_any {} {
     # ----------------------------
     # Main page
     # ----------------------------
-    proc wapp-page-automate {} {
+    proc wapp-page-pipelines {} {
         set B [wapp-param BASE_URL]
         set query [wapp-param QUERY_STRING]
 
@@ -373,12 +466,12 @@ proc __render_last_if_any {} {
 
             if {$ref_trim eq ""} {
                 __store_last 0 0 "Ref is required." "" "" "Ref is required."
-                wapp-redirect "$B/automate#runresult"
+                wapp-redirect "$B/pipelines#runresult"
                 return
             }
             if {$pl_trim ni {"profile" "compare"}} {
                 __store_last 0 0 "Pipeline must be profile or compare." "" "" "Bad pipeline."
-                wapp-redirect "$B/automate#runresult"
+                wapp-redirect "$B/pipelines#runresult"
                 return
             }
 
@@ -398,23 +491,23 @@ proc __render_last_if_any {} {
             }
 
             # Redirect back to clean page (no action=run). Refresh is safe.
-            wapp-redirect "$B/automate#runresult"
+            wapp-redirect "$B/pipelines#runresult"
             return
         }
 
         # Normal GET render
-        __page_head $B "AUTOMATION"
+        __page_head $B "HammerDB Pipelines"
         wapp-subst {<div class="aut-wrap">}
         wapp-subst "\n"
 
         # Show last run banner (if any) near the top
-        __render_last_if_any
+        __render_last_if_any $B
 
         # ----------------------------
-        # Automation table (JOBCI) at top
+        # Pipelines table (JOBCI) at top
         # ----------------------------
         wapp-subst {<table>}
-        wapp-subst {<tr><th>CI ID</th><th>Ref</th><th>Pipeline</th><th>Date</th><th>Status</th></tr>}
+        wapp-subst {<tr><th>Pipeid</th><th>Ref</th><th>Pipeline</th><th>Date</th><th>Status</th></tr>}
         wapp-subst "\n"
 
         set cicount [join [hdbjobs eval {SELECT COUNT(*) FROM JOBCI}]]
@@ -444,16 +537,24 @@ proc __render_last_if_any {} {
         wapp-subst "\n"
 
         # ----------------------------
-        # Info
+        # Info (compact)
         # ----------------------------
-        wapp-subst "<h4>MariaDB Automation (TPROC-C)</h4>\n"
+        wapp-subst "<h4>MariaDB (TPROC-C)</h4>\n"
+
+        set repo_short $repo_url
+        if {[string match "https://github.com/*" $repo_short]} {
+            set repo_short [string range $repo_short 8 end]
+        }
+
+        wapp-subst "<p class='aut-mini'>"
         if {$repo_url ne ""} {
-            wapp-subst "<p><b>Repo:</b> %html($repo_url)</p>\n"
+            wapp-subst "<b>Repo:</b> %html($repo_short)"
         }
-        if {$ref_regexp ne ""} {
-            wapp-subst "<p><b>Accepted refs:</b> %html($ref_regexp)</p>\n"
+        if {$cilisten_url ne ""} {
+            wapp-subst " &nbsp;·&nbsp; <b>Endpoint:</b> %html($cilisten_url)"
         }
-        wapp-subst "<p><b>cilisten endpoint:</b> %html($cilisten_url)</p>\n"
+        wapp-subst " &nbsp;·&nbsp; <b>Valid ref:</b> tag, branch, or commit SHA"
+        wapp-subst "</p>\n"
 
         # Fetch GitHub tags (best-effort)
         set tags [__github_tags $repo_url]
@@ -462,14 +563,15 @@ proc __render_last_if_any {} {
         }
 
         # ----------------------------
-        # Form (submits back to /automate with action=run, then redirects)
+        # Form (submits back to /pipelines with action=run, then redirects)
         # ----------------------------
         wapp-subst {<div class="aut-form">}
         wapp-subst "\n"
-        wapp-subst "<form method='GET' action='%html($B)/automate'>\n"
+        wapp-subst "<form method='GET' action='%html($B)/pipelines'>\n"
         wapp-subst {<input type='hidden' name='action' value='run'>}
         wapp-subst "\n"
 
+        # Ref selection
         wapp-subst "<p><b>MariaDB ref</b></p>\n"
         wapp-subst {<select class="aut-ctl" name="tag_sel">}
         wapp-subst "\n"
@@ -480,17 +582,22 @@ proc __render_last_if_any {} {
         }
         set sel ""
         if {$tag_sel eq "__custom__"} { set sel " selected" }
-        wapp-subst "<option value='__custom__'$sel>Custom (type below)</option>\n"
+        wapp-subst "<option value='__custom__'$sel>Custom…</option>\n"
         wapp-subst {</select>}
         wapp-subst "\n"
 
         wapp-subst {<div class="aut-row">}
-        wapp-subst {<label>Custom ref (refs/tags/..., refs/heads/..., or commit SHA):</label><br>}
-        wapp-subst {<input class="aut-ctl" type="text" name="ref_custom" value="%html($ref_custom)" placeholder="refs/heads/12.2 or 144dead8826f...">}
+        wapp-subst {<label>Custom ref (tag, branch, or commit SHA):</label><br>}
+        if {$ref_custom eq ""} {
+            wapp-subst "<input class='aut-ctl' type='text' name='ref_custom' placeholder='mariadb-11.4.9 or refs/heads/12.2 or 144dead8826f…'>\n"
+        } else {
+            wapp-subst "<input class='aut-ctl' type='text' name='ref_custom' value='%html($ref_custom)' placeholder='mariadb-11.4.9 or refs/heads/12.2 or 144dead8826f…'>\n"
+        }
         wapp-subst {</div>}
         wapp-subst "\n"
 
-        wapp-subst "<p style='margin-top:12px;'><b>Pipeline</b></p>\n"
+        # Operation selection
+        wapp-subst "<p style='margin-top:12px;'><b>Operation</b></p>\n"
         set chk_profile ""
         set chk_compare ""
         if {$pipeline eq "compare"} {
@@ -500,24 +607,47 @@ proc __render_last_if_any {} {
         }
         wapp-subst "<label><input type='radio' name='pipeline' value='profile'$chk_profile> Profile</label>\n"
         wapp-subst "&nbsp;&nbsp;"
-        wapp-subst "<label><input type='radio' name='pipeline' value='compare'$chk_compare> Compare (previous tag)</label>\n"
+        wapp-subst "<label><input type='radio' name='pipeline' value='compare'$chk_compare> Compare</label>\n"
 
         wapp-subst {<div class="aut-actions">}
-        wapp-subst {<button class="aut-btn" type="submit">GO</button>}
+        wapp-subst {<button class="aut-btn" type="submit">Run Pipeline</button>}
         wapp-subst {</div>}
         wapp-subst "\n"
 
         wapp-subst {</form>}
         wapp-subst "\n"
-        wapp-subst {<p class="aut-mini">MVP: build webhook payload and POST it to cilisten. Monitor listener for progress.</p>}
-        wapp-subst "<p><a href='%html($B)/jobs'>Job Index</a></p>\n"
         wapp-subst {</div>}
         wapp-subst "\n"
 
-        wapp-subst {</div>}
-        wapp-subst "\n"
+        # ----------------------------
+        # Guardrail (use dropdown unless Custom… selected)
+        # Place this in your action=run handler right before enqueue.
+        # ----------------------------
+        if {$action eq "run"} {
+            set ref ""
+
+            if {$tag_sel eq "__custom__"} {
+                set ref [string trim $ref_custom]
+                if {$ref eq ""} {
+                    error "Custom ref selected but no ref provided"
+                }
+                if {$ref_regexp ne ""} {
+                    if {![regexp -- $ref_regexp $ref]} {
+                        error "Invalid ref format: $ref"
+                    }
+                }
+            } else {
+                # Ignore any ref_custom entirely
+                set ref $tag_sel
+
+                # Optional: verify dropdown selection is valid
+                if {[lsearch -exact $tags $tag_sel] < 0} {
+                    error "Invalid tag selection: $tag_sel"
+                }
+            }
+        }
     }
 }
 
-# allow "namespace import automate::*"
-namespace import automate::*
+# allow "namespace import pipelines::*"
+namespace import pipelines::*

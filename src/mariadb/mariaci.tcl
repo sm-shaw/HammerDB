@@ -407,21 +407,21 @@ proc mariadb_install {cidict refname} {
     putscli "Running install command..."
     putscli $shell_cmd
 
-    # Capture output via handle_output (same pattern as clone)
-    set ::pipe_done 0
+    # Capture output (per-call done var; avoids races with global ::pipe_done)
+    set doneVar "::pipe_done_install_[clock milliseconds]"
+    set $doneVar 0
     set ::pipe_output ""
 
     if {[catch {
         set pipe [open "|bash -c \"$safe_cmd\"" "r"]
-        fconfigure $pipe -blocking 0 -buffering line
-        fileevent $pipe readable [list handle_output $pipe]
-        vwait ::pipe_done
+        fconfigure $pipe -translation binary -buffering none -blocking 0
+        fileevent $pipe readable [list handle_test_output $pipe $doneVar]
+        vwait $doneVar
         close $pipe
     } install_err]} {
 
         putscli "Install failed: $install_err"
 
-        # Save status + whatever output we captured (plus the error)
         catch {
             set ci_id [ci_latest_id $refname]
             if {$ci_id ne ""} {
@@ -433,7 +433,6 @@ proc mariadb_install {cidict refname} {
         }
         return "INSTALL FAILED"
     } else {
-        # Save install output + status
         catch {
             set ci_id [ci_latest_id $refname]
             if {$ci_id ne ""} {
@@ -1086,25 +1085,35 @@ proc mariadb_profile {cidict refname} {
         return "PROFILE FAILED"
     }
 
-    # 1) Run profile on BAD tag (current)
+    # 1) Run profile 
+puts $ci_id
+    catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='COMMIT MSG' WHERE ci_id=$ci_id } }
     set cmst [mariadb_commit_msg $cidict $bad_tag]
     if {$cmst eq "COMMIT_MSG FAILED"} { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='BUILDING' WHERE ci_id=$ci_id } }
     set bst [mariadb_build $cidict $bad_tag]
     if {$bst eq "BUILD FAILED"}   { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PACKAGING' WHERE ci_id=$ci_id } }
     set pst [mariadb_package $cidict $bad_tag]
     if {$pst eq "PACKAGE FAILED"} { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INSTALLING' WHERE ci_id=$ci_id } }
     set ist [mariadb_install $cidict $bad_tag]
     if {$ist eq "INSTALL FAILED"} { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INIT' WHERE ci_id=$ci_id } }
     set int [mariadb_init $cidict $bad_tag]
     if {$int eq "INIT FAILED"} { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STOPPING' WHERE ci_id=$ci_id } }
     set stop_st [mariadb_run_sql $cidict $bad_tag shutdown]
     if {$stop_st ne "SHUTDOWN SUCCEEDED"} { return "PROFILE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $bad_tag]
     if {$sst eq "START FAILED"} { return "PROFILE FAILED" }
     putscli "Pausing for 10 seconds before running tests for $refname"
     after 10000
+    catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "PROFILE FAILED" }
     if {![_profile_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
@@ -1255,22 +1264,34 @@ proc mariadb_compare {cidict refname} {
     }
 
     # 1) Run profile on BAD tag (current)
+puts $ci_id
+    catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='COMMIT MSG' WHERE ci_id=$ci_id } }
+    set cmst [mariadb_commit_msg $cidict $bad_tag]
+    if {$cmst eq "COMMIT_MSG FAILED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='BUILDING' WHERE ci_id=$ci_id } }
     set bst [mariadb_build $cidict $bad_tag]
     if {$bst eq "BUILD FAILED"}   { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PACKAGING' WHERE ci_id=$ci_id } }
     set pst [mariadb_package $cidict $bad_tag]
     if {$pst eq "PACKAGE FAILED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INSTALLING' WHERE ci_id=$ci_id } }
     set ist [mariadb_install $cidict $bad_tag]
     if {$ist eq "INSTALL FAILED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INIT' WHERE ci_id=$ci_id } }
     set int [mariadb_init $cidict $bad_tag]
     if {$int eq "INIT FAILED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STOPPING' WHERE ci_id=$ci_id } }
     set stop_st [mariadb_run_sql $cidict $bad_tag shutdown]
     if {$stop_st ne "SHUTDOWN SUCCEEDED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $bad_tag]
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
     putscli "Pausing for 10 seconds before running tests for $refname"
     after 10000
+    catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
     if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
@@ -1322,88 +1343,150 @@ proc mariadb_compare {cidict refname} {
     }
 
     set abs_repo [file normalize $repo]
-    set good_dir [file normalize [file join $build_root $good_tag]]
+    set good_dir [file normalize [file join $build_root "ci_${ci_id}_${good_tag}"]]
     if {![file isdirectory $good_dir]} {
         putscli "Creating worktree for $good_tag"
 
-        # --- Create worktree ---
-        set cmd "git -C $abs_repo worktree add -f --detach $good_dir $good_tag"
+        # --- Worktree add (clone-equivalent) ---
+        catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
+        set cmd "git -C \"$abs_repo\" worktree add -f --detach \"$good_dir\" \"$good_tag\" 2>&1"
+        putscli "Running clone command..."
         putscli $cmd
-        set doneVar ::wt_add_[clock microseconds]
-        set $doneVar 0
+        catch { hdbjobs eval { UPDATE JOBCI SET clone_cmd = $cmd WHERE ci_id = $ci_id } }
+
+        # Escape quotes for bash
+        set safe_cmd [string map {\" \\\"} $cmd]
+
+        set pipe_output ""
+        set clone_status "CLONE SUCCEEDED"
+
+        # --- Run command and capture output ---
         if {[catch {
-            set p [open "|bash -c \"$cmd\"" "r"]
-            fconfigure $p -blocking 0 -buffering line
-            fileevent $p readable [list handle_test_output $p $doneVar]
-            vwait $doneVar
-            close $p
-        } err]} {
-            putscli "WORKTREE FAILED (non-fatal): $err"
+            set pipe [open "|bash -c \"$safe_cmd\"" "r"]
+            fconfigure $pipe -blocking 1 -buffering line
+            while {[gets $pipe line] >= 0} {
+                append pipe_output "$line\n"
+                putscli $line
+                if {[regexp -nocase {fatal:|error:} $line]} {
+                    set clone_status "CLONE FAILED"
+                }
+            }
+
+            if {[catch {close $pipe} close_err]} {
+                putscli "Warning: close pipe reported: $close_err"
+            }
+        } wt_err]} {
+            set clone_status "CLONE FAILED"
+            append pipe_output "Failed to start worktree add: $wt_err\n"
+        }
+
+        if {$clone_status eq "CLONE FAILED"} {
+            putscli "Clone failed."
+            putscli "Full clone output:"
+            putscli $pipe_output
+            catch {
+                hdbjobs eval { UPDATE JOBCI SET status='CLONE FAILED', clone_output=$pipe_output WHERE ci_id = $ci_id }
+            }
+            return "COMPARE FAILED"
+        } else {
+            putscli "Clone succeeded."
+            catch {
+                hdbjobs eval { UPDATE JOBCI SET clone_output = $pipe_output WHERE ci_id = $ci_id }
+            }
         }
 
         # --- Reset to tag ---
-        set cmd "git -C $good_dir reset --hard $good_tag"
+        set cmd "git -C \"$good_dir\" reset --hard \"$good_tag\" 2>&1"
         putscli $cmd
-        set doneVar ::wt_reset_[clock microseconds]
-        set $doneVar 0
+        catch { hdbjobs eval { UPDATE JOBCI SET clone_cmd = $cmd WHERE ci_id = $ci_id } }
+        set safe_cmd [string map {\" \\\"} $cmd]
+        set pipe_output ""
+        set clone_status "CLONE SUCCEEDED"
         if {[catch {
-            set p [open "|bash -c \"$cmd\"" "r"]
-            fconfigure $p -blocking 0 -buffering line
-            fileevent $p readable [list handle_test_output $p $doneVar]
-            vwait $doneVar
-            close $p
-        } err]} {
-            putscli "RESET FAILED: $err"
+            set pipe [open "|bash -c \"$safe_cmd\"" "r"]
+            fconfigure $pipe -blocking 1 -buffering line
+            while {[gets $pipe line] >= 0} {
+                append pipe_output "$line\n"
+                putscli $line
+                if {[regexp -nocase {fatal:|error:} $line]} {
+                    set clone_status "CLONE FAILED"
+                }
+            }
+            if {[catch {close $pipe} close_err]} {
+                putscli "Warning: close pipe reported: $close_err"
+            }
+        } rst_err]} {
+            set clone_status "CLONE FAILED"
+            append pipe_output "Failed to start reset: $rst_err\n"
+        }
+        if {$clone_status eq "CLONE FAILED"} {
+            catch { hdbjobs eval { UPDATE JOBCI SET status='CLONE FAILED', clone_output=$pipe_output WHERE ci_id=$ci_id } }
             return "COMPARE FAILED"
+        } else {
+            catch { hdbjobs eval { UPDATE JOBCI SET clone_output=$pipe_output WHERE ci_id=$ci_id } }
         }
 
         # --- Submodule update ---
-        set cmd "git -C $good_dir submodule update --init --recursive"
+        set cmd "git -C \"$good_dir\" submodule update --init --recursive 2>&1"
         putscli $cmd
-        set doneVar ::wt_submod_[clock microseconds]
-        set $doneVar 0
+        catch { hdbjobs eval { UPDATE JOBCI SET clone_cmd = $cmd WHERE ci_id = $ci_id } }
+        set safe_cmd [string map {\" \\\"} $cmd]
+        set pipe_output ""
+        set clone_status "CLONE SUCCEEDED"
         if {[catch {
-            set p [open "|bash -c \"$cmd\"" "r"]
-            fconfigure $p -blocking 0 -buffering line
-            fileevent $p readable [list handle_test_output $p $doneVar]
-            vwait $doneVar
-            close $p
-        } err]} {
-            putscli "SUBMODULE UPDATE FAILED: $err"
+            set pipe [open "|bash -c \"$safe_cmd\"" "r"]
+            fconfigure $pipe -blocking 1 -buffering line
+            while {[gets $pipe line] >= 0} {
+                append pipe_output "$line\n"
+                putscli $line
+                if {[regexp -nocase {fatal:|error:} $line]} {
+                    set clone_status "CLONE FAILED"
+                }
+            }
+            if {[catch {close $pipe} close_err]} {
+                putscli "Warning: close pipe reported: $close_err"
+            }
+        } sub_err]} {
+            set clone_status "CLONE FAILED"
+            append pipe_output "Failed to start submodule update: $sub_err\n"
+        }
+        if {$clone_status eq "CLONE FAILED"} {
+            catch { hdbjobs eval { UPDATE JOBCI SET status='CLONE FAILED', clone_output=$pipe_output WHERE ci_id=$ci_id } }
             return "COMPARE FAILED"
+        } else {
+            catch { hdbjobs eval { UPDATE JOBCI SET clone_output=$pipe_output WHERE ci_id=$ci_id } }
         }
     } else {
         putscli "Using existing worktree for $good_tag"
+        catch { hdbjobs eval { UPDATE JOBCI SET clone_output='Using existing worktree' WHERE ci_id=$ci_id } }
     }
-
+puts $ci_id
+    catch { hdbjobs eval { UPDATE JOBCI SET status='COMMIT MSG' WHERE ci_id=$ci_id } }
+    set cmst [mariadb_commit_msg $cidict $good_tag]
+    if {$cmst eq "COMMIT_MSG FAILED"} { return "COMPARE FAILED" }
+    catch { hdbjobs eval { UPDATE JOBCI SET status='BUILDING' WHERE ci_id=$ci_id } }
     set bst [mariadb_build $cidict $good_tag]
     if {$bst eq "BUILD FAILED"}   { return "COMPARE FAILED" }
-    after 30000
-    putscli "DONE BUILD"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PACKAGING' WHERE ci_id=$ci_id } }
     set pst [mariadb_package $cidict $good_tag]
     if {$pst eq "PACKAGE FAILED"} { return "COMPARE FAILED" }
-    after 30000
-    putscli "DONE PACKAGE"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INSTALLING' WHERE ci_id=$ci_id } }
     set ist [mariadb_install $cidict $good_tag]
     if {$ist eq "INSTALL FAILED"} { return "COMPARE FAILED" }
-    after 30000
-    putscli "DONE INSTALL"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='INIT' WHERE ci_id=$ci_id } }
     set int [mariadb_init $cidict $good_tag]
     if {$int eq "INIT FAILED"} { return "COMPARE FAILED" }
-    after 30000
-    putscli "DONE INIT"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STOPPING' WHERE ci_id=$ci_id } }
     set stop_st [mariadb_run_sql $cidict $good_tag shutdown]
     if {$stop_st ne "SHUTDOWN SUCCEEDED"} { return "COMPARE FAILED" }
-    after 30000
-    putscli "DONE SHUTDOWN"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $good_tag]
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
     putscli "Pausing for 10 seconds before running tests for $refname"
     after 10000
-    putscli "DONE START"
+    catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $good_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
-    after 30000
 
     # 3) Run profile on GOOD tag
     if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid]} {
