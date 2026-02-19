@@ -119,7 +119,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBCHART table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
           puts "Error creating JOBCI table in SQLite in-memory database : $message"
           return
         } else {
@@ -162,7 +162,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBCHART table in SQLite on-disk database : $message"
               return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
               puts "Error creating JOBCI table in SQLite on-disk database : $message"
               return
             } else {
