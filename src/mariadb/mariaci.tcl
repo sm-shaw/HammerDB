@@ -1147,6 +1147,7 @@ proc mariadb_compare {cidict refname} {
     }
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+        hdbjobs eval {UPDATE JOBCI SET pipeline = 'COMPARE' WHERE ci_id = $ci_id}
     } else {
         putscli "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
         return "COMPARE FAILED"
@@ -1326,6 +1327,7 @@ puts $ci_id
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
         hdbjobs eval {UPDATE JOBCI SET profile_id = $good_pid WHERE ci_id = $ci_id}
+        hdbjobs eval {UPDATE JOBCI SET pipeline = 'COMPARE' WHERE ci_id = $ci_id}
     }
     putscli "COMPARE PRECHECK -> bad=$bad_tag  good=$good_tag"
     set co_good "cd $repo && git checkout -f $good_tag"
