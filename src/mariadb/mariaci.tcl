@@ -142,8 +142,39 @@ proc mariadb_build {cidict refname} {
 
     # Prepare build command
     set raw_cmd  [dict get $cidict $rdbms build build_cmd]
-    set raw_args [dict get $cidict $rdbms build build_cmd_args]
-    set cmd_full "$raw_cmd $raw_args"
+    # Get build args (may be missing)
+    set raw_args ""
+    if {[dict exists $cidict $rdbms build build_cmd_args]} {
+        set raw_args [string trim [dict get $cidict $rdbms build build_cmd_args]]
+    }
+    # If numberOfCPUs exists and build args are still the default "--parallel 8",
+    # dynamically tune parallelism. Otherwise leave at user setting.
+    if {[info commands numberOfCPUs] ne ""} {
+        set cpu ""
+        catch { set cpu [numberOfCPUs] }
+        set cpu [string trim $cpu]
+
+        if {[string is integer -strict $cpu] && $cpu > 0} {
+            # Only override when args are exactly the default
+            if {$raw_args eq "--parallel 8"} {
+                if {$cpu <= 2} {
+                    set raw_args ""
+                } elseif {$cpu <= 4} {
+                    set raw_args "--parallel 2"
+                } elseif {$cpu <= 8} {
+                    set raw_args "--parallel 4"
+                } else {
+                    # 9..N: cpu-4, capped at 64
+                    set p [expr {$cpu - 4}]
+                    if {$p < 1}  { set p 1 }
+                    if {$p > 64} { set p 64 }
+                    set raw_args "--parallel $p"
+                }
+            }
+        }
+    }
+    # Prepare build command
+    set cmd_full [string trim "$raw_cmd $raw_args"]
     set shell_cmd "cd \"$local_dir\" && $cmd_full 2>&1"
 
     # Persist command
@@ -411,12 +442,13 @@ proc mariadb_install {cidict refname} {
     set doneVar "::pipe_done_install_[clock milliseconds]"
     set $doneVar 0
     set ::pipe_output ""
-
     if {[catch {
         set pipe [open "|bash -c \"$safe_cmd\"" "r"]
-        fconfigure $pipe -translation binary -buffering none -blocking 0
-        fileevent $pipe readable [list handle_test_output $pipe $doneVar]
-        vwait $doneVar
+        fconfigure $pipe -translation lf -blocking 1 -buffering line
+        while {[gets $pipe line] >= 0} {
+            append ::pipe_output "$line\n"
+            putscli $line
+        }
         close $pipe
     } install_err]} {
 
@@ -885,8 +917,9 @@ proc mariadb_run_sql {cidict refname key} {
 # Run OLTP/OLAP test script; raw streaming; per-invocation done flag
 proc mariadb_start_tests {cidict refname workload} {
     global rdbms
+    set ci_id [ci_latest_id $refname]
 
-    hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE refname = $refname}
+    hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
     putscli "MariaDB is up and running for $refname"
     putscli "Pausing for 10 seconds before running tests for $refname"
     after 10000
@@ -895,7 +928,6 @@ proc mariadb_start_tests {cidict refname workload} {
     set key [string tolower $workload]
     if {$key ni {"oltp" "olap"}} {
         putscli "Test failed: workload must be 'oltp' or 'olap' (got '$workload')"
-        set ci_id [ci_latest_id $refname]
         if {$ci_id ne ""} {
             hdbjobs eval {UPDATE JOBCI SET status = 'TEST FAILED' WHERE ci_id = $ci_id}
         }
@@ -955,7 +987,6 @@ proc mariadb_start_tests {cidict refname workload} {
             hdbjobs eval {UPDATE JOBCI SET status='COMPLETE', end_timestamp=datetime(CURRENT_TIMESTAMP,'localtime') WHERE ci_id = $ci_id}
         }
 putscli "refname is $refname"
-putscli "ci_id is $ci_id"
     putscli "Test sequence complete ($key)"
     return "TEST COMPLETE"
 }
@@ -1019,28 +1050,49 @@ proc mariadb_profile {cidict refname} {
         return "PROFILE FAILED"
     }
     catch {exec chmod +x -- $runner_abs}
+    # Detect if this is a Single pipeline (Single is routed through profile handler)
+    set pipeline_mode ""
+    catch {
+        set pipeline_mode [string trim [hdbjobs eval \
+            "SELECT pipeline FROM JOBCI WHERE ci_id=$ci_id LIMIT 1"]]
+    }
+    set pipeline_mode [string tolower $pipeline_mode]
 
+    if {$pipeline_mode in {"single" "single_c" "single_h"}} {
+        # Force profile id to 0 and prevent piggyback from previous profile run
+        set bad_pid 0
+        set ::jobs_profile_id 0
+        catch { hdbjobs eval \
+            "UPDATE JOBCI SET profile_id=0 WHERE ci_id=$ci_id" }
+        putscli "PROFILEIDS 0"
+    } else {
     # Profile ids: default base from XML
     set pid_base 1000
     if {[dict exists $cidict $rdbms pipeline profileid]} {
         set pid_base [dict get $cidict $rdbms pipeline profileid]
     }
-    set bad_pid  $pid_base
+    if {$pid_base < 1000} { set pid_base 1000 }
+
+    set bad_pid $pid_base
 
     # Try to bump based on existing jobs in JOBMAIN
-    if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
-        set maxpid [string trim $maxpid]
-        if {$maxpid ne "" && $maxpid ne "null" && [string is integer -strict $maxpid]} {
-            set bad_pid  [expr {$maxpid + 1}]
-        }
+    set maxpid ""
+    catch { set maxpid [ hdbjobs eval {SELECT COALESCE(MAX(profile_id),0) FROM JOBMAIN} ] }
+    set maxpid [string trim $maxpid]
+
+    if {[string is integer -strict $maxpid] && $maxpid >= 1000} {
+        set bad_pid [expr {$maxpid + 1}]
+    } else {
+        set bad_pid $pid_base
     }
 
     set ci_id [ci_latest_id $bad_tag]
     if {$ci_id ne ""} {
-        hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
+	hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
     }
 
-    putscli "PROFILE PROFILEIDS $bad_pid"
+    putscli "PROFILEIDS $bad_pid"
+    }
 
     # Helper to run the runner once (no 2>&1, wait for completion, no extra blank lines)
     proc _profile_run_once {ham_root runner_abs tag pid} {
@@ -1147,6 +1199,7 @@ proc mariadb_compare {cidict refname} {
     }
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
+        hdbjobs eval {UPDATE JOBCI SET pipeline = 'COMPARE' WHERE ci_id = $ci_id}
     } else {
         putscli "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
         return "COMPARE FAILED"
@@ -1189,10 +1242,11 @@ proc mariadb_compare {cidict refname} {
     set bad_pid  $pid_base
     set good_pid [expr {$pid_base + 1}]
 
-    # Try to bump based on existing jobs in JOBMAIN
-    if {![catch { hdbjobs eval {SELECT max(profile_id) FROM JOBMAIN} } maxpid]} {
+# Try to bump based on existing jobs in JOBMAIN
+    set maxpid ""
+    if {![ catch { set maxpid [ hdbjobs eval {SELECT COALESCE(MAX(profile_id),0) FROM JOBMAIN}]}]} {
         set maxpid [string trim $maxpid]
-        if {$maxpid ne "" && $maxpid ne "null" && [string is integer -strict $maxpid]} {
+        if {[string is integer -strict $maxpid] && $maxpid >= 1000} {
             set bad_pid  [expr {$maxpid + 1}]
             set good_pid [expr {$maxpid + 2}]
         }
@@ -1326,6 +1380,7 @@ puts $ci_id
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
         hdbjobs eval {UPDATE JOBCI SET profile_id = $good_pid WHERE ci_id = $ci_id}
+        hdbjobs eval {UPDATE JOBCI SET pipeline = 'COMPARE' WHERE ci_id = $ci_id}
     }
     putscli "COMPARE PRECHECK -> bad=$bad_tag  good=$good_tag"
     set co_good "cd $repo && git checkout -f $good_tag"

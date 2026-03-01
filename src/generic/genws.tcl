@@ -385,7 +385,9 @@ proc wapp-page-ci {} {
         wapp-subst {</ol>\n}
 
         # Performance profile
-        set pid [dict get $ci profile_id]
+        if {[dict exists $ci profile_id]} {
+            set pid [string trim [dict get $ci profile_id]]
+        }
         if {$pid ne "" && $pid != 0} {
             set purl "$B/jobs?profileid=$pid"
             wapp-subst {<p style="margin:12px 0 0 0;"><b>Performance Profile</b></p>\n}
@@ -445,8 +447,13 @@ proc wapp-page-ci {} {
         wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">}
         foreach k {ci_id refname profile_id status timestamp end_timestamp} {
         set v [dict get $ci $k]
-        if {$k eq "end_timestamp" && $v eq ""} {
+        if {(($k eq "end_timestamp") || ($k eq "profile_id")) && $v eq ""} {
+                if  {($k eq "profile_id")} { 
+		set v "0" 
+                wapp-subst "%html($k): %html($v)\n"
+		 } else {
                 wapp-subst "%html($k):\n"
+		}
             } else {
                 wapp-subst "%html($k): %html($v)\n"
             }

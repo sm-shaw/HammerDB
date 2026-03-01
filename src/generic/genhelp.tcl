@@ -106,7 +106,7 @@ Type \"help command\" for more details on specific commands below\n"
         buildschema checkschema deleteschema clearscript savescript customscript custommonitor datagenrun dbset dgset \
         diset distributescript giset jobs librarycheck loadscript metset metstart metstatus metstop print quit steprun switchmode tcset tcstart \
         tcstatus tcstop vucomplete vucreate vudestroy vurun vuset vustatus wsport wsstart wsstatus wsstop \
-        citmp cilisten cistop cistatus cipush cistep ciset \
+        citmp cilisten cistop cistatus cipush ciset \
     ]
 
     if {[ llength $args ] != 1} {
@@ -357,12 +357,6 @@ Changed commandline:keepalive_margin from 10 to 60 for generic"
                     putscli "cipush - Usage: cipush refname"
                     putscli "Simulates a GitHub webhook push for a ref, e.g.:"
                     putscli "  cipush refs/tags/mariadb-12.2.1"
-                }
-                cistep {
-                    putscli "cistep - Usage: cistep refname pipeline"
-                    putscli "Runs a CI pipeline (from ci.xml) for a specific refname, e.g.:"
-                    putscli "  cistep refs/tags/mariadb-12.2.1 default"
-                    putscli "  cistep refs/tags/mariadb-12.2.1 compare"
                 }
                 ciset {
                     putscli "ciset - Usage: ciset top section key value"

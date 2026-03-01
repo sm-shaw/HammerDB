@@ -119,7 +119,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBCHART table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, dbprefix TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
           puts "Error creating JOBCI table in SQLite in-memory database : $message"
           return
         } else {
@@ -162,7 +162,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBCHART table in SQLite on-disk database : $message"
               return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'BUILD', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, dbprefix TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST', profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
               puts "Error creating JOBCI table in SQLite on-disk database : $message"
               return
             } else {
@@ -221,42 +221,70 @@ namespace eval jobs {
       if [catch {set tblname [ hdbjobs eval {SELECT name FROM sqlite_master WHERE type='table' AND name='JOBMAIN'}]} message ] {
         puts "Error querying  JOBOUTPUT table in SQLite on-disk database : $message"
         return
-      } else {
-        if { $tblname eq "" } {
-          puts "Error: Job tables not created, create and populate Jobs database with GUI or CLI and run Web Service to browse Jobs"
+      } elseif { $tblname eq "" } {
+      if [catch {init_job_tables} message ] {
+          puts "Error: Job tables not created:$message"
           exit
-        }
-      }
+	  }
+      } else {
+         puts "Web Service using $sqlite_db database"
+       }
     }
   }
 
-  proc jobmain { jobid jobtype } {
+proc jobmain { jobid jobtype } {
     global rdbms bm
     upvar #0 genericdict genericdict
     if [ job_disable_check ] { return 0 }
-    if {$jobtype in {check build check delete} || $bm != "TPC-C" } {
-	set jobs_profile_id 0
-	} else {
-    if [catch {set jobs_profile_id [ dict get $genericdict commandline jobs_profile_id ]} message ] {
-	set jobs_profile_id 0
-    	 }
-	}
+
+    set tmpdictforpt [ find_current_dict ]
+
+    # Default: keep existing behaviour unless we detect Pipelines/CI context
+    set ci_mode 0
+    if {[dict exists $tmpdictforpt pipeline]} {
+        set ci_mode 1
+    } elseif {[dict exists $tmpdictforpt commandline pipeline]} {
+        set ci_mode 1
+    }
+
+    if {$ci_mode} {
+        # ---- CI/Pipelines rules (do NOT leak profile_id into single/compare) ----
+        set jobs_profile_id 0
+        set pl ""
+        if {[dict exists $tmpdictforpt pipeline]} {
+            set pl [string tolower [dict get $tmpdictforpt pipeline]]
+        } elseif {[dict exists $tmpdictforpt commandline pipeline]} {
+            set pl [string tolower [dict get $tmpdictforpt commandline pipeline]]
+        }
+
+        if {$bm eq "TPC-C" && $pl eq "profile"} {
+            if {[catch {set jobs_profile_id [dict get $genericdict commandline jobs_profile_id]}]} {
+                set jobs_profile_id 0
+            }
+            # sanity clamp
+            if {![string is integer -strict $jobs_profile_id] || $jobs_profile_id < 1000} {
+                set jobs_profile_id 1000
+            }
+        }
+    } else {
+        if {$jobtype in {check build delete} || $bm != "TPC-C" } {
+            set jobs_profile_id 0
+        } else {
+            if [catch {set jobs_profile_id [ dict get $genericdict commandline jobs_profile_id ]} message ] {
+                set jobs_profile_id 0
+            }
+        }
+    }
+
     set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBMAIN WHERE JOBID=$jobid} ]
     if { $query eq 0 } {
-      set tmpdictforpt [ find_current_dict ]
-      hdbjobs eval {INSERT INTO JOBMAIN(jobid,db,bm,jobdict,profile_id) VALUES($jobid,$rdbms,$bm,$tmpdictforpt,$jobs_profile_id)}
-      return 0
+        hdbjobs eval {INSERT INTO JOBMAIN(jobid,db,bm,jobdict,profile_id) VALUES($jobid,$rdbms,$bm,$tmpdictforpt,$jobs_profile_id)}
+        return 0
     } else {
-      return 1
+        return 1
     }
-  }
+}
 
-# Refactored jobs command parser (less brittle than arg-count switching)
-# - Uses subcommand dispatch instead of switch on argument count
-# - Preserves existing behaviour/outputs as closely as possible
-# - Fixes obvious typos: "entier" -> "integer"
-# - Keeps special-casing for "jobs diff ..." which returns a value
-#
 # Usage summary:
 #   jobs
 #   jobs result|timestamp|joblist|profileid
@@ -650,6 +678,21 @@ if {[string equal -nocase $cmd "timing"]} {
     }
   }
 
+proc __auto_refresh_js {{ms 15000}} {
+    set ms [string trim $ms]
+    if {![string is integer -strict $ms] || $ms < 2000} { set ms 15000 }
+
+    wapp-subst "<script>\n"
+    wapp-subst "(function(){\n"
+    wapp-subst "  var REFRESH_MS = $ms;\n"
+    wapp-subst "  setInterval(function(){\n"
+    wapp-subst "    var url = window.location.pathname + window.location.search + window.location.hash;\n"
+    wapp-subst "    window.location.replace(url);\n"
+    wapp-subst "  }, REFRESH_MS);\n"
+    wapp-subst "})();\n"
+    wapp-subst "</script>\n"
+}
+
 proc home-common-header {} {
     wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
 
@@ -666,6 +709,9 @@ proc home-common-header {} {
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 <link href="%url($url)" rel="stylesheet">
 <title>HammerDB Results</title>
+}
+__auto_refresh_js 15000
+    wapp-subst {
 </head>
 <body>
 
@@ -1451,7 +1497,7 @@ proc wapp-page-jobs {} {
         wapp-subst {<table>\n}
         wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>NOPM</th><th>Status</th>\n}
 
-        foreach job [getjob joblist] {
+        foreach job [ lreverse [getjob joblist] ] {
             set nopm "--"
             set geo  "--"
             set url  "$B/jobs?jobid=$job&index"

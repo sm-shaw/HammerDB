@@ -1,91 +1,117 @@
 #!/usr/bin/env python3
-# maintainer: Pooja Jain 
+# maintainer: Pooja Jain
+#
+# Behaviour matches maria_tprocc_run_profile.tcl:
+#   PROFILEID=0   => single run at VUs=vcpu, no jobs profileid
+#   PROFILEID>1   => profile sweep, jobs profileid, VU list: 1 then 4..(cpus+8) step 4
+#   otherwise     => error
+#
+# Output:
+#   TMP/maria_tprocc_profile.<PROFILEID>
 
 import os
 import sys
 
+def fatal(msg: str) -> None:
+    print(msg)
+    sys.exit(1)
+
+# Ensure TMP exists (same spirit as TCL)
 tmpdir = os.getenv("TMP")
 if not tmpdir:
     tmpdir = os.path.join(os.getcwd(), "TMP")
     os.makedirs(tmpdir, exist_ok=True)
-    print(f"TMP not set — defaulting to {tmpdir}")
     os.environ["TMP"] = tmpdir
+    print(f"TMP not set — defaulting to {tmpdir}")
 else:
-    # Normalise TMP to absolute path (nice but not required)
     tmpdir = os.path.abspath(tmpdir)
     os.environ["TMP"] = tmpdir
 
 print("SETTING CONFIGURATION")
 
-profileid = os.getenv("PROFILEID")
-if not profileid:
-    print("ERROR: PROFILEID not set in environment")
-    sys.exit(1)
+# PROFILEID must be explicitly set (including "0")
+if "PROFILEID" not in os.environ:
+    fatal("ERROR: PROFILEID not set in environment (must be explicitly set to 0 or > 1)")
+
+profileid_raw = os.environ.get("PROFILEID", "")
+if profileid_raw == "":
+    fatal("ERROR: PROFILEID is empty (must be explicitly set to 0 or > 1)")
 
 try:
-    int(profileid)
+    profileid = int(profileid_raw)
 except ValueError:
-    print(f"ERROR: PROFILEID must be an integer, got: '{profileid}'")
-    sys.exit(1)
+    fatal(f"ERROR: PROFILEID must be an integer, got: '{profileid_raw}'")
 
 print(f"Using PROFILEID = {profileid}")
 
-try:
-    # Set the profileid inside HammerDB jobs module
-    jobs("profileid", profileid)
-except Exception as e:
-    print(f"ERROR: jobs profileid failed: {e}")
-    sys.exit(1)
+# Enforce contract
+if profileid < 0 or profileid == 1:
+    fatal(f"ERROR: PROFILEID must be 0 (non-profile single) or > 1 (profile). Got: {profileid}")
 
-# Generic options
-giset("commandline", "keepalive_margin", 1200)
-giset("timeprofile", "xt_gather_timeout", 1200)
-
-# Database & benchmark selection
+# HammerDB config (matches TCL)
 dbset("db", "maria")
 dbset("bm", "TPC-C")
 
-# Connection details
+giset("commandline", "keepalive_margin", 1200)
+giset("timeprofile", "xt_gather_timeout", 1200)
+
 diset("connection", "maria_host", "localhost")
-diset("connection", "maria_port", "3306")
+diset("connection", "maria_port", 3306)
 diset("connection", "maria_socket", "/tmp/mariadb.sock")
 
-# TPROC-C workload options
 diset("tpcc", "maria_user", "root")
 diset("tpcc", "maria_pass", "maria")
 diset("tpcc", "maria_dbase", "tpcc")
 diset("tpcc", "maria_driver", "timed")
-diset("tpcc", "maria_rampup", "2")
-diset("tpcc", "maria_duration", "5")
+diset("tpcc", "maria_rampup", 2)
+diset("tpcc", "maria_duration", 5)
 diset("tpcc", "maria_allwarehouse", "false")
-diset("tpcc", "maria_timeprofile", "false")
+diset("tpcc", "maria_timeprofile", "true")
 diset("tpcc", "maria_purge", "true")
 
 print("TEST STARTED")
 
-import tclpy
+# Only set jobs profileid when PROFILEID > 1 (i.e. actually in a profile)
+if profileid > 1:
+    try:
+        jobs("profileid", str(profileid))
+    except Exception as e:
+        fatal(f"ERROR: jobs profileid failed: {e}")
 
-end_vu = (os.cpu_count() or 1) + 8
-vcpu_list = [1] + list(range(4, end_vu + 1, 4))
+outfile = os.path.join(tmpdir, f"maria_tprocc_profile.{profileid}")
 
-for z in vcpu_list:
+def run_once(vus) -> str:
     loadscript()
-    vuset("vu", z)
+    vuset("vu", vus)
     vuset("logtotemp", 1)
     vucreate()
+    metstart()
     tcstart()
     tcstatus()
-
-    # Run test and capture job id
-    jobid = tclpy.eval("vurun")
-
+    jobid = vurun()
+    metstop()
     tcstop()
     vudestroy()
+    return str(jobid)
 
-    file_path = os.path.join(tmpdir, f"maria_tprocc_profile.{profileid}")
-    print(f"Writing to {file_path}")
-    with open(file_path, "a", encoding="utf-8") as fd:
-        fd.write(str(jobid) + "\n")
+# PROFILEID=0 => single run at vcpu, overwrite file
+if profileid == 0:
+    jobid = run_once("vcpu")
+    print(f"Writing to {outfile}")
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write(jobid + "\n")
+    print("TEST COMPLETE")
+    sys.exit(0)
+
+# PROFILEID > 1 => sweep, append jobids
+end_vu = (os.cpu_count() or 1) + 8
+vu_list = [1] + list(range(4, end_vu + 1, 4))
+
+for z in vu_list:
+    jobid = run_once(str(z))
+    print(f"Writing to {outfile}")
+    with open(outfile, "a", encoding="utf-8") as f:
+        f.write(jobid + "\n")
 
 print("TEST COMPLETE")
 sys.exit(0)

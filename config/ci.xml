@@ -38,38 +38,31 @@
             <shutdown>shutdown</shutdown>
         </install>
         <test>
-            <oltp>scripts/tcl/maria/tprocc/maria_tprocc.sh</oltp>
+            <oltp>scripts/tcl/maria/tprocc/maria_tprocc_single.sh</oltp>
+            <olap>scripts/tcl/maria/tproch/maria_tproch_single.sh</olap>
             <profile>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</profile>
             <compare>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</compare>
-            <olap>scripts/tcl/maria/tproch/maria_tproch.sh</olap>
         </test>
         <pipeline>
-            <!-- Full end-to-end OLTP run (clone → build package install init start run change_password/shutdown restart OLTP test) -->
-            <default>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart start_tests:oltp</default>
-            <!-- New unified profile path: single profile -->
+            <single_c>clone build package commit_msg install init run_sql:shutdown restart run_sql:change_password start_tests:oltp</single_c>
+            <single_h>clone build package commit_msg install init run_sql:shutdown restart run_sql:change_password start_tests:olap</single_h>
             <profile>profile</profile>
-            <!-- Base profile id for compare; bad/good use pid and pid+1 (and may be bumped by JOBMAIN max(profile_id)) -->
             <profileid>1000</profileid>
-            <!-- New unified compare path: single 'compare' step calls mariadb_compare, which does bad+good runs and job diff -->
             <compare>compare</compare>
-            <!-- Base profile id for compare; bad/good use pid and pid+1 (and may be bumped by JOBMAIN max(profile_id)) -->
             <compare_profileid>1000</compare_profileid>
-            <!-- Build + install pipeline only, no tests -->
-            <build_no_test>clone build package commit_msg install init start run_sql:change_password run_sql:shutdown restart</build_no_test>
-            <!-- Restart DB and run OLTP tests -->
-            <restart_and_test>restart start_tests:oltp</restart_and_test>
-            <!-- Just restart DB (no tests) -->
-            <restart_only>restart</restart_only>
-            <!-- Direct OLTP/OLAP test runs (expect DB already running) -->
-            <tests_oltp_only>start_tests:oltp</tests_oltp_only>
-            <tests_olap_only>start_tests:olap</tests_olap_only>
         </pipeline>
     </MariaDB>
     <PostgreSQL>
-    <!-- Placeholder for IBM Db2 database automation -->
+        <build>
+            <repo_url>https://github.com/postgres/postgres.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+        </build>
     </PostgreSQL>
     <MySQL>
-    <!-- Placeholder for IBM Db2 database automation -->
+        <build>
+            <repo_url>https://github.com/mysql/mysql-server.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+        </build>
     </MySQL>
     <Oracle>
     <!-- Placeholder for Oracle database automation -->
