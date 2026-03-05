@@ -362,12 +362,6 @@ if [catch {package require sqlite3} message ] {
 error "Error loading SQLite in xtprof : $message"
 return
         }
-if [catch {sqlite3 hdb generic} message ] {
-error "Error initializing SQLite database for XT Profiler : $message"
-return
-        } else {
-catch {hdb timeout 30000}
-}
 set sqlitegeneric [ SQLite2Dict "generic" ]
 if { [ is-dict $sqlitegeneric ] } {
     set xtunique_log_name [ dict get $sqlitegeneric timeprofile xt_unique_log_name ]

@@ -1,10 +1,10 @@
 proc mariadb_ci_id {cidict refname} {
     global rdbms
+    set dbprefix [find_prefix $rdbms]
     # Ensure a JOBCI row exists for this run and return its ci_id.
-    # Reuses existing row when called from WAPP/cilisten; creates one when called directly.
     set ci_id [ci_latest_id $refname]
     if {$ci_id eq ""} {
-        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($refname,$cidict)}
+        hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict) VALUES ($refname,$dbprefix,$cidict)}
         set ci_id [ci_latest_id $refname]
     }
     return $ci_id
@@ -623,23 +623,28 @@ proc mariadb_init {cidict refname} {
     putscli "Initializing MariaDB with command:"
     putscli $init_cmd
 
-    set ::pipe_done 0
     set init_status "INIT SUCCEEDED"
+    # Capture output (per-call done var; avoids races with global ::pipe_done)
+    set doneVar "::pipe_done_init_[clock milliseconds]"
+    set $doneVar 0
+    set ::pipe_output ""
+    set init_status "INIT SUCCEEDED"
+
     if {[catch {
         set pipe [open "|bash -c \"$safe_cmd\"" "r"]
-        fconfigure $pipe -blocking 0 -buffering line
-        fileevent $pipe readable [list handle_output $pipe]
-        vwait ::pipe_done
-    } open_err]} {
-        putscli "DB init failed to start: $open_err"
-        set init_status "INIT FAILED"
-    } else {
-        if {[lsearch -exact [chan names] $pipe] != -1} {
-            if {[catch {close $pipe} close_err]} {
-                putscli "Init command exited with error: $close_err"
-                set init_status "INIT FAILED"
-            }
+        fconfigure $pipe -translation lf -blocking 1 -buffering line
+
+        while {[gets $pipe line] >= 0} {
+            append ::pipe_output "$line\n"
+            putscli $line
         }
+
+        close $pipe
+    } init_err]} {
+
+        putscli "DB init failed: $init_err"
+        set init_status "INIT FAILED"
+
     }
     if {$init_status eq "INIT FAILED"} {
         catch {
@@ -842,38 +847,52 @@ proc mariadb_start {cidict refname} {
 proc mariadb_run_sql {cidict refname key} {
     global rdbms
     set install [dict get $cidict $rdbms install]
-    set KEY [string toupper $key]
+
+    set KEY    [string toupper $key]
+    set FAILED "${KEY} FAILED"
+    set OK     "${KEY} SUCCEEDED"
 
     if {![dict exists $install $key]} {
         putscli "RUN_SQL $key: missing <$key> in XML"
-        catch {hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE refname = $refname}}
-        return "$KEY FAILED"
-    }
-
-    # Discover basedir (per-CI install dir)
-    set ci_id [mariadb_ci_id $cidict $refname]
-    set safe_ref [mariadb_ci_safe_ref $refname]
-    set install_root [mariadb_normpath [dict get $install install_dir]]
-    set parent [file join $install_root "ci_${ci_id}_${safe_ref}"]
-    set dirs   [glob -nocomplain -types d -directory $parent mariadb-*]
-    if {[llength $dirs] == 0} {
-        putscli "RUN_SQL $key: no mariadb-* under $parent"
         catch {
             set ci_id [ci_latest_id $refname]
             if {$ci_id ne ""} {
-                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+                hdbjobs eval {UPDATE JOBCI SET status=$FAILED WHERE ci_id=$ci_id}
             }
         }
-        return "$KEY FAILED"
+        return $FAILED
     }
+
+    # Discover basedir (per-CI install dir)
+    set ci_id     [mariadb_ci_id $cidict $refname]
+    set safe_ref  [mariadb_ci_safe_ref $refname]
+    set install_root [mariadb_normpath [dict get $install install_dir]]
+    set parent    [file join $install_root "ci_${ci_id}_${safe_ref}"]
+    set dirs      [glob -nocomplain -types d -directory $parent mariadb-*]
+    if {[llength $dirs] == 0} {
+        putscli "RUN_SQL $key: no mariadb-* under $parent"
+        catch {
+            set ci_id2 [ci_latest_id $refname]
+            if {$ci_id2 ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status=$FAILED WHERE ci_id=$ci_id2}
+            }
+        }
+        return $FAILED
+    }
+
     set basedir ""; set newest -1
-    foreach d $dirs { set m [file mtime $d]; if {$m>$newest} { set newest $m; set basedir $d } }
+    foreach d $dirs {
+        set m [file mtime $d]
+        if {$m > $newest} { set newest $m; set basedir $d }
+    }
 
-    # Socket path
+    # Socket path (from XML if present)
     set socket "/tmp/mariadb.sock"
-    if {[dict exists $install socket]} { set socket [mariadb_normpath [dict get $install socket]] }
+    if {[dict exists $install socket]} {
+        set socket [mariadb_normpath [dict get $install socket]]
+    }
 
-    # Build client command (exact quoting)
+    # Build client command (this is the style you said WORKS)
     set sql     [dict get $install $key]
     set sql_cmd "./bin/mariadb -S $socket --skip-ssl -vvv -e \\\"$sql\\\""
 
@@ -882,6 +901,7 @@ proc mariadb_run_sql {cidict refname key} {
 
     set ::pipe_done 0
     set close_status OK
+
     if {[catch {
         set pipe [open "|bash -c \"cd $basedir && $sql_cmd\"" "r"]
         fconfigure $pipe -blocking 0 -buffering line
@@ -892,26 +912,104 @@ proc mariadb_run_sql {cidict refname key} {
     } errMsg]} {
         putscli "RUN_SQL $key failed to spawn: $errMsg"
         catch {
-            set ci_id [ci_latest_id $refname]
-            if {$ci_id ne ""} {
-                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+            set ci_id2 [ci_latest_id $refname]
+            if {$ci_id2 ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status=$FAILED WHERE ci_id=$ci_id2}
             }
         }
-        return "$KEY FAILED"
+        return $FAILED
     }
 
     if {$close_status ne "OK"} {
         putscli "RUN_SQL $key error: $close_status"
         catch {
-            set ci_id [ci_latest_id $refname]
-            if {$ci_id ne ""} {
-                hdbjobs eval {UPDATE JOBCI SET status = '$KEY FAILED' WHERE ci_id = $ci_id}
+            set ci_id2 [ci_latest_id $refname]
+            if {$ci_id2 ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status=$FAILED WHERE ci_id=$ci_id2}
             }
         }
-        return "$KEY FAILED"
+        return $FAILED
     }
 
-    return "$KEY SUCCEEDED"
+    return $OK
+}
+
+# helper: capture pipe output + drive ::pipe_done like handle_output does
+proc _mariadb_ping_capture {pipe} {
+    global ::pipe_done ::_mariadb_ping_output
+    if {[eof $pipe]} {
+        set ::pipe_done 1
+        return
+    }
+    if {[gets $pipe line] >= 0} {
+        putscli $line
+        append ::_mariadb_ping_output $line "\n"
+    }
+}
+
+proc mariadb_ping {cidict refname} {
+    global rdbms
+    set install [dict get $cidict $rdbms install]
+
+    # Discover basedir (per-CI install dir) - same logic as mariadb_run_sql
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set safe_ref [mariadb_ci_safe_ref $refname]
+    set install_root [mariadb_normpath [dict get $install install_dir]]
+    set parent [file join $install_root "ci_${ci_id}_${safe_ref}"]
+    set dirs   [glob -nocomplain -types d -directory $parent mariadb-*]
+    if {[llength $dirs] == 0} {
+        putscli "PING: no mariadb-* under $parent"
+        return "PING FAILED"
+    }
+    set basedir ""; set newest -1
+    foreach d $dirs {
+        set m [file mtime $d]
+        if {$m > $newest} { set newest $m; set basedir $d }
+    }
+
+    # Socket path (from XML if present) - same as mariadb_run_sql
+    set socket "/tmp/mariadb.sock"
+    if {[dict exists $install socket]} {
+        set socket [mariadb_normpath [dict get $install socket]]
+    }
+
+    # Build command using the SAME quoting style that works in mariadb_run_sql
+    set sql "SELECT @@version"
+    set sql_cmd "./bin/mariadb -S $socket --skip-ssl -vvv -e \\\"$sql\\\""
+
+    putscli "PING:"
+    putscli $sql_cmd
+
+    # init capture buffer BEFORE fileevent fires
+    set ::_mariadb_ping_output ""
+    set ::pipe_done 0
+    set close_status OK
+
+    if {[catch {
+        set pipe [open "|bash -c \"cd $basedir && $sql_cmd\"" "r"]
+        fconfigure $pipe -blocking 0 -buffering line
+        fileevent $pipe readable [list _mariadb_ping_capture $pipe]
+        after 15000 { if {$::pipe_done == 0} { set ::pipe_done 1 } }
+        vwait ::pipe_done
+        if {[catch {close $pipe} errMsg]} { set close_status $errMsg }
+    } errMsg]} {
+        putscli "PING failed to spawn: $errMsg"
+        return "PING FAILED"
+    }
+
+    if {$close_status ne "OK"} {
+        putscli "PING error: $close_status"
+        return "PING FAILED"
+    }
+
+    # If you want a friendly “PING SUCCEEDED: version=…” line:
+    set version ""
+    if {[regexp {^\|\s*([0-9]+\.[0-9]+\.[0-9]+[^|]*)\s*\|$} $::_mariadb_ping_output -> version]} {
+        putscli "PING SUCCEEDED: $version"
+    } else {
+        putscli "PING SUCCEEDED"
+    }
+    return "PING SUCCEEDED"
 }
 
 # Run OLTP/OLAP test script; raw streaming; per-invocation done flag
@@ -1008,11 +1106,10 @@ proc mariadb_profile {cidict refname} {
     set bad_tag [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
 
     # Ensure exactly ONE JOBCI row exists for this run:
-    # - If caller already created it (queued / WAPP), reuse it.
-    # - If not (direct cistep/cisteps), create it once.
+    set dbprefix [find_prefix $rdbms]
     set ci_id [ci_latest_id $bad_tag]
     if {$ci_id eq ""} {
-        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
+        hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict) VALUES ($bad_tag,$dbprefix,$cidict)}
         set ci_id [ci_latest_id $bad_tag]
     }
     if {$ci_id ne ""} {
@@ -1163,8 +1260,9 @@ puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $bad_tag]
     if {$sst eq "START FAILED"} { return "PROFILE FAILED" }
-    putscli "Pausing for 10 seconds before running tests for $refname"
-    after 10000
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PING' WHERE ci_id=$ci_id } }
+    set pst [mariadb_ping $cidict $bad_tag]
+    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" } 
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "PROFILE FAILED" }
@@ -1181,6 +1279,8 @@ proc mariadb_compare {cidict refname} {
     }
     ci_check_tmp
 
+    set dbprefix [find_prefix $rdbms]
+
     # Resolve build root and current tag
     if {![dict exists $cidict $rdbms build local_dir_root]} {
         putscli "COMPARE FAILED: <$rdbms>/<build>/<local_dir_root> missing"
@@ -1194,8 +1294,8 @@ proc mariadb_compare {cidict refname} {
     # - If not (direct cistep/cisteps), create it once.
     set ci_id [ci_latest_id $bad_tag]
     if {$ci_id eq ""} {
-        hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($bad_tag,$cidict)}
-        set ci_id [ci_latest_id $bad_tag]
+        hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict) VALUES ($bad_tag,$dbprefix,$cidict)}
+        set ci_id [hdbjobs eval {SELECT last_insert_rowid()}]
     }
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
@@ -1275,10 +1375,9 @@ proc mariadb_compare {cidict refname} {
     }
 
     # Helper to run the runner once (no 2>&1, wait for completion, no extra blank lines)
-    proc _compare_run_once {ham_root runner_abs tag pid} {
+    proc _compare_run_once {ham_root runner_abs tag pid ci_id} {
         set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
         putscli "RUNNER: $run"
-        set ci_id [ci_latest_id $tag]
         if {$ci_id ne ""} {
             hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
         }
@@ -1318,7 +1417,6 @@ proc mariadb_compare {cidict refname} {
     }
 
     # 1) Run profile on BAD tag (current)
-puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "COMPARE FAILED" }
@@ -1343,12 +1441,13 @@ puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $bad_tag]
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
-    putscli "Pausing for 10 seconds before running tests for $refname"
-    after 10000
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PING' WHERE ci_id=$ci_id } }
+    set pst [mariadb_ping $cidict $bad_tag]
+    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" } 
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
-    if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
+    if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid $ci_id]} {
         return "COMPARE FAILED"
     }
 
@@ -1358,25 +1457,63 @@ puts $ci_id
         putscli "COMPARE FAILED: shutdown failed before switching binaries"
         return "COMPARE FAILED"
     }
-    catch {cd $ham_root}
-    if {$is_commit} {
-        set desc_cmd "cd $repo && git rev-list --max-count=1 $bad_tag^"
-    } else {
-        set desc_cmd "cd $repo && git describe --tags --abbrev=0 $bad_tag^"
-    }
-    putscli "COMPARE PRECHECK: $desc_cmd"
 
-    if {[catch { set good_tag [exec bash -c "$desc_cmd"] } derr]} {
-        if ($is_commit) {
+    # Decide if bad_tag looks like a commit SHA (7-40 hex)
+    set is_commit 0
+    if {[regexp {^[0-9a-f]{7,40}$} $bad_tag]} {
+        set is_commit 1
+    }
+
+    catch {cd $ham_root}
+
+    if {$is_commit} {
+        # Commit mode: baseline is parent commit
+        set desc_cmd "cd $repo && git rev-list --max-count=1 $bad_tag^"
+        putscli "COMPARE PRECHECK: $desc_cmd"
+
+        if {[catch { set good_tag [exec bash -c "$desc_cmd"] } derr]} {
             putscli "COMPARE FAILED: could not find previous commit of $bad_tag: $derr"
-        } else {
-            putscli "COMPARE FAILED: could not find previous tag of $bad_tag: $derr"
+            return "COMPARE FAILED"
         }
+
+        set good_tag [string trim $good_tag]
+    } else {
+        # Tag mode: baseline is previous entry in the global version-sorted tag list
+        if {[catch { set alltags [exec git -C $repo tag -l "mariadb-*" --sort=v:refname] } derr]} {
+            putscli "COMPARE FAILED: could not list tags in $repo: $derr"
+            return "COMPARE FAILED"
+        }
+
+        set taglist {}
+        foreach t [split $alltags "\n"] {
+            set t [string trim $t]
+            if {$t ne ""} { lappend taglist $t }
+        }
+
+        set idx [lsearch -exact $taglist $bad_tag]
+        if {$idx < 0} {
+            putscli "COMPARE FAILED: bad_tag '$bad_tag' not found in tag list"
+            return "COMPARE FAILED"
+        }
+        if {$idx == 0} {
+            putscli "COMPARE FAILED: no previous tag exists before '$bad_tag'"
+            return "COMPARE FAILED"
+        }
+
+        set good_tag [lindex $taglist [expr {$idx - 1}]]
+        putscli "COMPARE PRECHECK -> bad=$bad_tag good=$good_tag"
+    }
+
+    set good_tag [string trim $good_tag]
+    putscli "COMPARE PRECHECK -> bad=$bad_tag good=$good_tag"
+
+    if {$good_tag eq ""} {
+        putscli "COMPARE FAILED: could not determine baseline for '$bad_tag'"
         return "COMPARE FAILED"
     }
-    set good_tag [string trim $good_tag]
-    hdbjobs eval {INSERT INTO JOBCI (refname,cidict) VALUES ($good_tag,$cidict)}
-    set ci_id [ci_latest_id $good_tag]
+
+    hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict) VALUES ($good_tag,$dbprefix,$cidict)}
+    set ci_id [hdbjobs eval {SELECT last_insert_rowid()}]
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
         hdbjobs eval {UPDATE JOBCI SET profile_id = $good_pid WHERE ci_id = $ci_id}
@@ -1515,7 +1652,6 @@ puts $ci_id
         putscli "Using existing worktree for $good_tag"
         catch { hdbjobs eval { UPDATE JOBCI SET clone_output='Using existing worktree' WHERE ci_id=$ci_id } }
     }
-puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='COMMIT MSG' WHERE ci_id=$ci_id } }
     set cmst [mariadb_commit_msg $cidict $good_tag]
     if {$cmst eq "COMMIT_MSG FAILED"} { return "COMPARE FAILED" }
@@ -1537,14 +1673,15 @@ puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='STARTING' WHERE ci_id=$ci_id } }
     set sst [mariadb_start $cidict $good_tag]
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
-    putscli "Pausing for 10 seconds before running tests for $refname"
-    after 10000
+    catch { hdbjobs eval { UPDATE JOBCI SET status='PING' WHERE ci_id=$ci_id } }
+    set pst [mariadb_ping $cidict $good_tag]
+    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" } 
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $good_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
 
     # 3) Run profile on GOOD tag
-    if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid]} {
+    if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid $ci_id]} {
         return "COMPARE FAILED"
     }
     set stop_st [mariadb_run_sql $cidict $good_tag shutdown]

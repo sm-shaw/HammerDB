@@ -678,9 +678,9 @@ if {[string equal -nocase $cmd "timing"]} {
     }
   }
 
-proc __auto_refresh_js {{ms 15000}} {
+proc __auto_refresh_js {{ms 30000}} {
     set ms [string trim $ms]
-    if {![string is integer -strict $ms] || $ms < 2000} { set ms 15000 }
+    if {![string is integer -strict $ms] || $ms < 2000} { set ms 30000 }
 
     wapp-subst "<script>\n"
     wapp-subst "(function(){\n"
@@ -710,7 +710,7 @@ proc home-common-header {} {
 <link href="%url($url)" rel="stylesheet">
 <title>HammerDB Results</title>
 }
-__auto_refresh_js 15000
+__auto_refresh_js 30000
     wapp-subst {
 </head>
 <body>
@@ -1586,6 +1586,9 @@ proc wapp-page-jobs {} {
 
         # Profiles table
         set profcount 0
+        if {![info exists ::profile_dbdesc]} {
+            set ::profile_dbdesc [dict create]
+        }
         wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
         wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Pick exactly two profiles, then click <b>Compare Profiles</b>.</p>}
         wapp-subst {<form method="GET" action="%html([wapp-param BASE_URL]/jobs)">}
@@ -1594,7 +1597,7 @@ proc wapp-page-jobs {} {
         wapp-subst {<table>\n}
         wapp-subst {<tr><th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th><th>Pick</th></tr>\n}
 
-        set profileids [join [hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc}]]
+        set profileids [lreverse [join [hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc}]]]
         foreach profileid $profileids {
             set url "$B/jobs?profileid=$profileid"
             set profiles [get_job_profile $profileid]
@@ -1627,6 +1630,9 @@ proc wapp-page-jobs {} {
                     }
                 }
             }
+            if {$maxdb ne ""} {
+                    dict set ::profile_dbdesc $profileid $maxdb
+                }
             set maxurl "$B/jobs?jobid=$maxjob&index"
             wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td><input type="checkbox" name="diff_%html($profileid)" value="1"></td></tr>\n}
         }
@@ -1670,6 +1676,7 @@ proc wapp-page-jobs {} {
             common-footer
             return
         }
+        set difflist [lsort -integer $difflist]
         lassign $difflist a b
         set chart [jobs $a getchart diff:$b]
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
@@ -2883,10 +2890,23 @@ if {$rawmode} {
              set line [ticklecharts::chart new]
              set ::ticklecharts::htmlstdout "True"
 
-             $line SetOptions \
-                 -title  [subst {text "$dbdescription Performance Profile Compare $profileid1 vs $profileid2"}] \
-                 -tooltip {show "True"} \
-                 -legend  {bottom "5%" left "40%"}
+        set pdesc1 ""
+        set pdesc2 ""
+        catch {upvar #0 profile_dbdesc profile_dbdesc}
+
+        if {[info exists profile_dbdesc]} {
+            if {[dict exists $profile_dbdesc $profileid1]} {
+                set pdesc1 [dict get $profile_dbdesc $profileid1]
+            }
+            if {[dict exists $profile_dbdesc $profileid2]} {
+                set pdesc2 [dict get $profile_dbdesc $profileid2]
+            }
+        }
+
+        $line SetOptions \
+            -title  [subst {text "Performance Profile Compare $profileid1 $pdesc1 vs $profileid2 $pdesc2"}] \
+            -tooltip {show "True"} \
+            -legend  {bottom "5%" left "40%"}
 
              $line Xaxis -name "Active VU" -data [list $xaxisvals] -axisLabel [list show "True"]
              $line Yaxis -name "Transactions" -position "left" -axisLabel {formatter {"{value}"}}

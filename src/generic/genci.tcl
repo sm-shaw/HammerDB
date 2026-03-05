@@ -1038,11 +1038,11 @@ proc cisteps {cidict refname pipeline_name} {
                 putscli $st
                 if {$st eq "START FAILED"} { return }
             }
-            restart {
-                set cmd "${r}_start"
+            ping {
+                set cmd "${r}_ping"
                 set st [$cmd $cidict $refname]
                 putscli $st
-                if {$st eq "START FAILED"} { return }
+                if {$st eq "PING FAILED"} { return }
             }
             run_sql:* {
                 set arg [lindex [split $step ":"] 1]

@@ -36,6 +36,7 @@
             <run_sql_cmd>./bin/mariadb -S {socket} --skip-ssl -vvv -e "{sql}"</run_sql_cmd>
             <change_password>ALTER USER 'root'@'localhost' IDENTIFIED BY 'maria'</change_password>
             <shutdown>shutdown</shutdown>
+            <ping>select @@version</ping>
         </install>
         <test>
             <oltp>scripts/tcl/maria/tprocc/maria_tprocc_single.sh</oltp>
@@ -44,8 +45,8 @@
             <compare>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</compare>
         </test>
         <pipeline>
-            <single_c>clone build package commit_msg install init run_sql:shutdown restart run_sql:change_password start_tests:oltp</single_c>
-            <single_h>clone build package commit_msg install init run_sql:shutdown restart run_sql:change_password start_tests:olap</single_h>
+            <single_c>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:oltp</single_c>
+            <single_h>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:olap</single_h>
             <profile>profile</profile>
             <profileid>1000</profileid>
             <compare>compare</compare>

@@ -799,7 +799,7 @@ return
         # Database chooser (auto-switch; no Load button)
         wapp-subst {<p><b>Database</b></p>}
         wapp-subst "<select class='aut-ctl' name='db' onchange=\"window.location='%html($B)/pipelines?db=' + encodeURIComponent(this.value)\">"
-        foreach {pfx label} [list maria MariaDB pg PostgreSQL mysql MySQL] {
+        foreach {pfx label} [ list maria MariaDB mysql MySQL pg PostgreSQL ] {
             set sel ""
             if {$dbprefix eq $pfx} { set sel " selected" }
             wapp-subst "<option value='%html($pfx)'$sel>%html($label)</option>"
@@ -819,7 +819,7 @@ return
 if {$dbprefix ne "maria"} {
     wapp-subst "<div class='aut-banner aut-fail' style='margin-top:10px;'>"
     wapp-subst "<b>%html([string totitle $dbprefix]) pipelines are not yet enabled.</b><br>"
-    wapp-subst "MariaDB is currently enabled. Other databases will be added once the provider scripts and repos are wired end-to-end."
+    wapp-subst "MariaDB is currently enabled. Other databases will be added at future releases."
     wapp-subst "</div>"
 } else {
 wapp-subst "<form method='GET' action='%html($B)/pipelines' id='runform'>"
@@ -844,7 +844,7 @@ wapp-subst "<form method='GET' action='%html($B)/pipelines' id='runform'>"
         wapp-subst {<div class="aut-row">}
         wapp-subst {Custom ref (tag, branch, or commit SHA):}
         if {$ref_custom eq ""} {
-            wapp-subst "<input class='aut-ctl' type='text' name='ref_custom' form='runform' placeholder='refs/tags/... or refs/heads/... or 144dead8826f...'>"
+            wapp-subst "<input class='aut-ctl' type='text' name='ref_custom' form='runform' placeholder='refs/tags/... or refs/heads/... or a1b2c3d4e5f6...'>"
         } else {
             wapp-subst "<input class='aut-ctl' type='text' name='ref_custom' form='runform' value='%html($ref_custom)' placeholder='refs/tags/... or refs/heads/... or 144dead8826f...'>"
         }
