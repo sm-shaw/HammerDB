@@ -142,6 +142,10 @@ Type \"help command\" for more details on specific commands below\n"
                     putscli "profileid id: sets current performance profile id or shows all previously used ids with id of all\n"
                     putscli {jobs profile - Usage: jobs profile [ id ]}
                     putscli "profile id: returns the results for the performance profile id.\n"
+                    putscli {jobs diff - Usage: jobs diff basepid comppid [true|false]}
+                    putscli "basepid: baseline/reference performance profile id."
+                    putscli "comppid: profile compared relative to the baseline."
+                    putscli "true|false: optional weighted compare mode.\n"
                     putscli {jobs jobid - Usage: jobs jobid [bm|db|delete|dict|metrics|result|status|system|tcount|timestamp|timing|vuid]}
                     putscli "bm: list benchmark for jobid."
                     putscli "db: list database for jobid."
@@ -157,11 +161,12 @@ Type \"help command\" for more details on specific commands below\n"
                     putscli "vuid: list VU output for VU with vuid for jobid.\n"
                     putscli {jobs jobid timing - Usage: jobs jobid timing vuid}
                     putscli "timing vuid: list xtprof timings for vuid for jobid.\n"
-                    putscli {jobs jobid getchart - Usage: jobs jobid getchart [result | timing | tcount | metrics | profile ]}
+                    putscli {jobs jobid getchart - Usage: jobs jobid getchart [result | timing | tcount | metrics | profile | diff:pid ]}
                     putscli "result: generate html chart for TPROC-C/TPROC-H result."
                     putscli "timing: generate html chart for TPROC-C/TPROC-H timings."
                     putscli "metrics: generate html chart for TPROC-C/TPROC-H metrics."
                     putscli "profile: generate html chart for TPROC-C performance profile using profileid for jobid argument."
+                    putscli "diff:pid: generate html comparison chart for profile pid relative to the profile identified by jobid."
                     putscli "tcount: generate html chart for TPROC-C transaction count.\n"
                 }
                 print {

@@ -296,7 +296,7 @@ proc jobmain { jobid jobtype } {
 #   jobs <jobid> <cmd>            (cmd may be integer vu -> vu=<n>)
 #   jobs <jobid> timing <vuid|vu=<n>>
 #   jobs <jobid> getchart <type>  (result|timing|tcount|metrics|profile|diff:<pid>)
-#   jobs diff <goodpid> <badpid> [true|false]
+#   jobs diff <basepid> <comppid> [true|false]
 
 proc jobs {args} {
     upvar #0 genericdict genericdict
@@ -323,7 +323,7 @@ proc jobs {args} {
     # Small helper for consistent usage errors
     proc ::_jobs_usage_error {msg} {
         puts $msg
-        puts "Error: Usage: \[ jobs | jobs format <fmt> | jobs disable <0|1> | jobs jobid | jobs jobid <command> \[option\] | jobs jobid timing <vuid|vu=n> | jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\] | jobs profileid \[id\] | jobs profile <id> | jobs diff goodpid badpid \[true|false\] \] - type \"help jobs\""
+        puts "Error: Usage: \[ jobs | jobs format <fmt> | jobs disable <0|1> | jobs jobid | jobs jobid <command> \[option\] | jobs jobid timing <vuid|vu=n> | jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\] | jobs profileid \[id\] | jobs profile <id> | jobs diff basepid comppid \[true|false\] \] - type \"help jobs\""
     }
 
     # ---------------------------
@@ -339,18 +339,18 @@ proc jobs {args} {
     set opt [lindex $tokens 0]
     if {[string equal -nocase $opt "diff"]} {
         if {$nt < 3 || $nt > 4} {
-            ::_jobs_usage_error "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            ::_jobs_usage_error "Error: Usage: jobs diff basepid comppid \[true|false\]"
             return
         }
-        set good_pid  [lindex $tokens 1]
-        set bad_pid   [lindex $tokens 2]
+        set base_pid  [lindex $tokens 1]
+        set comp_pid  [lindex $tokens 2]
         set weighting [expr {$nt == 4 ? [lindex $tokens 3] : "false"}]
 
         if {![string is boolean -strict $weighting]} {
-            ::_jobs_usage_error "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            ::_jobs_usage_error "Error: Usage: jobs diff basepid comppid \[true|false\]"
             return
         }
-        set ratio [jobs_profile_diff $good_pid $bad_pid $weighting]
+        set ratio [jobs_profile_diff $base_pid $comp_pid $weighting]
         if {$ratio ne ""} {
             return $ratio
         } else {
@@ -503,17 +503,17 @@ if {[string equal -nocase $cmd "timing"]} {
     if {[llength $tokens] >= 1 && [string equal -nocase $opt "diff"]} {
         set argc [llength $tokens]
         if {$argc < 3 || $argc > 4} {
-            puts "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            puts "Error: Usage: jobs diff basepid comppid \[true|false\]"
             return
         }
-        set good_pid  [lindex $tokens 1]
-        set bad_pid   [lindex $tokens 2]
+        set base_pid  [lindex $tokens 1]
+        set comp_pid  [lindex $tokens 2]
         set weighting [expr {$argc == 4 ? [lindex $tokens 3] : "false"}]
 	if {![string is boolean -strict $weighting]} {
-            puts "Error: Usage: jobs diff goodpid badpid \[true|false\]"
+            puts "Error: Usage: jobs diff basepid comppid \[true|false\]"
             return
         }
-        set ratio [jobs_profile_diff $good_pid $bad_pid $weighting]
+        set ratio [jobs_profile_diff $base_pid $comp_pid $weighting]
         if {$ratio ne ""} { 
 	return $ratio 
 	} else {
@@ -583,7 +583,7 @@ if {[string equal -nocase $cmd "timing"]} {
         } 
       }
       default {
-        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id | jobs diff goodpid badpid \[true|false\]\] - type \"help jobs\""
+        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id | jobs diff basepid comppid \[true|false\]\] - type \"help jobs\""
       }
     }
   }
@@ -1678,7 +1678,10 @@ proc wapp-page-jobs {} {
         }
         set difflist [lsort -integer $difflist]
         lassign $difflist a b
-        set chart [jobs $a getchart diff:$b]
+        #Compare the first profile relative to the second profile
+        set chart [jobs $b getchart diff:$a]
+        #Change to reverses the order
+        #set chart [jobs $a getchart diff:$b]
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
         set d ""
@@ -2778,10 +2781,13 @@ if {$rawmode} {
                  return
              }
 
-             # first profile id comes from jobid
-             set profileid1 $jobid
-             # second profile id from diff:PROFILEID
-             set profileid2 [lindex $parts 1]
+             # first profile id is the base/reference profile from jobid
+             set base_pid $jobid
+             # second profile id is the compared profile from diff:PROFILEID
+             set comp_pid [lindex $parts 1]
+             # retain legacy names for existing code below
+             set profileid1 $base_pid
+             set profileid2 $comp_pid
 
              # --- get profile1 series (same as 'profile' block logic) ---
              set lineseries1_1 [list]
@@ -2904,7 +2910,7 @@ if {$rawmode} {
         }
 
         $line SetOptions \
-            -title  [subst {text "Performance Profile Compare $profileid1 $pdesc1 vs $profileid2 $pdesc2"}] \
+            -title  [subst {text "Performance Profile Compare $comp_pid $pdesc2 relative to $base_pid $pdesc1"}] \
             -tooltip {show "True"} \
             -legend  {bottom "5%" left "40%"}
 
@@ -2925,7 +2931,7 @@ if {$rawmode} {
                  -itemStyle [subst {color $color2 opacity 0.60}] \
                  -lineStyle {type "dashed"}
 
-             # --- Numeric summary using jobs_profile_diff (profile2 vs profile1) ---
+             # --- Numeric summary using jobs_profile_diff (comp relative to base) ---
              set ratio [jobs_profile_diff $profileid1 $profileid2 true]
              set summary ""
              if {$ratio ne ""} {
@@ -2954,12 +2960,12 @@ if {$rawmode} {
 
                      # ratio with sign (no %)
                      set delta [format "%+.2f" $r]
-                     set summary "Compare summary (profile $profileid1 vs $profileid2): Δ = $delta $status (threshold $threshold_value)"
+                     set summary "Compare summary: $comp_pid relative to $base_pid: Δ = $delta $status (threshold $threshold_value)"
                  } else {
-                     set summary "Compare summary (profile $profileid1 vs $profileid2): $cleanRatio"
+                     set summary "Compare summary: $comp_pid relative to $base_pid: $cleanRatio"
                  }
              }
-             set html [$line toHTML -title "Performance Profile Compare $profileid1 vs $profileid2"]
+             set html [$line toHTML -title "Performance Profile Compare $comp_pid to $base_pid"]
 
              # Neutralise the green "success" wrapper emitted by toHTML (first <div ...>)
              if {[regexp {^<div([^>]*)>} $html -> attrs]} {
@@ -3546,7 +3552,7 @@ return $huddleobj
 # using w = max(1.0, activevu / phys_cores) with phys_cores = ceil(logical/2), no upper cap.
 
 # Compare two performance profiles and return signed ratio:
-#   ratio = (avg_bad - avg_good) / avg_good
+#   ratio = (avg_comp - avg_base) / avg_base
 # Weighting:
 #   weighting = "true"  → weighted, phys_cores auto = ceil(logical/2)
 #             = "false" → unweighted
@@ -3665,7 +3671,7 @@ proc jobs_profile_diff {good_pid bad_pid weighting} {
         return
     }
     set ratio_u [expr {($b_avg_u - $g_avg_u) / $g_avg_u}]
-    putscli [format "Profiles compared (unweighted): matched=%d, avg_good=%.0f, avg_bad=%.0f" $n $g_avg_u $b_avg_u]
+    putscli [format "Profiles compared (unweighted): matched=%d, avg_base=%.0f, avg_comp=%.0f" $n $g_avg_u $b_avg_u]
 
     # ---- weighted (optional) ----
     if {$do_weight} {
@@ -3689,7 +3695,7 @@ proc jobs_profile_diff {good_pid bad_pid weighting} {
             set b_avg [expr {$b_sum / $w_sum}]
             if {$g_avg > 0.0} {
                 set ratio_w [expr {($b_avg - $g_avg) / $g_avg}]
-                putscli [format "Profiles compared (weighted linear, no cap): matched=%d, phys_cores=%d, avg_good=%.0f, avg_bad=%.0f" \
+                putscli [format "Profiles compared (weighted linear, no cap): matched=%d, phys_cores=%d, avg_base=%.0f, avg_comp=%.0f" \
                                  $n $phys_cores $g_avg $b_avg]
                 return [__fmt_ratio $ratio_w 2]
             }
