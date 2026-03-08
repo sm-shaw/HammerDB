@@ -232,6 +232,57 @@ namespace eval jobs {
     }
   }
 
+proc _latest_workload_logname {} {
+    set tmpdir [findtempdir]
+    if {$tmpdir eq "notmpdir"} {
+        return "nologfile"
+    }
+
+    # Match both default and unique workload logs:
+    #   hammerdb.log
+    #   hammerdb_<GUID>.log
+    set logfiles [glob -nocomplain -types f -directory $tmpdir "hammerdb*.log"]
+
+    if {[llength $logfiles] == 0} {
+        return "nologfile"
+    }
+
+    set newest "nologfile"
+    set newest_mtime -1
+    foreach f $logfiles {
+        set mtime [file mtime $f]
+        if {$mtime > $newest_mtime} {
+            set newest_mtime $mtime
+            set newest $f
+        }
+    }
+
+    return $newest
+}
+
+proc _tail_log_file {filename {maxbytes 16384}} {
+    if {$filename eq "" || $filename eq "nologfile" || ![file exists $filename] || ![file readable $filename]} {
+        return "No active workload log"
+    }
+
+    set fsize [file size $filename]
+    if {$fsize < 0} {
+        return "No active workload log"
+    }
+
+    set fh [open $filename r]
+    fconfigure $fh -translation binary -encoding iso8859-1
+
+    if {$fsize > $maxbytes} {
+        seek $fh [expr {$fsize - $maxbytes}] start
+    }
+
+    set data [read $fh]
+    close $fh
+
+    return [encoding convertfrom utf-8 $data]
+}
+
 proc jobmain { jobid jobtype } {
     global rdbms bm
     upvar #0 genericdict genericdict
@@ -678,9 +729,9 @@ if {[string equal -nocase $cmd "timing"]} {
     }
   }
 
-proc __auto_refresh_js {{ms 30000}} {
+proc __auto_refresh_js {{ms 120000}} {
     set ms [string trim $ms]
-    if {![string is integer -strict $ms] || $ms < 2000} { set ms 30000 }
+    if {![string is integer -strict $ms] || $ms < 2000} { set ms 120000 }
 
     wapp-subst "<script>\n"
     wapp-subst "(function(){\n"
@@ -710,7 +761,7 @@ proc home-common-header {} {
 <link href="%url($url)" rel="stylesheet">
 <title>HammerDB Results</title>
 }
-__auto_refresh_js 30000
+__auto_refresh_js 120000
     wapp-subst {
 </head>
 <body>
@@ -1477,6 +1528,18 @@ proc wapp-page-jobs {} {
         }
     }
 
+    # ----------------------------
+    # Workload log tail (tailworkload=1)
+    # ----------------------------
+    if {[dict exists $paramdict tailworkload] && [dict get $paramdict tailworkload] eq "1"} {
+        set logfile [_latest_workload_logname]
+        set logtxt [_tail_log_file $logfile 16384]
+
+        wapp-mimetype "text/plain; charset=utf-8"
+        wapp-subst "%unsafe($logtxt)"
+        return
+    }
+
     set rawmode 0
     if {[dict exists $paramdict raw]} {
         set rawmode [__is_true [dict get $paramdict raw]]
@@ -1655,6 +1718,78 @@ proc wapp-page-jobs {} {
             wapp-subst {<tr><td colspan="6">No TPROC-H jobs found in database file %html([getdatabasefile])</td></tr>\n}
         }
         wapp-subst {</table>\n}
+        # ----------------------------
+        # Benchmark Activity
+        # ----------------------------
+        wapp-subst {
+        <div style="margin:18px 0 20px 0; max-width:800px; border-radius:6px; background:#eef6ff; border:1px solid #d0d7de;">
+          <details id="workload-log-panel">
+            <summary style="cursor:pointer; padding:10px 14px; font-weight:600; color:#0a3d62; border-left:4px solid #0969da;">
+              Benchmark Activity
+            </summary>
+
+            <div style="padding:12px;">
+              <pre id="workload-log-box"
+                   style="margin:0;
+                          padding:12px;
+                          height:320px;
+                          overflow:auto;
+                          background:#eef6ff;
+                          color:#0a3d62;
+                          border:1px solid #d0d7de;
+                          border-radius:6px;
+                          font-family:monospace;
+                          font-size:13px;
+                          line-height:1.35;
+                          white-space:pre-wrap;">
+              </pre>
+            </div>
+
+          </details>
+        </div>
+        }
+
+        wapp-subst "<script>
+        (function () {
+
+          const panel = document.getElementById('workload-log-panel');
+          const box = document.getElementById('workload-log-box');
+
+          let timer = null;
+
+          async function refreshWorkloadLog() {
+            try {
+              const res = await fetch('%html($B)/jobs?tailworkload=1', {cache:'no-store'});
+              const txt = await res.text();
+
+              box.textContent = txt;
+              box.scrollTop = box.scrollHeight;
+
+            } catch(e) {
+              box.textContent = 'Unable to load workload log';
+            }
+          }
+
+          panel.addEventListener('toggle', function () {
+
+            if (panel.open) {
+
+                refreshWorkloadLog();
+                timer = setInterval(refreshWorkloadLog, 3000);
+
+            } else {
+
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+
+            }
+
+          });
+
+        })();
+        </script>"
         main-footer
         return
     }
