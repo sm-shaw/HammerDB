@@ -242,6 +242,7 @@ proc _latest_workload_logname {} {
     #   hammerdb.log
     #   hammerdb_<GUID>.log
     set logfiles [glob -nocomplain -types f -directory $tmpdir "hammerdb*.log"]
+    set logfiles [lsearch -all -inline -not -glob $logfiles "*hammerdbci.log"]
 
     if {[llength $logfiles] == 0} {
         return "nologfile"
@@ -260,29 +261,6 @@ proc _latest_workload_logname {} {
     return $newest
 }
 
-proc _tail_log_file {filename {maxbytes 16384}} {
-    if {$filename eq "" || $filename eq "nologfile" || ![file exists $filename] || ![file readable $filename]} {
-        return "No active workload log"
-    }
-
-    set fsize [file size $filename]
-    if {$fsize < 0} {
-        return "No active workload log"
-    }
-
-    set fh [open $filename r]
-    fconfigure $fh -translation binary -encoding iso8859-1
-
-    if {$fsize > $maxbytes} {
-        seek $fh [expr {$fsize - $maxbytes}] start
-    }
-
-    set data [read $fh]
-    close $fh
-
-    return [encoding convertfrom utf-8 $data]
-}
-
 proc jobmain { jobid jobtype } {
     global rdbms bm
     upvar #0 genericdict genericdict
@@ -290,7 +268,6 @@ proc jobmain { jobid jobtype } {
 
     set tmpdictforpt [ find_current_dict ]
 
-    # Default: keep existing behaviour unless we detect Pipelines/CI context
     set ci_mode 0
     if {[dict exists $tmpdictforpt pipeline]} {
         set ci_mode 1
@@ -299,7 +276,6 @@ proc jobmain { jobid jobtype } {
     }
 
     if {$ci_mode} {
-        # ---- CI/Pipelines rules (do NOT leak profile_id into single/compare) ----
         set jobs_profile_id 0
         set pl ""
         if {[dict exists $tmpdictforpt pipeline]} {
@@ -352,13 +328,11 @@ proc jobmain { jobid jobtype } {
 proc jobs {args} {
     upvar #0 genericdict genericdict
 
-    # ---------------------------
-    # Guard: jobs disabled
-    # ---------------------------
+    # disabled
     if {[catch {set jobs_disabled [dict get $genericdict commandline jobs_disable]} msg]} {
         puts "Error: Detecting Jobs Enable/Disable: $msg"
     } else {
-        # if disabled, only allow "jobs disable ..."
+        # only allow jobs disable
         set tokens $args
         set first [expr {[llength $tokens] ? [lindex $tokens 0] : ""}]
         if {$jobs_disabled && ![string equal -nocase $first "disable"]} {
@@ -367,26 +341,21 @@ proc jobs {args} {
         }
     }
 
-    # Normalized token list (args is already a proper list)
+    # token list
     set tokens $args
     set nt [llength $tokens]
 
-    # Small helper for consistent usage errors
     proc ::_jobs_usage_error {msg} {
         puts $msg
         puts "Error: Usage: \[ jobs | jobs format <fmt> | jobs disable <0|1> | jobs jobid | jobs jobid <command> \[option\] | jobs jobid timing <vuid|vu=n> | jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\] | jobs profileid \[id\] | jobs profile <id> | jobs diff basepid comppid \[true|false\] \] - type \"help jobs\""
     }
 
-    # ---------------------------
-    # 0 args: list default
-    # ---------------------------
+    # 0 args
     if {$nt == 0} {
         return [getjob ""]
     }
 
-    # ---------------------------
-    # Subcommand: diff (returns a value)
-    # ---------------------------
+    # diff
     set opt [lindex $tokens 0]
     if {[string equal -nocase $opt "diff"]} {
         if {$nt < 3 || $nt > 4} {
@@ -409,10 +378,8 @@ proc jobs {args} {
         }
     }
 
-    # ---------------------------
-    # 1st token based routing
-    # ---------------------------
-    # Global commands that don't start with a jobid
+    # route on first token
+    # global commands
     switch -nocase -- $opt {
         result {
             if {$nt != 1} { ::_jobs_usage_error "Error: Usage: jobs result"; return }
@@ -427,8 +394,8 @@ proc jobs {args} {
             return [getjob "joblist"]
         }
         profileid {
-            # jobs profileid           -> return current/new id (existing behaviour)
-            # jobs profileid <id>      -> set it
+            # jobs profileid
+            # jobs profileid <id>
             if {$nt == 1} {
                 return [job_profile_id]
             } elseif {$nt == 2} {
@@ -451,13 +418,11 @@ proc jobs {args} {
             return [job_profile [lindex $tokens 1]]
         }
         default {
-            # Fallthrough: treat $opt as jobid
+            # else jobid
         }
     }
 
-    # ---------------------------
-    # Job-scoped routing
-    # ---------------------------
+    # jobid commands
     set jobid $opt
 
     # jobs <jobid>
@@ -470,17 +435,17 @@ proc jobs {args} {
     # jobs <jobid> <cmd> [arg]
     set cmd [lindex $tokens 1]
 
-# jobs <jobid> timing [<vuid|vu=n>]
+# jobs <jobid> timing [vu]
 if {[string equal -nocase $cmd "timing"]} {
 
-    # 2 tokens: jobs <jobid> timing
+    # 2 tokens
     if {$nt == 2} {
         set res [getjob "jobid=$jobid&timing"]
         puts $res
         return
     }
 
-    # 3 tokens: jobs <jobid> timing <vuid|vu=n>
+    # 3 tokens
     if {$nt == 3} {
         set vusel [lindex $tokens 2]
         if {[string is integer -strict $vusel]} { set vusel "vu=$vusel" }
@@ -493,7 +458,7 @@ if {[string equal -nocase $cmd "timing"]} {
     return
 }
 
-    # jobs <jobid> getchart <type>
+    # jobs <jobid> getchart
     if {[string equal -nocase $cmd "getchart"]} {
         if {$nt != 3} {
             ::_jobs_usage_error "Error: Usage: jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\]"
@@ -510,12 +475,11 @@ if {[string equal -nocase $cmd "timing"]} {
             return
         }
         set ctype "chart=$charttype"
-        # return HTML rather than puts (existing behaviour)
         return [getjob "jobid=$jobid&getchart&$ctype"]
     }
 
     # jobs <jobid> <cmd>
-    # Historically: if cmd is integer, treat as vu=<n>
+    # integer cmd => vu
     if {$nt == 2} {
         if {[string is integer -strict $cmd]} { set cmd "vu=$cmd" }
         set res [getjob "jobid=$jobid&$cmd"]
@@ -523,17 +487,17 @@ if {[string equal -nocase $cmd "timing"]} {
         return
     }
 
-    # jobs <jobid> <cmd> <arg>  (generic passthrough except timing/getchart handled above)
+    # jobs <jobid> <cmd> <arg>
     if {$nt == 3} {
         set arg [lindex $tokens 2]
-        # Keep legacy shortcut: if arg is integer, convert to vu=<n> (useful for other commands)
+        # integer arg => vu
         if {[string is integer -strict $arg]} { set arg "vu=$arg" }
         set res [getjob "jobid=$jobid&$cmd&$arg"]
         puts $res
         return
     }
 
-    # Too many
+    # too many args
     ::_jobs_usage_error "Error: Too many arguments to jobs"
     return
 }
@@ -1453,28 +1417,48 @@ HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
     return $i
   }
 
+  proc _tail_log_file {filename {maxbytes 65536}} {
+      if {$filename eq "" || $filename eq "nologfile" || ![file exists $filename] || ![file readable $filename]} {
+          return "No active workload log"
+      }
+
+      set fsize [file size $filename]
+      if {$fsize < 0} {
+          return "No active workload log"
+      }
+
+      set fh [open $filename r]
+      fconfigure $fh -translation binary -encoding iso8859-1
+
+      if {$fsize > $maxbytes} {
+          seek $fh [expr {$fsize - $maxbytes}] start
+      }
+
+      set data [read $fh]
+      close $fh
+
+      return [encoding convertfrom utf-8 $data]
+  }
+
 proc wapp-page-jobs {} {
     global bm hdb_version
 
-    # ----------------------------
-    # Helpers (ASCII only)
-    # ----------------------------
     proc __norm_pre {s} {
-        # Normalise CRLF/CR -> LF
+        # normalise newlines
         regsub -all {\r\n} $s "\n" s
         regsub -all {\r}   $s "\n" s
         return $s
     }
 
     proc __fmt_job_output {s} {
-        # Make VU0 "User N:RUNNING ..." readable when it's one long line
+        # format VU0
         set s [__norm_pre $s]
         if {[string first "\n" $s] < 0} {
             if {[string match "*User *:*" $s]} {
-                # Put each "User N:" on its own line
+                # split User N:
                 regsub -all { ?User ([0-9]+):} $s "\nUser \\1:" s
                 set s [string trim $s]
-                # Also separate final completion marker if present
+                # split final marker
                 regsub -all { ?ALL VIRTUAL USERS COMPLETE} $s "\nALL VIRTUAL USERS COMPLETE" s
             }
         }
@@ -1487,7 +1471,7 @@ proc wapp-page-jobs {} {
     }
 
     proc __pre_block {s} {
-        # Truncate very large outputs to avoid hanging browsers
+        # truncate large output
         set max 2000000
         set total [string length $s]
         if {$total > $max} {
@@ -1506,15 +1490,11 @@ proc wapp-page-jobs {} {
         wapp-subst "<li><a href='%html($url)'>%html($label)</a></li>\n"
     }
 
-    # ----------------------------
-    # Parse query string
-    # ----------------------------
     set B [wapp-param BASE_URL]
     set query  [wapp-param QUERY_STRING]
     set params [split $query &]
     set paramlen [llength $params]
 
-    # collect params into dict; allow multiple diff_* checkboxes
     set paramdict [dict create]
     if {$paramlen >= 1 && $query ne ""} {
         foreach a $params {
@@ -1528,15 +1508,12 @@ proc wapp-page-jobs {} {
         }
     }
 
-    # ----------------------------
-    # Workload log tail (tailworkload=1)
-    # ----------------------------
     if {[dict exists $paramdict tailworkload] && [dict get $paramdict tailworkload] eq "1"} {
         set logfile [_latest_workload_logname]
-        set logtxt [_tail_log_file $logfile 16384]
+        set logtxt [_tail_log_file $logfile 65536]
 
         wapp-mimetype "text/plain; charset=utf-8"
-        wapp-subst "%unsafe($logtxt)"
+        wapp-unsafe $logtxt
         return
     }
 
@@ -1545,9 +1522,6 @@ proc wapp-page-jobs {} {
         set rawmode [__is_true [dict get $paramdict raw]]
     }
 
-    # ----------------------------
-    # No params: show the Jobs index page (TPROC-C, profiles, TPROC-H, Automation)
-    # ----------------------------
     if {$paramlen eq 0 || $query eq ""} {
         set topjobs [gettopjobs]
         home-common-header
@@ -1718,9 +1692,7 @@ proc wapp-page-jobs {} {
             wapp-subst {<tr><td colspan="6">No TPROC-H jobs found in database file %html([getdatabasefile])</td></tr>\n}
         }
         wapp-subst {</table>\n}
-        # ----------------------------
         # Benchmark Activity
-        # ----------------------------
         wapp-subst {
         <div style="margin:18px 0 20px 0; max-width:800px; border-radius:6px; background:#eef6ff; border:1px solid #d0d7de;">
           <details id="workload-log-panel">
@@ -1794,9 +1766,6 @@ proc wapp-page-jobs {} {
         return
     }
 
-    # ----------------------------
-    # Profile diff submission (cmd=profilediff)
-    # ----------------------------
     if {[dict exists $paramdict cmd] && [dict get $paramdict cmd] eq "profilediff"} {
         set difflist {}
         foreach k [dict keys $paramdict] {
@@ -1813,9 +1782,9 @@ proc wapp-page-jobs {} {
         }
         set difflist [lsort -integer $difflist]
         lassign $difflist a b
-        #Compare the first profile relative to the second profile
+        # first relative to second
         set chart [jobs $b getchart diff:$a]
-        #Change to reverses the order
+        # reverse order
         #set chart [jobs $a getchart diff:$b]
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
@@ -1834,9 +1803,6 @@ proc wapp-page-jobs {} {
         return
     }
 
-    # ----------------------------
-    # jobid index page (list of links)
-    # ----------------------------
     if {[dict exists $paramdict jobid] && [dict exists $paramdict index]} {
         set jobid [dict get $paramdict jobid]
         if {![__job_exists $jobid]} {
@@ -1850,7 +1816,7 @@ proc wapp-page-jobs {} {
         wapp-trim {<div class='hammerdb' data-title='Jobs Index'>}
         wapp-subst {<div><ol style='column-width: 20ex;'>\n}
 
-        # summary link if result exists
+        # summary link
         set jobresult [getjobresult $jobid 1]
         if {![llength $jobresult] eq 2 || ![string match [lindex $jobresult 1] "Jobid has no test result"]} {
             set url "$B/jobs?jobid=$jobid&summary"
@@ -1911,9 +1877,6 @@ proc wapp-page-jobs {} {
         return
     }
 
-    # ----------------------------
-    # Summary page (jobid&summary)
-    # ----------------------------
     if {[dict exists $paramdict jobid] && [dict exists $paramdict summary]} {
         set jobid [dict get $paramdict jobid]
         summary-header $jobid
@@ -1990,14 +1953,11 @@ proc wapp-page-jobs {} {
         return
     }
 
-    # ----------------------------
-    # Profile chart page (profileid)
-    # ----------------------------
     if {[dict exists $paramdict profileid] && ![dict exists $paramdict jobid]} {
         set profileid [dict get $paramdict profileid]
 
         if {[dict exists $paramdict profiledata]} {
-            # Always JSON for profiledata
+            # profiledata is JSON
             set huddleobj [huddle_escape_double [get_job_profile $profileid]]
             wapp-mimetype application/json
             wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
@@ -2018,9 +1978,6 @@ proc wapp-page-jobs {} {
         return
     }
 
-    # ----------------------------
-    # jobid handlers
-    # ----------------------------
     if {![dict exists $paramdict jobid]} {
         dict set jsondict error message "Usage: /jobs or jobs?jobid=JOBID or jobs?profileid=ID"
         wapp-2-json 2 $jsondict
@@ -2034,24 +1991,22 @@ proc wapp-page-jobs {} {
         return
     }
 
-# raw mode: return raw data for the selected section
-# raw mode: return JSON for the selected section (not always OUTPUT)
 if {$rawmode} {
 
-    # JSON escape (ASCII only)
+    # JSON escape
     proc __json_escape {s} {
         set s [__norm_pre $s]
         set s [string map {\\ \\\\ \" \\\" \n \\n \t \\t} $s]
         return $s
     }
 
-    # Determine which section is requested (default output)
+    # section
     set section "output"
     foreach s {bm db dict status system timestamp} {
         if {[dict exists $paramdict $s]} { set section $s; break }
     }
 
-    # OUTPUT stays as-is (existing JSON format)
+    # OUTPUT as-is
     if {$section eq "output"} {
         set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
         set huddleobj [huddle_escape_double [huddle compile {list} $joboutput]]
@@ -2104,7 +2059,7 @@ if {$rawmode} {
 
 
     # Default (jobid only): show the same content as Raw JSON but human-readable
-    # (no numeric VU entries, but grouped by VU)
+    # grouped by VU
     if {[llength [dict keys $paramdict]] eq 1} {
         common-header
         wapp-subst "<h3 class='title'>Job:%html($jobid)</h3>\n"
@@ -2112,7 +2067,7 @@ if {$rawmode} {
         set raw  "$B/jobs?jobid=$jobid&raw=1"
         wapp-subst "<p><a href='%html($back)'>Back</a> | <a href='%html($raw)'>Raw</a></p>\n"
 
-        # Pull exactly the same rows as raw JSON does
+        # same rows as raw JSON
         set rows [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
         if {[llength $rows] < 2} {
             wapp-subst "<h4>Output</h4>\n"
@@ -2121,7 +2076,7 @@ if {$rawmode} {
             return
         }
 
-        # Group output by VU
+        # group by VU
         set vudict [dict create]
         for {set i 0} {$i < [llength $rows]} {incr i 2} {
             set vu  [lindex $rows $i]
@@ -2131,7 +2086,7 @@ if {$rawmode} {
 
         wapp-subst "<h4>Output</h4>\n"
 
-        # Stable numeric order for VU sections
+        # numeric VU order
         set vu_keys [lsort -integer [dict keys $vudict]]
         foreach vu $vu_keys {
             set outlist [dict get $vudict $vu]
@@ -2149,7 +2104,7 @@ if {$rawmode} {
         return
     }
 
-    # If vu=N explicitly requested, show that VU output human-readable
+    # vu=N readable output
     if {[dict exists $paramdict vu]} {
         set vuid [dict get $paramdict vu]
         if {![string is integer -strict $vuid]} {
@@ -2170,11 +2125,11 @@ if {$rawmode} {
         return
     }
 
-    # Human-readable short fields: bm, db, dict, status, system, timestamp
-    # (each keeps a Raw JSON link that returns the original JSON for the job)
+    # readable fields
+    # keep Raw JSON link
     set keys [dict keys $paramdict]
 
-    # delete confirmation / delete action keep original behaviour (JSON)
+    # delete stays JSON
     if {[dict exists $paramdict delete]} {
         common-header
         wapp-trim {<div class='hammerdb' data-title='Job Delete'>}
@@ -2209,7 +2164,7 @@ if {$rawmode} {
         return
     }
 
-    # Render bm/db/dict/status/system/timestamp as human-readable
+    # render readable fields
     foreach {k label} {
         bm        "Benchmark"
         db        "Database"
@@ -2254,7 +2209,7 @@ if {$rawmode} {
                 }
                 status {
                     set v [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]]
-                        # Break before each "User N:" (and also "Vuser N:" if present)
+                        # break before User/Vuser
                         regsub -all { ?(User [0-9]+:)}  $v "\n\\1" v
                         regsub -all { ?(Vuser [0-9]+:)} $v "\n\\1" v
                         regsub -all { ?(ALL VIRTUAL USERS COMPLETE)} $v "\n\\1" v
@@ -2279,8 +2234,8 @@ if {$rawmode} {
         }
     }
 
-    # Existing chart/data endpoints remain as before (HTML charts, JSON data)
-    # result/tcount/metrics/timing are kept as current behaviour.
+    # existing chart/data endpoints
+    # result/tcount/metrics/timing unchanged
     if {[dict exists $paramdict result]} {
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
@@ -2373,15 +2328,15 @@ if {$rawmode} {
         return
     }
 
-    # 3-param timing vu endpoint (kept JSON)
+    # 3-param timing JSON
     if {[dict exists $paramdict timing] && [dict exists $paramdict vu] && [dict exists $paramdict jobid]} {
-        # handled earlier by vu branch or chart branch; if reached, fall back to JSON
+        # else JSON fallback
         dict set jsondict error message "Usage: jobs?jobid=JOBID&timing or jobs?jobid=JOBID&vu=VUID"
         wapp-2-json 2 $jsondict
         return
     }
 
-    # If we get here, report usage
+    # usage
     dict set jsondict error message "Usage: /jobs | jobs?jobid=JOBID | jobs?jobid=JOBID&index | jobs?jobid=JOBID&summary | jobs?jobid=JOBID&bm|db|dict|status|system|timestamp | add &raw=1 for JSON"
     wapp-2-json 2 $jsondict
     return
@@ -2607,7 +2562,7 @@ if {$rawmode} {
               set $ct [ lindex $chartdata  $ctind ] 
               incr ctind
             }
-            #geomean and queryset may have mutliple entries
+            #geomean and queryset may have multiple entries
             #puts "RESULT OF FOREACH IS jobid:$jobid\n tstamp:$tstamp\n geomean:$geomean\n queryset:$queryset\n"
             set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
             set qsettimes [regexp -all -inline -- {[0-9]+} $queryset]
@@ -3144,11 +3099,11 @@ proc getjob { query } {
         set outputformat "text"
     }
 
-    # --- Parse query string into paramdict ---
+    # parse query string
     set params   [split $query &]
     set paramlen [llength $params]
 
-    # 0 params: list jobids
+    # 0 params
     if {$paramlen == 0} {
         set joboutput [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
         set huddleobj [huddle compile {list} $joboutput]
@@ -3165,11 +3120,11 @@ proc getjob { query } {
         return
     }
 
-    # IMPORTANT: reset paramdict every call (avoids cross-call bleed)
+    # reset paramdict
     set paramdict [dict create]
     foreach a $params {
         if {$a eq ""} continue
-        # Support bare tokens like "timing" (no '=') AND key=value pairs
+        # bare tokens and key=value
         set parts [split $a =]
         set key   [lindex $parts 0]
         set value ""
@@ -3179,28 +3134,25 @@ proc getjob { query } {
         dict set paramdict $key $value
     }
 
-    # ------------------------------------------------------------
-    # 3-parameter forms:
     #   jobid=JOBID&timing&vu=VUID
     #   jobid=JOBID&timing&VUID            (old CLI paths)
     #   jobid=JOBID&getchart&chart=NAME
-    # ------------------------------------------------------------
     if {$paramlen == 3} {
 
-        # ---- timing per VU ----
+        # timing per VU
         if {[dict exists $paramdict jobid] && [dict exists $paramdict timing]} {
 
             set jobid [dict get $paramdict jobid]
 
-            # Accept:
-            #   vu=2         (normal)
-            #   VUID as bare token (key "2" with empty value)
+            # accept
+            # vu=2
+            # bare VUID token
             set vuid ""
 
             if {[dict exists $paramdict vu]} {
                 set vuid [dict get $paramdict vu]
             } else {
-                # Look for any integer key in the dict (bare vuid token)
+                # integer key => VUID
                 foreach k [dict keys $paramdict] {
                     if {[string is integer -strict $k]} {
                         set vuid $k
@@ -3209,7 +3161,7 @@ proc getjob { query } {
                 }
             }
 
-            # Also tolerate vu value like "vu=2"
+            # also accept vu=2 value
             if {$vuid ne "" && [regexp -nocase {^vu=(\d+)$} $vuid -> vv]} {
                 set vuid $vv
             }
@@ -3222,7 +3174,7 @@ proc getjob { query } {
             unset -nocomplain jobtiming
             set jobtiming [dict create]
 
-            # Query JOBTIMING for specific VU (no SUMMARY rows)
+            # JOBTIMING for VU
             hdbjobs eval {
                 SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct
                 FROM JOBTIMING
@@ -3246,7 +3198,7 @@ proc getjob { query } {
             }
         }
 
-        # ---- getchart ----
+        # getchart
         if {[dict exists $paramdict jobid] && [dict exists $paramdict getchart] && [dict exists $paramdict chart]} {
             set html [getchart [dict get $paramdict jobid] 1 [dict get $paramdict chart]]
             return $html
@@ -3256,9 +3208,6 @@ proc getjob { query } {
         return
     }
 
-    # ------------------------------------------------------------
-    # 1-parameter forms
-    # ------------------------------------------------------------
     if {$paramlen == 1} {
         if {[dict exists $paramdict joblist]} {
             return [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
@@ -3272,7 +3221,7 @@ proc getjob { query } {
                         set huddleobj [huddle combine $huddleobj [huddle compile {dict} $jobresult]]
                         continue
                     } elseif {[string match "Geometric*" [lindex $jobresult 2]]} {
-                        # TPROC-H RESULT only report first result for first VU
+                        # TPROC-H first result only
                         set ctind 0
                         foreach ct {jobid tstamp geomean queryset} {
                             set $ct [lindex $jobresult $ctind]
@@ -3288,7 +3237,7 @@ proc getjob { query } {
                         set huddleobj [huddle combine $huddleobj [huddle compile {dict * dict} $tprochresult]]
                         continue
                     } elseif {[string match "TEST RESULT*" [lindex $jobresult 3]]} {
-                        # TPROC-C RESULT
+                        # TPROC-C result
                         lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
                         set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
                         set tproccresult [list $jobres [subst {db $db bm $bm tstamp {$timestamp} activevu $avu nopm $nopm tpm $tpm}]]
@@ -3348,13 +3297,10 @@ proc getjob { query } {
         }
     }
 
-    # ------------------------------------------------------------
-    # 2-parameter forms
-    # ------------------------------------------------------------
-    # Allow order-independent handling, but keep original behaviour.
+    # order-independent
     if {$paramlen == 2} {
 
-        # Must have jobid
+        # need jobid
         if {![dict exists $paramdict jobid]} {
             puts "Jobs Two Parameter Usage: jobs jobid status or jobs jobid db or jobs jobid bm or jobid system or jobs jobid timestamp or jobs jobid dict or jobs jobid vuid or jobs jobid result or jobs jobid timing or jobs jobid delete or jobs jobid metrics or jobs jobid system"
             return
@@ -3362,7 +3308,7 @@ proc getjob { query } {
 
         set jobid [dict get $paramdict jobid]
 
-        # vuid selection for output rows
+        # select VU rows
         if {[dict exists $paramdict vu]} {
             set vuid [dict get $paramdict vu]
         } elseif {[dict exists $paramdict result]} {
@@ -3377,7 +3323,7 @@ proc getjob { query } {
             return
         }
 
-        # jobid + (vu|status): raw JOBOUTPUT for that VU
+        # jobid + (vu|status)
         if {[dict exists $paramdict vu] || [dict exists $paramdict status]} {
             set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]
             set huddleobj [huddle compile {list} $joboutput]

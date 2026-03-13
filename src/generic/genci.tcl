@@ -1,11 +1,11 @@
-# CI configuration: load ci.xml -> cidict and mirror into SQLite
-# Escape single quotes for SQLite literals
+# load ci.xml
+# escape quotes
 proc CI_SQLEscape {s} {
-    # Double up single quotes: '  →  ''
+    # escape '
     return [string map {' ''} $s]
 }
 
-# CI-only: write CI dict to SQLite
+# write ci.db
 proc CIDict2SQLite {dbname dbdict} {
     set sqlitedb [CheckSQLiteDB $dbname]
 
@@ -21,11 +21,11 @@ proc CIDict2SQLite {dbname dbdict} {
         return 0
     }
 
-    # For safety, quote table names
+    # quote table names
     dict for {key attributes} $dbdict {
         set tablename $key
 
-        # Drop and recreate table
+        # recreate table
         set sqlcmd "DROP TABLE IF EXISTS \"$tablename\""
         catch {hdb eval $sqlcmd}
 
@@ -35,7 +35,7 @@ proc CIDict2SQLite {dbname dbdict} {
             return 0
         }
 
-        # Insert rows with safely escaped values
+        # insert rows
         dict for {subkey subattributes} $attributes {
             set k [CI_SQLEscape $subkey]
             set v [CI_SQLEscape $subattributes]
@@ -50,10 +50,7 @@ proc CIDict2SQLite {dbname dbdict} {
     return 1
 }
 
-# CI-only: read overrides from ci.db and return a nested dict:
-#   common           -> common {k v ...}
-#   MariaDB_pipeline -> MariaDB {pipeline {k v ...}}
-#   MariaDB_install  -> MariaDB {install  {k v ...}}
+# read ci.db
 proc SQLite2Dict_ci {dbname} {
     set sqlitedb [CheckSQLiteDB $dbname]
 
@@ -77,7 +74,7 @@ proc SQLite2Dict_ci {dbname} {
     }
 
     foreach tbl $tbllist {
-        # common: flat key/val overrides
+        # common overrides
         if {$tbl eq "common"} {
             set subdict [dict create]
             if {[catch {
@@ -92,9 +89,9 @@ proc SQLite2Dict_ci {dbname} {
             continue
         }
 
-        # Top_section form, e.g. "MariaDB_pipeline"
+        # Top_section
         if {![regexp {^([^_]+)_(.+)$} $tbl -> top section]} {
-            # Ignore other tables (e.g. "MariaDB" created by initial CIDict2SQLite)
+            # ignore other tables
             continue
         }
 
@@ -152,29 +149,26 @@ proc get_ciplan_xml {} {
     return $ciplan
 }
 
-# Global CI config dict
+# CI config
 global cidict
 set cidict [dict create]
 
-# Initialise CI config:
-#  - Always start from ci.xml
-#  - Overlay any overrides found in ci.db (common + Top_section tables)
-#  - Seed ci.db from XML on first run
+# init CI config
 proc ci_init_config {} {
     global cidict
 
-    # 1) Base config from XML
+    # XML base
     if {[catch { set xml_cfg [get_ciplan_xml] } err]} {
         putscli "CI CONFIG: could not load ci.xml ($err)"
         set cidict [dict create]
         return
     }
 
-    # 2) Load overrides from ci.db (if any)
+    # load overrides
     set override_cfg [SQLite2Dict_ci "ci"]
 
     if {$override_cfg eq ""} {
-        # First run or no usable overrides: commit XML to memory and seed SQLite
+        # seed ci.db
         set cidict $xml_cfg
         if {[catch { CIDict2SQLite "ci" $cidict } derr]} {
             putscli "CI CONFIG: failed to save CI config to SQLite ($derr)"
@@ -182,18 +176,18 @@ proc ci_init_config {} {
         return
     }
 
-    # 3) Merge: XML as base, SQLite overrides on top
+    # merge config
     set merged $xml_cfg
 
     foreach top [dict keys $override_cfg] {
         if {$top eq "common"} {
-            # common {listen_port 5000 ...}
+            # common
             set sub [dict get $override_cfg common]
             foreach k [dict keys $sub] {
                 dict set merged common $k [dict get $sub $k]
             }
         } else {
-            # MariaDB, MySQL, PostgreSQL, etc. with sub-sections: build/install/test/pipeline...
+            # per-db sections
             set topdict [dict get $override_cfg $top]
             foreach section [dict keys $topdict] {
                 set secdict [dict get $topdict $section]
@@ -207,9 +201,9 @@ proc ci_init_config {} {
     set cidict $merged
 }
 
-# CI-specific SQLite updater: auto-create table and upsert key/value
+# update ci.db
 proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
-    # Resolve DB path (ci.db)
+    # ci.db path
     set sqlitedb [CheckSQLiteDB $dbname]
 
     if {$sqlitedb eq ""} {
@@ -217,14 +211,14 @@ proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
         return
     }
 
-    # Open separate CI handle so we don't interfere with hdb jobs handle
+    # separate handle
     if {[catch {sqlite3 hci $sqlitedb} err]} {
         putscli "CI ERROR: Failed to open SQLite DB '$sqlitedb': $err"
         return
     }
     catch {hci timeout 30000}
 
-    # Ensure table exists: CREATE TABLE IF NOT EXISTS "<table>"(key TEXT, val TEXT)
+    # ensure table
     set create_sql [format {CREATE TABLE IF NOT EXISTS "%s"(key TEXT, val TEXT)} $table]
     if {[catch {hci eval $create_sql} err]} {
         putscli "CI ERROR: Failed to ensure table '$table' in '$sqlitedb': $err"
@@ -232,7 +226,7 @@ proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
         return
     }
 
-    # Escape single quotes in key and value
+    # escape key/value
     set esckey [string map {' ''} $keyname]
     set escval [string map {' ''} $value]
 
@@ -245,11 +239,11 @@ proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
         return
     }
 
-    # Did UPDATE change anything?
+    # row updated?
     set changed 0
     catch { set changed [hci eval {SELECT changes()}] }
 
-    # If no row updated, INSERT
+    # else INSERT
     if {$changed == 0} {
         set insert_sql [format {INSERT INTO "%s"(key,val) VALUES('%s','%s')} \
                             $table $esckey $escval]
@@ -266,10 +260,8 @@ proc SQLiteUpdateKeyValue_ci {dbname table keyname value} {
 proc ciset {args} {
     global cidict
 
-    # Accept either:
-    #   ciset top section key value   (nested)
-    # or
-    #   ciset top key value           (flat, e.g. common)
+    # ciset top section key value
+    # ciset top key value
     set argc [llength $args]
     if {$argc != 4 && $argc != 3} {
         putscli "Error: Invalid number of arguments"
@@ -286,14 +278,14 @@ proc ciset {args} {
         set key     [lindex $args 2]
         set val     [lindex $args 3]
     } else {
-        # 3-arg form: top key value (flat table like common)
+        # 3 args
         set top     [lindex $args 0]
         set section ""
         set key     [lindex $args 1]
         set val     [lindex $args 2]
     }
 
-    # --- Case-insensitive match for top-level (common / MariaDB / MySQL / PostgreSQL etc.) ---
+    # match top-level
     set matchTop ""
     foreach k [dict keys $cidict] {
         if {[string equal -nocase $k $top]} {
@@ -308,11 +300,11 @@ proc ciset {args} {
         return
     }
 
-    # Normalise to canonical key from cidict (e.g. MariaDB, not mariadb)
+    # canonical key
     set top $matchTop
 
     if {$argc == 3} {
-        # Flat: validate key under top
+        # validate key
         if {![dict exists $cidict $top $key]} {
             putscli "CI ERROR: Key '$key' not found under '$top'"
             putscli "Available: [join [dict keys [dict get $cidict $top]] ,]"
@@ -328,7 +320,7 @@ proc ciset {args} {
         dict set cidict $top $key $val
         putscli "Changed $top/$key from \"$previous\" to \"$val\""
 
-        # Persist to SQLite: table = top (e.g. common)
+        # save top
         if {[catch {
             SQLiteUpdateKeyValue_ci "ci" $top $key $val
         } err]} {
@@ -339,16 +331,16 @@ proc ciset {args} {
         return
     }
 
-    # ---- existing 4-arg behaviour (nested) ----
+    # 4 args
 
-    # Validate level 2
+    # validate level 2
     if {![dict exists $cidict $top $section]} {
         putscli "CI ERROR: Section '$section' not found under '$top'"
         putscli "Available: [join [dict keys [dict get $cidict $top]] ,]"
         return
     }
 
-    # Validate level 3
+    # validate level 3
     if {![dict exists $cidict $top $section $key]} {
         putscli "CI ERROR: Key '$key' not found under '$top/$section'"
         putscli "Available: [join [dict keys [dict get $cidict $top $section]] ,]"
@@ -364,17 +356,9 @@ proc ciset {args} {
     dict set cidict $top $section $key $val
     putscli "Changed $top/$section/$key from \"$previous\" to \"$val\""
 
-    # Persist change in TWO places:
-    #  1) Override table (Top_section) used by ci_init_config overlay logic.
-    #  2) Canonical top-level table (e.g. "MariaDB") so generic SQLite2Dict "ci"
-    #     also reflects the effective config.
     if {[catch {
-        # (1) override table, e.g. MariaDB_build
         SQLiteUpdateKeyValue_ci "ci" "${top}_${section}" $key $val
 
-        # (2) canonical table, e.g. MariaDB : key=build val=<dict-string>
-        #     This mirrors CIDict2SQLite behaviour where section values are stored
-        #     as dict-encoded strings.
         set secdict_str [dict get $cidict $top $section]
         SQLiteUpdateKeyValue_ci "ci" $top $section $secdict_str
     } err]} {
@@ -384,7 +368,7 @@ proc ciset {args} {
     remote_command [concat ciset $top $section $key [list \{$val\}]]
 }
 
-# One-time CI config init on load
+# init on load
 if {![info exists ::ci_config_inited]} {
     set ::ci_config_inited 1
     ci_init_config
@@ -427,7 +411,20 @@ proc ci_latest_id {refname} {
 }
 
 proc cilisten {args} {
-    global cidict
+    global cidict ci_optlog ci_flog ci_logfile
+    set ci_optlog 1
+    set ci_flog ""
+    set ci_logfile ""
+
+    if {[catch {
+            set ci_optlog [dict get $cidict common ci_log_to_temp]
+        }]} {
+            set ci_optlog 1
+        }
+
+    if {![string is integer -strict $ci_optlog] || $ci_optlog < 0 || $ci_optlog > 1} {
+        set ci_optlog 1
+    }
 
     if {[info exists ::listen_socket]} {
         putscli "CI listener already running; run cistop to stop"
@@ -514,18 +511,12 @@ proc http_reply {sock code body} {
 proc process_request {sock headers body cidict} {
     global rdbms
 
-    # --------------------------------------------------
-    # Parse JSON
-    # --------------------------------------------------
     if {[catch {set json_data [json::json2dict $body]} err]} {
         putscli "Invalid JSON payload: $err"
         http_reply $sock "400 Bad Request" "Invalid JSON"
         return
     }
 
-    # --------------------------------------------------
-    # Required: database
-    # --------------------------------------------------
     if {![dict exists $json_data database]} {
         putscli "CI payload missing database"
         http_reply $sock "400 Bad Request" "Missing database"
@@ -559,7 +550,7 @@ proc process_request {sock headers body cidict} {
 
     set resolved_rdbms [lindex $dbl $ind]
 
-    # Ensure enabled in CI config
+    # check enabled
     set enabled_dbs {}
     foreach k [dict keys $cidict] {
         if {$k eq "common"} continue
@@ -572,7 +563,7 @@ proc process_request {sock headers body cidict} {
         return
     }
 
-    # Switch DB context
+    # switch DB
     unset -nocomplain rdbms
     dbset db $dbprefix
     if {![info exists rdbms] || $rdbms eq ""} {
@@ -581,9 +572,6 @@ proc process_request {sock headers body cidict} {
         return
     }
 
-    # --------------------------------------------------
-    # Optional: pipeline / workload
-    # --------------------------------------------------
     set pipeline "single"
     if {[dict exists $json_data pipeline]} {
         set pipeline [string tolower [string trim [dict get $json_data pipeline]]]
@@ -594,7 +582,7 @@ proc process_request {sock headers body cidict} {
         set workload [string toupper [string trim [dict get $json_data workload]]]
     }
 
-    # Map single workload
+    # map workload
     if {$pipeline eq "single"} {
         if {$workload eq "H"} {
             set pipeline "single_h"
@@ -603,9 +591,6 @@ proc process_request {sock headers body cidict} {
         }
     }
 
-    # --------------------------------------------------
-    # Required: ref
-    # --------------------------------------------------
     if {![dict exists $json_data ref]} {
         putscli "CI payload missing ref"
         http_reply $sock "400 Bad Request" "Missing ref"
@@ -633,9 +618,6 @@ proc process_request {sock headers body cidict} {
         return
     }
 
-    # --------------------------------------------------
-    # Insert into JOBCI
-    # --------------------------------------------------
     if {$overwrite} {
         catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}}
     }
@@ -651,9 +633,6 @@ proc process_request {sock headers body cidict} {
 
     putscli "Recorded: $name db=$dbprefix pipeline=$pipeline"
 
-    # --------------------------------------------------
-    # HTTP 200 response
-    # --------------------------------------------------
     if {[lsearch -exact [chan names] $sock] != -1} {
         puts $sock "HTTP/1.1 200 OK"
         puts $sock "Content-Type: text/plain"
@@ -666,6 +645,7 @@ proc process_request {sock headers body cidict} {
     }
 }
     set listen_socket [socket -server handle_connection $port]
+    ci_open_logfile
     putscli "CI webhook listening on port $port"
     initwatcher $listen_socket
 }
@@ -676,6 +656,7 @@ proc cistop {} {
         return
     }
     putscli "Stopping CI webhook listener"
+    ci_close_logfile
     if {[lsearch -exact [chan names] $::listen_socket] != -1} {
         catch {close $::listen_socket}
         unset -nocomplain ::listen_socket
@@ -696,12 +677,67 @@ proc cistatus {} {
     }
 }
 
+proc ci_open_logfile {} {
+    global ci_optlog
+    global ci_flog
+    global ci_logfile
+
+    if {!$ci_optlog} {
+        return
+    }
+
+    set tmpdir [findtempdir]
+    if {$tmpdir eq "notmpdir"} {
+        putscli "CI ERROR: No temporary directory found"
+        return
+    }
+
+    set ci_logfile [file join $tmpdir hammerdbci.log]
+
+    if {[catch {set ci_flog [open $ci_logfile w]} err]} {
+        set ci_flog ""
+        putscli "CI ERROR: Could not open logfile $ci_logfile : $err"
+        return
+    }
+
+    if {[catch {fconfigure $ci_flog -buffering none} err]} {
+        catch {close $ci_flog}
+        set ci_flog ""
+        putscli "CI ERROR: Could not disable buffering on $ci_logfile : $err"
+        return
+    }
+
+    puts $ci_flog "HammerDB Pipeline Log"
+    puts $ci_flog "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
+    putscli "CI logging to $ci_logfile"
+}
+
+proc ci_close_logfile {} {
+    global ci_flog
+
+    if {[info exists ci_flog] && $ci_flog ne ""} {
+        catch {close $ci_flog}
+        set ci_flog ""
+    }
+}
+
+proc putsci {output} {
+    global ci_flog
+
+    puts $output
+    catch {TclReadLine::print "\r"}
+
+    if {[info exists ci_flog] && $ci_flog ne ""} {
+        catch {
+            puts $ci_flog $output
+            flush $ci_flog
+        }
+    }
+}
+
 proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
     global rdbms cidict
 
-    # --------------------------------------------------
-    # Resolve dbprefix
-    # --------------------------------------------------
     if {$dbprefix eq ""} {
         if {![info exists rdbms]} {
             putscli "Error: RDBMS not set (pass dbprefix or run: dbset db <prefix>)"
@@ -716,9 +752,6 @@ proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
         return
     }
 
-    # --------------------------------------------------
-    # Ensure listener running
-    # --------------------------------------------------
     if {![info exists ::listen_socket]} {
         putscli "CI listener not running; starting listener"
         cilisten
@@ -729,9 +762,6 @@ proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
         return
     }
 
-    # --------------------------------------------------
-    # Validate ref
-    # --------------------------------------------------
     if {[string match "refs/tags/*"  $refname]} {
         set ref_type "tag"
     } elseif {[string match "refs/heads/*" $refname]} {
@@ -752,20 +782,17 @@ proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
         return
     }
 
-    # --------------------------------------------------
-    # Build JSON payload (no ref_type anymore)
-    # --------------------------------------------------
     set body "{\"ref\":\"$refname\",\"database\":\"$dbprefix\",\"pipeline\":\"$pipeline\",\"workload\":\"$workload\"}"
 
     set headers [dict create X-GitHub-Event "create"]
 
-    # Direct dispatch
+    # dispatch
     process_request dummy_sock $headers $body $cidict
 
     putscli "Simulated webhook for $refname db=$dbprefix pipeline=$pipeline workload=$workload"
 }
 
-# Line-oriented output reader; sets ::pipe_done on EOF
+# line reader
 proc handle_output {pipe} {
     if {[eof $pipe]} {
         fileevent $pipe readable {}
@@ -780,9 +807,9 @@ proc handle_output {pipe} {
     }
 }
 
-# Raw output reader for tests; line-oriented, completion signaled via doneVar
+# test output reader
 proc handle_test_output {pipe doneVar} {
-    # EOF: stop watching and signal done
+    # EOF
     if {[eof $pipe]} {
         fileevent $pipe readable {}
         upvar #0 $doneVar done
@@ -790,10 +817,10 @@ proc handle_test_output {pipe doneVar} {
         return
     }
 
-    # Ensure we are in line mode and non-blocking
+    # line mode
     fconfigure $pipe -translation lf -buffering line -blocking 0
 
-    # Drain all available complete lines
+    # drain lines
     while {[gets $pipe line] >= 0} {
         putscli $line
     }
@@ -828,7 +855,7 @@ proc calc_buffer_pool_mb {} {
     return $bp_mb
 }
 
-# Periodic watcher
+# watcher
 proc job_watcher {} {
     if {$::watcher_running} {
         run_next_pending_job
@@ -859,7 +886,7 @@ proc initwatcher {listen_socket} {
     return
 }
 
-# Execute next pending job
+# next job
 proc run_next_pending_job {} {
     global rdbms cidict
 
@@ -868,9 +895,6 @@ proc run_next_pending_job {} {
     set pipeline ""
     set dbprefix ""
 
-    # --------------------------------------------------
-    # Find oldest PENDING job
-    # --------------------------------------------------
     if {[catch {
         set ci_id [hdbjobs eval {
             SELECT ci_id
@@ -886,7 +910,7 @@ proc run_next_pending_job {} {
             set dbprefix [hdbjobs eval { SELECT dbprefix FROM JOBCI WHERE ci_id = $ci_id }]
         }
     } err]} {
-        putscli "Error querying JOBCI: $err"
+        putsci "Error querying JOBCI: $err"
         return
     }
 
@@ -894,11 +918,8 @@ proc run_next_pending_job {} {
         return
     }
 
-    # --------------------------------------------------
-    # Validate and switch DB context (multi-db support)
-    # --------------------------------------------------
     if {$dbprefix eq ""} {
-        putscli "Job $ci_id missing dbprefix"
+        putsci "Job $ci_id missing dbprefix"
         return
     }
 
@@ -914,7 +935,7 @@ proc run_next_pending_job {} {
 
     set ind [lsearch -exact $prefixl $dbprefix]
     if {$ind eq -1} {
-        putscli "Job $ci_id has invalid dbprefix '$dbprefix'"
+        putsci "Job $ci_id has invalid dbprefix '$dbprefix'"
         return
     }
 
@@ -922,58 +943,52 @@ proc run_next_pending_job {} {
     dbset db $dbprefix
 
     if {![info exists rdbms] || $rdbms eq ""} {
-        putscli "Failed to dbset db $dbprefix for job $ci_id"
+        putsci "Failed to dbset db $dbprefix for job $ci_id"
         return
     }
 
-    putscli "Found pending job: $refname (db=$dbprefix)"
-    putscli "Pausing watcher for run"
+    putsci "Found pending job: $refname (db=$dbprefix)"
+    putsci "Pausing watcher for run"
     stopwatcher
 
-    # --------------------------------------------------
-    # Mark as BUILDING immediately (UI feedback)
-    # --------------------------------------------------
     if {[catch {
         hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id }
     } err]} {
-        putscli "Error updating status to BUILDING: $err"
+        putsci "Error updating status to BUILDING: $err"
         startwatcher
         return
     }
 
-    # --------------------------------------------------
-    # PIPELINE DISPATCH
-    # --------------------------------------------------
     switch -exact -- [string toupper $pipeline] {
 
         PROFILE {
-            putscli "Dispatching pipeline='profile' for $refname"
+            putsci "Dispatching pipeline='profile' for $refname"
             if {[catch {
                 cisteps $cidict $refname profile
             } err]} {
-                putscli "CI PROFILE pipeline failed: $err"
+                putsci "CI PROFILE pipeline failed: $err"
             }
             startwatcher
             return
         }
 
         COMPARE {
-            putscli "Dispatching pipeline='compare' for $refname"
+            putsci "Dispatching pipeline='compare' for $refname"
             if {[catch {
                 cisteps $cidict $refname compare
             } err]} {
-                putscli "CI COMPARE pipeline failed: $err"
+                putsci "CI COMPARE pipeline failed: $err"
             }
             startwatcher
             return
         }
 
         default {
-            putscli "Dispatching pipeline='$pipeline' for $refname"
+            putsci "Dispatching pipeline='$pipeline' for $refname"
             if {[catch {
                 cisteps $cidict $refname [string tolower $pipeline]
             } err]} {
-                putscli "CI pipeline '$pipeline' failed: $err"
+                putsci "CI pipeline '$pipeline' failed: $err"
             }
             startwatcher
             return
@@ -981,19 +996,19 @@ proc run_next_pending_job {} {
     }
 }
 
-# Run pipeline defined under <$rdbms>/<pipeline>/<name>
+# run pipeline
 proc cisteps {cidict refname pipeline_name} {
     global rdbms
     set r [string tolower $rdbms]
 
     if {![dict exists $cidict $rdbms pipeline $pipeline_name]} {
-        putscli "CI: unknown pipeline '$pipeline_name' under <$rdbms>/<pipeline>"
+        putsci "CI: unknown pipeline '$pipeline_name' under <$rdbms>/<pipeline>"
         return
     }
     set steps     [dict get $cidict $rdbms pipeline $pipeline_name]
     set step_list [split $steps " "]
 
-    putscli "CI: running pipeline '$pipeline_name' → $steps"
+    putsci "CI: running pipeline '$pipeline_name' → $steps"
 
     foreach step $step_list {
         if {$step eq ""} continue
@@ -1001,96 +1016,92 @@ proc cisteps {cidict refname pipeline_name} {
             clone {
                 set cmd "${r}_clone"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "CLONE FAILED"} { return }
             }
             build {
                 set cmd "${r}_build"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "BUILD FAILED"} { return }
             }
             package {
                 set cmd "${r}_package"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "PACKAGE FAILED"} { return }
             }
             commit_msg {
                 set cmd "${r}_commit_msg"
-                putscli [$cmd $cidict $refname]
+                putsci [$cmd $cidict $refname]
             }
             install {
                 set cmd "${r}_install"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "INSTALL FAILED"} { return }
             }
             init {
                 set cmd "${r}_init"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "INIT FAILED"} { return }
             }
             start {
                 set cmd "${r}_start"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "START FAILED"} { return }
             }
             ping {
                 set cmd "${r}_ping"
                 set st [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "PING FAILED"} { return }
             }
             run_sql:* {
                 set arg [lindex [split $step ":"] 1]
-                if {$arg eq ""} { putscli "CI: run_sql missing argument"; return }
+                if {$arg eq ""} { putsci "CI: run_sql missing argument"; return }
                 set cmd "${r}_run_sql"
                 set st [$cmd $cidict $refname $arg]
-                putscli $st
+                putsci $st
                 if {$st eq "[string toupper $arg] FAILED"} { return }
             }
             start_tests:* {
                 set workload [lindex [split $step ":"] 1]
-                if {$workload eq ""} { putscli "CI: start_tests missing workload"; return }
+                if {$workload eq ""} { putsci "CI: start_tests missing workload"; return }
                 set cmd "${r}_start_tests"
                 set st  [$cmd $cidict $refname $workload]
-                putscli $st
+                putsci $st
                 if {$st eq "TEST FAILED"} { return }
             }
             profile {
                 set cmd "[string tolower $rdbms]_profile"
                 set st  [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "PROFILE FAILED"} { return }
             }
             compare {
                 set cmd "[string tolower $rdbms]_compare"
                 set st  [$cmd $cidict $refname]
-                putscli $st
+                putsci $st
                 if {$st eq "COMPARE FAILED"} { return }
             }
             default {
-                putscli "CI: unknown step token '$step' — skipping"
+                putsci "CI: unknown step token '$step' — skipping"
             }
         }
     }
-    putscli "CI: pipeline '$pipeline_name' completed"
+    putsci "CI: pipeline '$pipeline_name' completed"
 }
 
-# CI platform guard: only enable CI commands on Unix/Linux
+# Unix only
 if {![info exists ::tcl_platform(platform)] || $::tcl_platform(platform) ne "unix"} {
-    # Entry-point CI commands that a user might call directly
     foreach p {citmp cilisten cistop cistatus cipush cistep ciset} {
-        # If the real command exists…
         if {[info procs $p] ne ""} {
-            # …and we haven't already renamed it, move it aside
             if {[info procs _$p] eq ""} {
                 rename $p _$p
             }
-            # Replace with a stub that just warns
             proc $p {args} {
                 putscli "CI WARNING: CI commands are only supported on Linux/Unix platforms in this release."
             }

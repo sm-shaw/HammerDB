@@ -7,6 +7,7 @@
             <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
             <diff_threshold>0.025</diff_threshold>
             <use_sudo>false</use_sudo>
+            <ci_log_to_temp>1</ci_log_to_temp>
     </common>
     <MariaDB>
         <build>
