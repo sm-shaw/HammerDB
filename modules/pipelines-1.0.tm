@@ -4,9 +4,6 @@ package provide pipelines 1.0
 namespace eval pipelines {
     namespace export wapp-page-pipelines
 
-    # ----------------------------
-    # Small utilities
-    # ----------------------------
     proc __is_sha1 {s} {
         expr {[regexp {^[0-9a-fA-F]{7,40}$} [string trim $s]]}
     }
@@ -48,9 +45,9 @@ namespace eval pipelines {
         }
     }
 
-    proc __auto_refresh_js {{ms 15000}} {
-        # Auto-refresh every N ms. Keeps URL (query + hash). Uses replace() to avoid history spam.
-        # Adds a cache-buster (_r=timestamp) so the browser doesn't serve a cached /pipelines page.
+    proc __auto_refresh_js {{ms 120000}} {
+        # auto-refresh
+        # cache-buster
         set ms [string trim $ms]
         if {![string is integer -strict $ms] || $ms < 2000} { set ms 15000 }
 
@@ -73,7 +70,7 @@ namespace eval pipelines {
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
         wapp-subst {<p><img src='%html($B)/logo.png' width='55' height='60'></p>}
 
-        # Decide button based on page title
+        # button from title
         set btn_label ""
         set btn_url ""
 
@@ -85,7 +82,7 @@ namespace eval pipelines {
             set btn_url "$B/jobs"
         }
 
-        # Header with optional button
+        # header
         if {$btn_label ne ""} {
             wapp-subst {
 <div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
@@ -107,7 +104,7 @@ namespace eval pipelines {
             wapp-subst "<h3 class='title'>%html($title)</h3>\n"
         }
 
-        # Small, self-contained styles for this page (keeps form consistent)
+        # page styles
         wapp-subst {
 <style>
 .aut-wrap{max-width:980px;}
@@ -130,12 +127,9 @@ namespace eval pipelines {
     }
 
     proc __page_tail {} {
-        # (main app closes layout)
+        # layout closed by app
     }
 
-    # ----------------------------
-    # CI config access (ci.xml via SQLite2Dict)
-    # ----------------------------
 proc __get_ci_build_config {dbprefix} {
         upvar #0 cidict cidict
         if {![info exists cidict]} {
@@ -166,9 +160,6 @@ proc __get_ci_build_config {dbprefix} {
         return [dict create repo_url $repo_url ref_regexp $ref_regexp cilisten_url $cilisten_url]
     }
 
-    # ----------------------------
-    # GitHub tags helper (best-effort)
-    # ----------------------------
     variable __tag_cache_ts
     variable __tag_cache_list
 
@@ -212,7 +203,7 @@ proc __github_tags {repo_url} {
         set repo_url [string trim $repo_url]
         if {$repo_url eq ""} { return {} }
 
-        # Cache key: repo_url itself
+        # cache by repo_url
         set key $repo_url
 
         set now [clock seconds]
@@ -223,7 +214,7 @@ proc __github_tags {repo_url} {
             }
         }
 
-        # Fetch tags via git (no GitHub API / JSON)
+        # fetch tags via git
         set out ""
         if {[catch { set out [exec git ls-remote --tags --refs $repo_url] } err]} {
             return {}
@@ -237,10 +228,10 @@ proc __github_tags {repo_url} {
             }
         }
 
-        # Filter rules:
-        # - MariaDB: mariadb-12.* and mariadb-11.* only (keeps list useful)
-        # - PostgreSQL: REL_* only
-        # - MySQL: mysql-* only
+        # filter rules
+        # MariaDB: mariadb-12.* mariadb-11.*
+        # PostgreSQL: REL_*
+        # MySQL: mysql-*
         set filtered {}
         if {[string match "*github.com/MariaDB/server*" $repo_url]} {
             foreach t $tags {
@@ -261,11 +252,11 @@ proc __github_tags {repo_url} {
                 }
             }
         } else {
-            # Unknown repo: no filtering
+            # unknown repo: no filter
             set filtered $tags
         }
 
-        # De-dupe preserving order
+        # dedupe preserve order
         array set seen {}
         set uniq {}
         foreach t $filtered {
@@ -275,7 +266,7 @@ proc __github_tags {repo_url} {
             }
         }
 
-        # Version-aware sort newest-first (best-effort per repo)
+        # sort newest first
         set sorted $uniq
 
         if {[string match "*github.com/MariaDB/server*" $repo_url]} {
@@ -293,7 +284,7 @@ proc __github_tags {repo_url} {
                 return [expr {[lindex $vy 2] - [lindex $vx 2]}]
             }} } $sorted]
         } elseif {[string match "*github.com/postgres/postgres*" $repo_url]} {
-            # REL_16_2 => {16 2} ; REL_17_BETA1 won't match, but that's ok
+            # REL_16_2 => {16 2}
             proc ::pipelines::__ver_pg {t} {
                 if {![regexp {^REL_([0-9]+)_([0-9]+)$} $t -> a b]} { return {0 0} }
                 return [list $a $b]
@@ -319,7 +310,7 @@ proc __github_tags {repo_url} {
             }} } $sorted]
         }
 
-        # Cap list size for UI
+        # cap list size
         if {[llength $sorted] > 60} {
             set sorted [lrange $sorted 0 59]
         }
@@ -328,9 +319,6 @@ proc __github_tags {repo_url} {
         dict set __tag_cache_list $key $sorted
         return $sorted
 }
-    # ----------------------------
-    # Status banner
-    # ----------------------------
     variable __last_ok 0
     variable __last_code 0
     variable __last_msg ""
@@ -367,7 +355,7 @@ proc __render_last_if_any {} {
         set cls "aut-banner"
         if {$__last_ok} { append cls " aut-ok" } else { append cls " aut-fail" }
 
-        # local helper: safe <pre> without %html(...) parsing issues
+        # safe <pre>
         proc __pre_safe {s} {
             set s [__norm_pre $s]
             regsub -all {&} $s {\&amp;} s
@@ -408,9 +396,6 @@ if {!$__last_ok && [string match "*connection refused*" $__last_err]} {
         wapp-subst {</div>}
     }
 
-    # ----------------------------
-    # POST JSON helper
-    # ----------------------------
     proc __post_json {url json_body} {
         if {[catch {package require http}]} {
             return [dict create ok 0 code 0 body "" err "http package missing"]
@@ -433,7 +418,7 @@ if {!$__last_ok && [string match "*connection refused*" $__last_err]} {
     }
 
     proc __url_encode {s} {
-        # Minimal URL encoder for query-string values.
+        # URL encode
         set out ""
         set bytes [encoding convertto utf-8 $s]
         binary scan $bytes c* codes
@@ -448,7 +433,7 @@ if {!$__last_ok && [string match "*connection refused*" $__last_err]} {
         return $out
     }
 proc __url_encode {s} {
-        # Minimal URL encoder for query-string values.
+        # URL encode
         set out ""
         set bytes [encoding convertto utf-8 $s]
         binary scan $bytes c* codes
@@ -464,7 +449,7 @@ proc __url_encode {s} {
     }
 
     proc __url_decode {s} {
-        # Decode %XX and + in query-string values
+        # URL decode
         set s [string map {+ " "} $s]
         set out ""
         set i 0
@@ -482,7 +467,7 @@ proc __url_encode {s} {
             append out $ch
             incr i
         }
-        # Interpret bytes as UTF-8
+        # UTF-8 decode
         return [encoding convertfrom utf-8 $out]
     }
 
@@ -491,46 +476,70 @@ proc __url_encode {s} {
         return $s
     }
 
-    proc __make_payload_json {ref dbprefix pipeline_ui workload_ui} {
-        set pl ""
-        if {$pipeline_ui eq "single"} {
-            if {$workload_ui eq "H"} {
-                set pl "single_h"
-            } else {
-                set pl "single_c"
-            }
-        } elseif {$pipeline_ui eq "profile"} {
-            set pl "profile"
+    proc __make_payload_json {ref dbprefix pipeline_ui workload_ui io_intensive} {
+    set pl ""
+    if {$pipeline_ui eq "single"} {
+        if {$workload_ui eq "H"} {
+            set pl "single_h"
         } else {
-            set pl "compare"
+            set pl "single_c"
+        }
+    } elseif {$pipeline_ui eq "profile"} {
+        set pl "profile"
+    } else {
+        set pl "compare"
+    }
+
+    # Normalize ref to match CI rules: refs/tags/... or refs/heads/... or SHA
+    set ref [string trim $ref]
+    if {$ref ne "" && ![regexp {^refs/(tags|heads)/} $ref]} {
+
+        # Leave commit SHAs as-is (short or full)
+        if {![regexp {^[0-9a-fA-F]{7,40}$} $ref]} {
+
+            # Default to tag ref
+            set ref "refs/tags/$ref"
+        }
+    }
+
+    set io_flag [expr {$io_intensive eq "1" ? 1 : 0}]
+
+    set j_ref [__json_escape [string trim $ref]]
+    set j_db  [__json_escape [string tolower [string trim $dbprefix]]]
+    set j_pl  [__json_escape $pl]
+    set j_wl  [__json_escape [string toupper [string trim $workload_ui]]]
+
+    return "{\"ref\":\"$j_ref\",\"database\":\"$j_db\",\"pipeline\":\"$j_pl\",\"workload\":\"$j_wl\",\"io_intensive\":$io_flag}"
+    }
+
+    proc _tail_ci_log_file {filename {maxbytes 65536}} {
+        if {$filename eq "" || $filename eq "nologfile" || ![file exists $filename] || ![file readable $filename]} {
+            return "No active pipeline log"
         }
 
-# Normalize ref to match CI rules: refs/tags/... or refs/heads/... or SHA
-set ref [string trim $ref]
-if {$ref ne "" && ![regexp {^refs/(tags|heads)/} $ref]} {
-    # Leave commit SHAs as-is (short or full)
-    if {![regexp {^[0-9a-fA-F]{7,40}$} $ref]} {
-        # Default to tag ref
-        set ref "refs/tags/$ref"
+        set fsize [file size $filename]
+        if {$fsize < 0} {
+            return "No active pipeline log"
+        }
+
+        set fh [open $filename r]
+        fconfigure $fh -translation binary -encoding iso8859-1
+
+        if {$fsize > $maxbytes} {
+            seek $fh [expr {$fsize - $maxbytes}] start
+        }
+
+        set data [read $fh]
+        close $fh
+
+        return [encoding convertfrom utf-8 $data]
     }
-}
 
-        set j_ref [__json_escape [string trim $ref]]
-        set j_db  [__json_escape [string tolower [string trim $dbprefix]]]
-        set j_pl  [__json_escape $pl]
-        set j_wl  [__json_escape [string toupper [string trim $workload_ui]]]
-
-        return "{\"ref\":\"$j_ref\",\"database\":\"$j_db\",\"pipeline\":\"$j_pl\",\"workload\":\"$j_wl\"}"
-    }
-
-    # ----------------------------
-    # Main page: /pipelines
-    # ----------------------------
     proc wapp-page-pipelines {} {
         set B [wapp-param BASE_URL]
 
 
-        # ---- Raw query parse (last value wins) ----
+        # parse query
         set __qs [wapp-param QUERY_STRING]
         set __qsdict [dict create]
         if {$__qs ne ""} {
@@ -555,7 +564,24 @@ if {$ref ne "" && ![regexp {^refs/(tags|heads)/} $ref]} {
             if {[dict exists $d $k]} { return [dict get $d $k] }
             return $def
         }
-        # ---- Params (single source of truth: wapp-param) ----
+
+        if {[dict exists $__qsdict tailci] && [dict get $__qsdict tailci] eq "1"} {
+
+            set tmpdir [findtempdir]
+            set logfile [file join $tmpdir hammerdbci.log]
+
+            if {![file exists $logfile]} {
+                set logtxt "No active pipeline log"
+            } else {
+                set logtxt [_tail_ci_log_file $logfile 65536]
+            }
+
+            wapp-mimetype "text/plain; charset=utf-8"
+            wapp-unsafe $logtxt
+            return
+        }
+
+        # params
         set action [string tolower [string trim [__qget $__qsdict action ""]]]
 
         set dbprefix [string tolower [string trim [__qget $__qsdict db ""]]]
@@ -569,18 +595,21 @@ if {$ref ne "" && ![regexp {^refs/(tags|heads)/} $ref]} {
         if {$workload_ui eq ""} { set workload_ui "C" }
         if {$workload_ui ni {"C" "H"}} { set workload_ui "C" }
 
+        set io_intensive [string trim [__qget $__qsdict io_intensive ""]]
+        if {$io_intensive ne "1"} { set io_intensive "" }
+        set io_intensive_checked [expr {$io_intensive eq "1" ? " checked" : ""}]
 
-        # tag dropdown selection
+        # tag selection
         set tag_sel [string trim [__qget $__qsdict tag_sel ""]]
         set ref_custom [string trim [__qget $__qsdict ref_custom ""]]
         if {$ref_custom eq ""} { set ref_custom [string trim [__qget $__qsdict ref_cust ""]] }
 
-        # If user typed something, force Custom selected
+        # typed tag => Custom
         if {[string trim $ref_custom] ne ""} {
             set tag_sel "__custom__"
         }
 
-# ---- Gate non-MariaDB for now ----
+# MariaDB only
 if {$dbprefix ne "maria"} {
     if {$action eq "run"} {
         __store_last 0 0 "[string totitle $dbprefix] pipelines are not yet enabled." "" "" "MariaDB is currently enabled. Other databases will be added at a future release."
@@ -589,6 +618,7 @@ if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
 if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
 if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
 if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
 wapp-redirect "$B/pipelines?$q#runresult"
         return
     }
@@ -613,7 +643,7 @@ wapp-redirect "$B/pipelines?$q#runresult"
             set ref $ref_custom
         }
 
-        # ---- Run action ----
+        # run
         if {$action eq "run"} {
             set ref_trim [string trim $ref]
             if {$ref_trim eq ""} {
@@ -623,6 +653,7 @@ if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
 if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
 if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
 if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
 wapp-redirect "$B/pipelines?$q#runresult"
                 return
             }
@@ -634,6 +665,7 @@ if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
 if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
 if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
 if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
 wapp-redirect "$B/pipelines?$q#runresult"
                 return
             }
@@ -646,16 +678,17 @@ if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
 if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
 if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
 if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
 wapp-redirect "$B/pipelines?$q#runresult"
                     return
                 }
             }
 
             
-# Build request payload
-set payload_json [__make_payload_json $ref_trim $dbprefix $pipeline_ui $workload_ui]
+# request payload
+set payload_json [__make_payload_json $ref_trim $dbprefix $pipeline_ui $workload_ui $io_intensive]
 
-# Friendly summary for banner
+# banner text
 set bench "TPROC-$workload_ui"
 set ptxt  [string totitle $pipeline_ui]
 set ref_short $ref_trim
@@ -663,10 +696,10 @@ if {[regexp {^refs/tags/(.+)$} $ref_trim -> r]} { set ref_short $r }
 
 set summary "$bench · $ptxt · $ref_short"
 
-# Pretty request for Details (human readable)
-set payload_pretty "Request\n-------\nref:      $ref_trim\ndatabase: $dbprefix\npipeline: $pipeline_ui\nworkload: $workload_ui\nqs:       $__qs\n\n(JSON)\n------\n$payload_json"
+# request text
+set payload_pretty "Request\n-------\nref:      $ref_trim\ndatabase: $dbprefix\npipeline: $pipeline_ui\nworkload: $workload_ui\nio:       $io_intensive\nqs:       $__qs\n\n(JSON)\n------\n$payload_json"
 
-# Try POST (will fail until listener exists)
+# try POST
 set resp [__post_json $cilisten_url $payload_json]
 set ok   [dict get $resp ok]
 set code [dict get $resp code]
@@ -686,19 +719,20 @@ if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
 if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
 if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
 if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
 wapp-redirect "$B/pipelines?$q#runresult"
 return
         }
 
-        # ---- Render page ----
+        # render page
         __page_head $B "HammerDB Pipelines"
-        __auto_refresh_js 15000
+        __auto_refresh_js 120000
         wapp-subst "<!-- pipelines-module:1.5 -->"
         wapp-subst {<div class="aut-wrap">}
 
         __render_last_if_any
 
-        # Recent runs table
+        # recent runs
         wapp-subst {<table>}
         wapp-subst {<tr><th>Pipeid</th><th>DB</th><th>Ref</th><th>Pipeline</th><th>Date</th><th>Status</th></tr>}
 
@@ -708,7 +742,7 @@ return
         } else {
             set has_dbprefix 0
             if {![catch {hdbjobs eval {SELECT dbprefix FROM JOBCI LIMIT 1}}]} { set has_dbprefix 1 }
-    # --- Cleanup stale CI rows ---
+    # cleanup stale CI rows
     set now [clock format [clock seconds] -format "%Y-%m-%d %H:%M:%S"]
     if {$has_dbprefix} {
         catch {
@@ -763,7 +797,7 @@ return
         }
     }
             if {$has_dbprefix} {
-                # IMPORTANT: alias columns so we DO NOT overwrite the page-level dbprefix
+                # alias columns
                 hdbjobs eval {SELECT ci_id,
                                      refname,
                                      dbprefix AS row_dbprefix,
@@ -796,7 +830,7 @@ return
 
         wapp-subst {<div class="aut-form">}
 
-        # Database chooser (auto-switch; no Load button)
+        # database chooser
         wapp-subst {<p><b>Database</b></p>}
         wapp-subst "<select class='aut-ctl' name='db' onchange=\"window.location='%html($B)/pipelines?db=' + encodeURIComponent(this.value)\">"
         foreach {pfx label} [ list maria MariaDB mysql MySQL pg PostgreSQL ] {
@@ -806,15 +840,15 @@ return
         }
         wapp-subst {</select>}
 
-        # DB header belongs below the selector
+        # DB header
         wapp-subst "<h4 style='margin:14px 0 8px 0;'>%html([__db_label $dbprefix])</h4>"
 
-        # Info line
+        # info line
         wapp-subst "<p class='aut-mini' style='margin-top:10px;'>"
         wapp-subst "<b>Endpoint:</b> %html($cilisten_url) &nbsp;·&nbsp; <b>Valid ref:</b> tag, branch, or commit SHA"
         wapp-subst "</p>"
 
-        # Run form
+        # run form
         
 if {$dbprefix ne "maria"} {
     wapp-subst "<div class='aut-banner aut-fail' style='margin-top:10px;'>"
@@ -850,13 +884,14 @@ wapp-subst "<form method='GET' action='%html($B)/pipelines' id='runform'>"
         }
         wapp-subst {</div>}
 
-# ---- Benchmark selector (TPROC-C matrix, TPROC-H single only) ----
+# benchmark selector
 
-# compute which "bench" is selected based on current pipeline_ui/workload_ui
+# selected bench
 set bench_c_single ""
 set bench_c_profile ""
 set bench_c_compare ""
 set bench_h_single ""
+set io_intensive ""
 
 if {$workload_ui eq "H"} {
     set bench_h_single " checked"
@@ -876,21 +911,78 @@ wapp-subst "<input type='hidden' name='pipeline'  id='pipeline_hidden'  form='ru
 wapp-subst {<div style='margin-top:18px;'>}
 wapp-subst {<div style='font-weight:600; margin-bottom:6px;'>Benchmark</div>}
 
-# Row: TPROC-C
+# TPROC-C
 wapp-subst {<div style='display:flex; gap:18px; align-items:center; margin-top:6px;'>}
 wapp-subst {<div style='min-width:82px; font-weight:600;'>TPROC-C</div>}
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_single'$bench_c_single onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='single';\"> Single</label>"
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_profile'$bench_c_profile onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='profile';\"> Profile</label>"
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_compare'$bench_c_compare onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='compare';\"> Compare</label>"
+wapp-subst "<label style='cursor:pointer; margin-left:14px;'><input type='checkbox' name='io_intensive' value='1'$io_intensive> I/O intensive</label>"
 wapp-subst {</div>}
 
-# Row: TPROC-H
+# TPROC-H
 wapp-subst {<div style='display:flex; gap:18px; align-items:center; margin-top:8px;'>}
 wapp-subst {<div style='min-width:82px; font-weight:600;'>TPROC-H</div>}
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='h_single'$bench_h_single onchange=\"document.getElementById('workload_hidden').value='H';document.getElementById('pipeline_hidden').value='single';\"> Single</label>"
 wapp-subst {</div>}
-
 wapp-subst {</div>}
+
+wapp-subst {
+<div style="margin:18px 0 20px 0; max-width:800px; border-radius:6px; background:#eef6ff; border:1px solid #d0d7de;">
+  <details id="ci-log-panel">
+    <summary style="cursor:pointer; padding:10px 14px; font-weight:600; color:#0a3d62; border-left:4px solid #0969da;">
+      Pipeline Activity
+    </summary>
+
+    <div style="padding:12px;">
+      <pre id="ci-log-box"
+           style="margin:0;
+                  padding:12px;
+                  height:320px;
+                  overflow:auto;
+                  background:#eef6ff;
+                  color:#0a3d62;
+                  border:1px solid #d0d7de;
+                  border-radius:6px;
+                  font-family:monospace;
+                  font-size:13px;
+                  line-height:1.35;
+                  white-space:pre-wrap;"></pre>
+    </div>
+  </details>
+</div>
+}
+
+wapp-subst "<script>
+(function () {
+  const panel = document.getElementById('ci-log-panel');
+  const box = document.getElementById('ci-log-box');
+  let timer = null;
+
+  async function refreshCILog() {
+    try {
+      const res = await fetch('%html($B)/pipelines?tailci=1', {cache:'no-store'});
+      const txt = await res.text();
+      box.textContent = txt;
+      box.scrollTop = box.scrollHeight;
+    } catch(e) {
+      box.textContent = 'Unable to load Pipeline log';
+    }
+  }
+
+  panel.addEventListener('toggle', function () {
+    if (panel.open) {
+      refreshCILog();
+      timer = setInterval(refreshCILog, 3000);
+    } else {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
+  });
+})();
+</script>"
 
         wapp-subst {<div class="aut-actions">}
         wapp-subst {<button class="aut-btn" type="submit" form="runform">Run Benchmark</button>}

@@ -41,6 +41,14 @@ if {$profileid > 1} {
     }
 }
 
+set uaw 0
+if {[info exists ::env(UAW)]} {
+    set uaw_env [string tolower [string trim $::env(UAW)]]
+    if {$uaw_env in {"1" "true" "yes" "on"}} {
+        set uaw 1
+    }
+}
+
 giset commandline keepalive_margin 1200
 giset timeprofile xt_gather_timeout 1200
 
@@ -55,6 +63,9 @@ diset tpcc maria_driver timed
 diset tpcc maria_rampup 2
 diset tpcc maria_duration 5
 diset tpcc maria_allwarehouse false
+if {$uaw} {
+    diset tpcc maria_allwarehouse true
+}
 diset tpcc maria_timeprofile true
 diset tpcc maria_purge true
 
@@ -88,22 +99,23 @@ set end_vu  [ expr { [ numberOfCPUs ] + 8 } ]
 set vu_list {1}
 for {set z 4} {$z <= $end_vu} {incr z 4} { lappend vu_list $z }
 
+    metstart
+    tcstart
 foreach z $vu_list {
     loadscript
     vuset vu $z
     vuset logtotemp 1
     vucreate
-    metstart
-    tcstart
+    metstatus
     tcstatus
     set jobid [ vurun ]
-    tcstop
     vudestroy
     puts "Writing to $tmpdir/maria_tprocc_profile.$profileid"
     set of [ open "$tmpdir/maria_tprocc_profile.$profileid" a ]
     puts $of $jobid
     close $of
 }
+    tcstop
     metstop
 
 puts "TEST COMPLETE"

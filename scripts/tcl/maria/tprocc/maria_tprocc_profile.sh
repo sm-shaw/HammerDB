@@ -8,6 +8,7 @@ if [[ -z "${TMP:-}" ]]; then
 fi
 : "${REFNAME:?need REFNAME in env}"
 : "${PROFILEID:?need PROFILEID in env}"
+: "${UAW:=0}"
 echo "BUILD HAMMERDB SCHEMA"
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
 ./hammerdbcli auto ./scripts/tcl/maria/tprocc/maria_tprocc_buildschema.tcl 

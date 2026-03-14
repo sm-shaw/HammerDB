@@ -10,6 +10,8 @@ fi
 
 #PROFILEID of 0 calls a single run
 export PROFILEID=0
+: "${UAW:=0}"
+export UAW
 
 echo "BUILD HAMMERDB SCHEMA"
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"

@@ -16,7 +16,7 @@ def fatal(msg: str) -> None:
     print(msg)
     sys.exit(1)
 
-# Ensure TMP exists (same spirit as TCL)
+# Ensure TMP exists
 tmpdir = os.getenv("TMP")
 if not tmpdir:
     tmpdir = os.path.join(os.getcwd(), "TMP")
@@ -29,7 +29,7 @@ else:
 
 print("SETTING CONFIGURATION")
 
-# PROFILEID must be explicitly set (including "0")
+# PROFILEID must be explicitly set
 if "PROFILEID" not in os.environ:
     fatal("ERROR: PROFILEID not set in environment (must be explicitly set to 0 or > 1)")
 
@@ -44,13 +44,25 @@ except ValueError:
 
 print(f"Using PROFILEID = {profileid}")
 
-# Enforce contract
 if profileid < 0 or profileid == 1:
     fatal(f"ERROR: PROFILEID must be 0 (non-profile single) or > 1 (profile). Got: {profileid}")
 
-# HammerDB config (matches TCL)
+# UAW
+uaw = 0
+uaw_env = os.getenv("UAW", "").strip().lower()
+if uaw_env in {"1", "true", "yes", "on"}:
+    uaw = 1
+
+# HammerDB config
 dbset("db", "maria")
 dbset("bm", "TPC-C")
+
+# Only set jobs profileid when PROFILEID > 1
+if profileid > 1:
+    try:
+        jobs("profileid", str(profileid))
+    except Exception as e:
+        fatal(f"ERROR: jobs profileid failed: {e}")
 
 giset("commandline", "keepalive_margin", 1200)
 giset("timeprofile", "xt_gather_timeout", 1200)
@@ -66,23 +78,19 @@ diset("tpcc", "maria_driver", "timed")
 diset("tpcc", "maria_rampup", 2)
 diset("tpcc", "maria_duration", 5)
 diset("tpcc", "maria_allwarehouse", "false")
+if uaw:
+    diset("tpcc", "maria_allwarehouse", "true")
 diset("tpcc", "maria_timeprofile", "true")
 diset("tpcc", "maria_purge", "true")
 
 print("TEST STARTED")
 
-# Only set jobs profileid when PROFILEID > 1 (i.e. actually in a profile)
-if profileid > 1:
-    try:
-        jobs("profileid", str(profileid))
-    except Exception as e:
-        fatal(f"ERROR: jobs profileid failed: {e}")
-
 outfile = os.path.join(tmpdir, f"maria_tprocc_profile.{profileid}")
 
-def run_once(vus) -> str:
+# PROFILEID=0 => single run at vcpu, overwrite file
+if profileid == 0:
     loadscript()
-    vuset("vu", vus)
+    vuset("vu", "vcpu")
     vuset("logtotemp", 1)
     vucreate()
     metstart()
@@ -92,14 +100,11 @@ def run_once(vus) -> str:
     metstop()
     tcstop()
     vudestroy()
-    return str(jobid)
 
-# PROFILEID=0 => single run at vcpu, overwrite file
-if profileid == 0:
-    jobid = run_once("vcpu")
     print(f"Writing to {outfile}")
     with open(outfile, "w", encoding="utf-8") as f:
-        f.write(jobid + "\n")
+        f.write(str(jobid) + "\n")
+
     print("TEST COMPLETE")
     sys.exit(0)
 
@@ -107,11 +112,25 @@ if profileid == 0:
 end_vu = (os.cpu_count() or 1) + 8
 vu_list = [1] + list(range(4, end_vu + 1, 4))
 
+metstart()
+tcstart()
+
 for z in vu_list:
-    jobid = run_once(str(z))
+    loadscript()
+    vuset("vu", str(z))
+    vuset("logtotemp", 1)
+    vucreate()
+    metstatus()
+    tcstatus()
+    jobid = vurun()
+    vudestroy()
+
     print(f"Writing to {outfile}")
     with open(outfile, "a", encoding="utf-8") as f:
-        f.write(jobid + "\n")
+        f.write(str(jobid) + "\n")
+
+tcstop()
+metstop()
 
 print("TEST COMPLETE")
 sys.exit(0)
