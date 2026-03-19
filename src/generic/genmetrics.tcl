@@ -42,8 +42,49 @@ proc ConfigureNetworkDisplay {agentid agenthostname} {
     }
 }
 
+proc DoDiscovery {sysinfo_data caller} {
+    global jobid agent_hostname discovery_data
+    #Store the system discovery data from agent for later insertion
+    set discovery_data $sysinfo_data
+    set cpumodel ""
+    set cpucount 0
+    set system_vendor ""
+    set system_type ""
+    set os_name ""
+    set memory ""
+    set nic ""
+    set storage ""
+    set cloud_instance ""
+    set other_software ""
+    set extra ""
+    if { [catch {
+        if { [dict exists $sysinfo_data cpumodel] } { set cpumodel [dict get $sysinfo_data cpumodel] }
+        if { [dict exists $sysinfo_data cpucount] } { set cpucount [dict get $sysinfo_data cpucount] }
+        if { [dict exists $sysinfo_data system_vendor] } { set system_vendor [dict get $sysinfo_data system_vendor] }
+        if { [dict exists $sysinfo_data system_type] } { set system_type [dict get $sysinfo_data system_type] }
+        if { [dict exists $sysinfo_data os_name] } { set os_name [dict get $sysinfo_data os_name] }
+        if { [dict exists $sysinfo_data memory] } { set memory [dict get $sysinfo_data memory] }
+        if { [dict exists $sysinfo_data nic] } { set nic [dict get $sysinfo_data nic] }
+        if { [dict exists $sysinfo_data storage] } { set storage [dict get $sysinfo_data storage] }
+        if { [dict exists $sysinfo_data cloud_instance] } { set cloud_instance [dict get $sysinfo_data cloud_instance] }
+        if { [dict exists $sysinfo_data other_software] } { set other_software [dict get $sysinfo_data other_software] }
+        if { [dict exists $sysinfo_data extra] } { set extra [dict get $sysinfo_data extra] }
+    } err] } {
+        puts "Error parsing system discovery data: $err"
+        return
+    }
+    #Insert system discovery data into JOBSYSTEM table
+    if { $cpumodel ne "" } {
+        if { [info exists jobid] && $jobid ne "" && $jobid != 0 } {
+            hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount,system_vendor=excluded.system_vendor,system_type=excluded.system_type,os_name=excluded.os_name,memory=excluded.memory,nic=excluded.nic,storage=excluded.storage,cloud_instance=excluded.cloud_instance,other_software=excluded.other_software,extra=excluded.extra}
+        } else {
+            hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES('@@@',$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount,system_vendor=excluded.system_vendor,system_type=excluded.system_type,os_name=excluded.os_name,memory=excluded.memory,nic=excluded.nic,storage=excluded.storage,cloud_instance=excluded.cloud_instance,other_software=excluded.other_software,extra=excluded.extra}
+        }
+    }
+}
+
 proc DoDisplay {maxcpu cpu_model caller} {
-    global S CLR cputobars cputotxt cpucoords metframe win_scale_fact jobid agent_hostname
+    global S CLR cputobars cputotxt cpucoords metframe win_scale_fact jobid agent_hostname discovery_data
     set CLR(bg) black
     set CLR(usr) lightgreen
     set CLR(sys) red
@@ -90,8 +131,9 @@ proc DoDisplay {maxcpu cpu_model caller} {
     tkp::canvas $metframe.f.header -highlightthickness 0 -bd 0 -width $width -height $S(hdscl) -bg $CLR(bg)
     $metframe.f.header create text [ expr {$width/2 - $S(hdralign)} ] $S(txtalign) -text "$cpu_model ($maxcpu CPUs)" -fill $CLR(usr) -font {basic} -tags "cpumodel"
     pack $metframe.f.header
-    #Store CPU model in Job
+    #Store CPU model in Job - only if DoDiscovery has not already stored system data
     	if { [ info exists cpu_model ] && ![ string match "AGENT CONNECTION FAILED" $cpu_model ] } {
+	if { ![info exists discovery_data] || $discovery_data eq "" } {
     	if { [ info exists jobid] && $jobid != "" && $jobid != 0 } {
 	hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount) VALUES($jobid,$agent_hostname,$cpu_model,$maxcpu) ON CONFLICT(jobid) DO UPDATE SET jobid=excluded.jobid,hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount}
 
@@ -99,6 +141,7 @@ proc DoDisplay {maxcpu cpu_model caller} {
 	#Started CPU metrics before a job is running, insert a placeholder making sure only one placeholder is current
 	hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount) VALUES('@@@',$agent_hostname,$cpu_model,$maxcpu) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount}
 	}
+    }
     }
     #Height for all objects is the height of the bar and text multiplied by all cpus add header
     set canvforbars $cnvpth.c 
@@ -183,8 +226,8 @@ proc gmean L {
 	if {$placehold eq ""} {
 	#The jobid is not present in the jobsystem table and there is no placeholder
 	#Likely metrics are continual running for multiple jobs so find system data from previous job
-	hdbjobs eval {select hostname,cpumodel,cpucount from JOBSYSTEM where hostname=$agent_hostname LIMIT 1} {
-	hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount)}}
+	hdbjobs eval {select hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra from JOBSYSTEM where hostname=$agent_hostname LIMIT 1} {
+	hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra)}}
 	} else {
 	hdbjobs eval {select hostname,cpumodel,cpucount from JOBSYSTEM where JOBID="@@@"} {
 	hdbjobs eval {update JOBSYSTEM set jobid = $jobid where JOBID="@@@"}
