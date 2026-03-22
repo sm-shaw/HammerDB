@@ -10,9 +10,55 @@ proc mariadb_ci_id {cidict refname} {
     return $ci_id
 }
 
+proc calc_redo_mb {} {
+    # derive from buffer pool
+    set bp_mb [calc_buffer_pool_mb]
+
+    if {$bp_mb <= 0} {
+        return 2048
+    }
+
+    # 25% of buffer pool
+    set redo_mb [expr {$bp_mb / 4}]
+
+    # range 2GB–32GB
+    if {$redo_mb < 2048}  { set redo_mb 2048 }
+    if {$redo_mb > 32768} { set redo_mb 32768 }
+
+    return $redo_mb
+}
+
 proc mariadb_ci_safe_ref {refname} {
     # safe path part
     return [string map {/ _} $refname]
+}
+
+proc mariadb_get_io_intensive {ci_id} {
+    set io 0
+    catch {
+        set io [hdbjobs eval {
+            SELECT io_intensive
+            FROM JOBCI
+            WHERE ci_id = $ci_id
+        }]
+    }
+    if {$io ni {0 1 "0" "1"}} {
+        set io 0
+    }
+    return $io
+}
+
+proc mariadb_set_uaw_env {cidict refname} {
+    set ci_id [mariadb_ci_id $cidict $refname]
+    set io_intensive [mariadb_get_io_intensive $ci_id]
+
+    if {$io_intensive == 1} {
+        set ::env(UAW) 1
+        putsci "HammerDB UAW enabled for $refname"
+    } else {
+        set ::env(UAW) 0
+        putsci "HammerDB UAW disabled for $refname"
+    }
 }
 
 proc mariadb_normpath {p} {
@@ -26,11 +72,11 @@ proc mariadb_normpath {p} {
 
 proc mariadb_clone {cidict refname} {
     global rdbms
-    set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_dir [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set repo_url       [string map {\" {}} [dict get $cidict $rdbms build repo_url]]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
-    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set local_dir "$build_dir/ci_${ci_id}_${safe_ref}"
     file mkdir $local_dir
 
     set is_commit 0
@@ -128,10 +174,10 @@ proc mariadb_clone {cidict refname} {
 
 proc mariadb_build {cidict refname} {
     global rdbms
-    set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_dir [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
-    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set local_dir "$build_dir/ci_${ci_id}_${safe_ref}"
 
     # build command
     set raw_cmd  [dict get $cidict $rdbms build build_cmd]
@@ -236,10 +282,10 @@ proc mariadb_build {cidict refname} {
 
 proc mariadb_package {cidict refname} {
     global rdbms
-    set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_dir [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
-    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set local_dir "$build_dir/ci_${ci_id}_${safe_ref}"
 
     # package command
     set raw_cmd   [dict get $cidict $rdbms build package_cmd]
@@ -304,10 +350,10 @@ proc mariadb_package {cidict refname} {
 
 proc mariadb_commit_msg {cidict refname} {
     global rdbms
-    set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_dir [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
-    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set local_dir "$build_dir/ci_${ci_id}_${safe_ref}"
 
     # commit msg command
     set raw_commit_cmd [dict get $cidict common commit_msg_cmd]
@@ -386,10 +432,10 @@ proc mariadb_commit_msg {cidict refname} {
 proc mariadb_install {cidict refname} {
     global rdbms
 
-    set local_dir_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_dir [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
-    set local_dir "$local_dir_root/ci_${ci_id}_${safe_ref}"
+    set local_dir "$build_dir/ci_${ci_id}_${safe_ref}"
     set install_root [mariadb_normpath [dict get $cidict $rdbms install install_dir]]
     set install_dir  [file join $install_root "ci_${ci_id}_${safe_ref}"]
     # validate target
@@ -530,8 +576,9 @@ proc mariadb_init {cidict refname} {
         return "INIT FAILED"
     }
 
-    # copy config
-    if {![dict exists $install_section base_config_file]} {
+    # check exists and copy config
+    if {![dict exists $install_section defaults_file]} {
+        putsci "INIT FAILED: <defaults_file> missing in XML"
         catch {
             set ci_id [ci_latest_id $refname]
             if {$ci_id ne ""} {
@@ -540,17 +587,77 @@ proc mariadb_init {cidict refname} {
         }
         return "INIT FAILED"
     }
-    set defaults_src [dict get $install_section base_config_file]
+
+    set defaults_src [dict get $install_section defaults_file]
+
+    if {![file exists $defaults_src]} {
+        putsci "INIT FAILED: defaults file not found: $defaults_src"
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
+        return "INIT FAILED"
+    }
+
     set defaults_name "maria.cnf"
     if {[dict exists $install_section defaults_file]} {
         set defaults_name [file tail [dict get $install_section defaults_file]]
     }
+
     set defaults_dst [file join $basedir $defaults_name]
+
     if {![file exists [file dirname $defaults_dst]]} {
         catch {file mkdir [file dirname $defaults_dst]}
     }
-    catch {file copy -force $defaults_src $defaults_dst}
-    putsci "Copied base config file $defaults_src to $defaults_dst"
+
+    if {[catch {file copy -force $defaults_src $defaults_dst} err]} {
+        putsci "INIT FAILED: could not copy defaults file $defaults_src to $defaults_dst : $err"
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
+        return "INIT FAILED"
+    }
+    putsci "Copied defaults file $defaults_src to $defaults_dst"
+
+    set io_src $defaults_src
+    set io_name "mariaio.cnf"
+    if {[dict exists $install_section io_config_file]} {
+        set io_src [dict get $install_section io_config_file]
+        set io_name [file tail $io_src]
+    }
+
+    if {![file exists $io_src]} {
+        putsci "INIT FAILED: IO config file not found: $io_src"
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
+        return "INIT FAILED"
+    }
+
+    set io_dst [file join $basedir $io_name]
+    if {[catch {file copy -force $io_src $io_dst} err]} {
+        putsci "INIT FAILED: could not copy IO config file $io_src to $io_dst : $err"
+        catch {
+            set ci_id [ci_latest_id $refname]
+            if {$ci_id ne ""} {
+                hdbjobs eval {UPDATE JOBCI SET status = 'INIT FAILED' WHERE ci_id = $ci_id}
+            }
+        }
+        return "INIT FAILED"
+    }
+    putsci "Copied IO config file $io_src to $io_dst"
+
+    set io_dst [file join $basedir $io_name]
+    catch {file copy -force $io_src $io_dst}
+    putsci "Copied IO config file $io_src to $io_dst"
 
     # data/redo dirs
     set datadir_val ""
@@ -607,6 +714,7 @@ proc mariadb_init {cidict refname} {
     if {$want_basedir} {
         lappend arglist "--basedir=\"$basedir\""
     }
+        lappend arglist "--innodb-log-file-size=[calc_redo_mb]M"
 
     # run installer
     set args_str  [join $arglist " "]
@@ -663,6 +771,7 @@ proc mariadb_start {cidict refname} {
     set install [dict get $cidict $rdbms install]
     set ci_id [mariadb_ci_id $cidict $refname]
     set safe_ref [mariadb_ci_safe_ref $refname]
+    set io_intensive [mariadb_get_io_intensive $ci_id]
 
     # basedir
     set install_root [dict get $install install_dir]
@@ -678,10 +787,14 @@ proc mariadb_start {cidict refname} {
         }
         return "START FAILED"
     }
-    set basedir ""; set newest -1
+    set basedir ""
+    set newest -1
     foreach d $candidates {
         set m [file mtime $d]
-        if {$m > $newest} { set newest $m ; set basedir $d }
+        if {$m > $newest} {
+            set newest $m
+            set basedir $d
+        }
     }
 
     # Validate start command
@@ -698,18 +811,26 @@ proc mariadb_start {cidict refname} {
     set start_cmd [dict get $install start_cmd]
 
     # defaults file
-    set defaults_name "maria.cnf"
-    if {[dict exists $install defaults_file]} {
-        set defaults_name [file tail [dict get $install defaults_file]]
+    if {$io_intensive == 1 && [dict exists $install io_config_file]} {
+        set defaults_src [dict get $install io_config_file]
+        putsci "Using Durable / I/O intensive config: $defaults_src"
+    } else {
+        set defaults_src [dict get $install defaults_file]
+        putsci "Using default config: $defaults_src"
     }
+
+    set defaults_name [file tail $defaults_src]
     set defaults_dst [file join $basedir $defaults_name]
 
     # datadir/redo
     set datadir_val ""
-    if {[dict exists $install datadir]} { set datadir_val [dict get $install datadir] }
+    if {[dict exists $install datadir]} {
+        set datadir_val [dict get $install datadir]
+    }
     if {$datadir_val ne "" && [file pathtype $datadir_val] ne "absolute"} {
         set datadir_val [file join $basedir $datadir_val]
     }
+
     set redo_val ""
     if {[dict exists $install innodb_log_group_home_dir]} {
         set redo_val [dict get $install innodb_log_group_home_dir]
@@ -721,7 +842,7 @@ proc mariadb_start {cidict refname} {
     # buffer pool
     set bp_cfg ""
     if {[dict exists $install innodb_buffer_pool_size]} {
-    set bp_cfg [string trim [dict get $install innodb_buffer_pool_size]]
+        set bp_cfg [string trim [dict get $install innodb_buffer_pool_size]]
     }
 
     # args
@@ -729,21 +850,25 @@ proc mariadb_start {cidict refname} {
     set arglist {}
     set want_basedir 1
     set socket_requested 0
-    set port_requested   0
+    set port_requested 0
     set socket_val ""
-    set port_val   ""
+    set port_val ""
 
     foreach argname $argnames {
         set lname [string tolower $argname]
 
         if {$lname eq "socket"} {
             set socket_requested 1
-            if {[dict exists $install socket]} { set socket_val [dict get $install socket] }
+            if {[dict exists $install socket]} {
+                set socket_val [dict get $install socket]
+            }
             continue
         }
         if {$lname eq "port"} {
             set port_requested 1
-            if {[dict exists $install port]} { set port_val [dict get $install port] }
+            if {[dict exists $install port]} {
+                set port_val [dict get $install port]
+            }
             continue
         }
 
@@ -754,9 +879,13 @@ proc mariadb_start {cidict refname} {
             set val $basedir
             set want_basedir 0
         } elseif {$lname eq "datadir"} {
-            if {$datadir_val ne ""} { set val $datadir_val }
+            if {$datadir_val ne ""} {
+                set val $datadir_val
+            }
         } elseif {$lname eq "innodb_log_group_home_dir"} {
-            if {$redo_val ne ""} { set val $redo_val }
+            if {$redo_val ne ""} {
+                set val $redo_val
+            }
         } elseif {[dict exists $install $argname]} {
             set raw [dict get $install $argname]
             if {[string is integer -strict $raw]} {
@@ -776,26 +905,28 @@ proc mariadb_start {cidict refname} {
         }
     }
 
-   # start-time override
-   set bp_mb 1000
-   if {$bp_cfg eq "" || [string equal -nocase $bp_cfg "auto"]} {
-       set bp_mb [calc_buffer_pool_mb]
-       if {$bp_mb > 0} {
-       putsci "Auto-tune: innodb_buffer_pool_size=${bp_mb}M"
-     }
-   } elseif {[string is integer -strict $bp_cfg]} {
-       set bp_mb $bp_cfg
-       putsci "User override: innodb_buffer_pool_size=${bp_mb}M"
-   } else {
-       putsci "WARNING: invalid innodb_buffer_pool_size='$bp_cfg' (expected auto or MB integer)"
-   }
-   if {$bp_mb > 0} {
-       lappend arglist "--innodb-buffer-pool-size=${bp_mb}M"
-   }
+    # start-time override
+    set bp_mb 1000
+    if {$bp_cfg eq "" || [string equal -nocase $bp_cfg "auto"]} {
+        set bp_mb [calc_buffer_pool_mb]
+        if {$bp_mb > 0} {
+            putsci "Auto-tune: innodb_buffer_pool_size=${bp_mb}M"
+        }
+    } elseif {[string is integer -strict $bp_cfg]} {
+        set bp_mb $bp_cfg
+        putsci "User override: innodb_buffer_pool_size=${bp_mb}M"
+    } else {
+        putsci "WARNING: invalid innodb_buffer_pool_size='$bp_cfg' (expected auto or MB integer)"
+    }
+    if {$bp_mb > 0} {
+        lappend arglist "--innodb-buffer-pool-size=${bp_mb}M"
+    }
 
     if {$want_basedir} {
         lappend arglist "--basedir=\"$basedir\""
     }
+        lappend arglist "--innodb-log-file-size=[calc_redo_mb]M"
+        lappend arglist "--thread-pool-size=[numberOfCPUs]"
 
     # prefer socket
     if {$socket_requested && $socket_val ne ""} {
@@ -815,6 +946,35 @@ proc mariadb_start {cidict refname} {
 
     putsci "Starting MariaDB:"
     putsci $full_cmd
+    # Save parameters and start command
+    set config_file ""
+    if {[file exists $defaults_dst]} {
+        if {[catch {
+            set fh [open $defaults_dst r]
+            set config_file [read $fh]
+            close $fh
+        } err]} {
+            putsci "WARNING: could not read config file $defaults_dst : $err"
+            set config_file ""
+        }
+    } else {
+        putsci "WARNING: config file not found: $defaults_dst"
+    }
+
+    set safe_cmd [string map {' ''} $full_cmd]
+    set safe_cfg [string map {' ''} $config_file]
+
+    catch {
+        set ci_id [ci_latest_id $refname]
+        if {$ci_id ne ""} {
+            hdbjobs eval "
+                UPDATE JOBCI
+                SET config_file = '$safe_cfg',
+                    start_cmd   = '$safe_cmd'
+                WHERE ci_id = $ci_id
+            "
+        }
+    }
 
     set ::pipe_done 0
     if {[catch {
@@ -836,6 +996,7 @@ proc mariadb_start {cidict refname} {
 
     return "START SUCCEEDED"
 }
+
 
 proc mariadb_run_sql {cidict refname key} {
     global rdbms
@@ -994,20 +1155,25 @@ proc mariadb_ping {cidict refname} {
         putsci "PING error: $close_status"
         return "PING FAILED"
     }
-
     set version ""
-    if {[regexp {^\|\s*([0-9]+\.[0-9]+\.[0-9]+[^|]*)\s*\|$} $::_mariadb_ping_output -> version]} {
-        putsci "PING SUCCEEDED: $version"
-    } else {
-        putsci "PING SUCCEEDED"
+    if {[regexp {\|[[:space:]]*@@version[[:space:]]*\|[\r\n]+\+[-+]+\+[\r\n]+\|[[:space:]]*([^\|\r\n]+?)[[:space:]]*\|} $::_mariadb_ping_output -> version]} {
+        set version [string trim $version]
+        if {$version ne ""} {
+            putsci "PING MATCHED: $version"
+            return "PING SUCCEEDED"
+        }
     }
-    return
+    putsci "PING FAILED: no version returned"
+    putsci $::_mariadb_ping_output
+    return "PING FAILED"
 }
 
 # run test
 proc mariadb_start_tests {cidict refname workload} {
     global rdbms
     set ci_id [ci_latest_id $refname]
+    # set io intensive
+    set ::env(UAW) [mariadb_get_io_intensive $ci_id]
 
     hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
     putsci "MariaDB is up and running for $refname"
@@ -1090,11 +1256,11 @@ proc mariadb_profile {cidict refname} {
     ci_check_tmp
 
     # build root/tag
-    if {![dict exists $cidict $rdbms build local_dir_root]} {
-        putsci "PROFILE FAILED: <$rdbms>/<build>/<local_dir_root> missing"
+    if {![dict exists $cidict $rdbms build build_dir]} {
+        putsci "PROFILE FAILED: <$rdbms>/<build>/<build_dir> missing"
         return "PROFILE FAILED"
     }
-    set build_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_root [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set bad_tag [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
 
     # ensure JOBCI row
@@ -1110,6 +1276,10 @@ proc mariadb_profile {cidict refname} {
         putsci "PROFILE FAILED: could not create/find JOBCI row for $bad_tag"
         return "PROFILE FAILED"
     }
+    # I/O intensive set UAW
+    set io_intensive [mariadb_get_io_intensive $ci_id]
+    set uaw [expr {$io_intensive == 1 ? 1 : 0}]
+
     set repo [file join $build_root "ci_${ci_id}_${bad_tag}"]
     set is_commit 0
     if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
@@ -1184,9 +1354,9 @@ proc mariadb_profile {cidict refname} {
     }
 
     # run runner once
-    proc _profile_run_once {ham_root runner_abs tag pid} {
-        set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
-        putsci "RUNNER: $run"
+    proc _profile_run_once {ham_root runner_abs tag pid uaw} {
+        set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid UAW=$uaw $runner_abs"
+        putsci "RUNNING BENCHMARK: $run"
         set ci_id [ci_latest_id $tag]
         if {$ci_id ne ""} {
             hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
@@ -1226,7 +1396,6 @@ proc mariadb_profile {cidict refname} {
         return "PROFILE FAILED"
     }
 
-puts $ci_id
     catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "PROFILE FAILED" }
@@ -1273,11 +1442,11 @@ proc mariadb_compare {cidict refname} {
     set dbprefix [find_prefix $rdbms]
 
     # build root/tag
-    if {![dict exists $cidict $rdbms build local_dir_root]} {
-        putsci "COMPARE FAILED: <$rdbms>/<build>/<local_dir_root> missing"
+    if {![dict exists $cidict $rdbms build build_dir]} {
+        putsci "COMPARE FAILED: <$rdbms>/<build>/<build_dir> missing"
         return "COMPARE FAILED"
     }
-    set build_root [string map {\" {}} [dict get $cidict $rdbms build local_dir_root]]
+    set build_root [string map {\" {}} [dict get $cidict $rdbms build build_dir]]
     set bad_tag [expr {[string match "refs/tags/*" $refname] ? [file tail $refname] : $refname}]
 
     # ensure JOBCI row
@@ -1293,6 +1462,10 @@ proc mariadb_compare {cidict refname} {
         putsci "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
         return "COMPARE FAILED"
     }
+    # I/O intensive set UAW
+    set io_intensive [mariadb_get_io_intensive $ci_id]
+    set uaw [expr {$io_intensive == 1 ? 1 : 0}]
+
     set repo [file join $build_root "ci_${ci_id}_${bad_tag}"]
     set is_commit 0
     if {![string match "refs/tags/*" $refname] && ![string match "refs/heads/*" $refname]} {
@@ -1345,8 +1518,7 @@ proc mariadb_compare {cidict refname} {
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET profile_id = $bad_pid WHERE ci_id = $ci_id}
     }
-
-    putsci "COMPARE PROFILEIDS  $bad_pid $good_pid"
+    putsci "COMPARE PROFILEIDS $bad_pid $good_pid"
 
     # previous tag
     set cmd "cd $repo && git fetch --all --tags"
@@ -1364,9 +1536,9 @@ proc mariadb_compare {cidict refname} {
     }
 
     # run runner once
-    proc _compare_run_once {ham_root runner_abs tag pid ci_id} {
-        set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid $runner_abs"
-        putsci "RUNNER: $run"
+    proc _compare_run_once {ham_root runner_abs tag pid ci_id uaw} {
+        set run "cd $ham_root && env REFNAME=$tag PROFILEID=$pid UAW=$uaw $runner_abs"
+        putsci "RUNNING BENCHMARK: $run"
         if {$ci_id ne ""} {
             hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
         }
@@ -1436,7 +1608,7 @@ proc mariadb_compare {cidict refname} {
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
-    if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid $ci_id]} {
+    if {![_compare_run_once $ham_root $runner_abs $bad_tag $bad_pid $ci_id $uaw]} {
         return "COMPARE FAILED"
     }
 
@@ -1664,7 +1836,7 @@ proc mariadb_compare {cidict refname} {
     set rsy [mariadb_run_sql $cidict $good_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
 
-    if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid $ci_id]} {
+    if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid $ci_id $uaw]} {
         return "COMPARE FAILED"
     }
     set stop_st [mariadb_run_sql $cidict $good_tag shutdown]

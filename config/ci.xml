@@ -8,13 +8,16 @@
             <diff_threshold>0.025</diff_threshold>
             <use_sudo>false</use_sudo>
             <ci_log_to_temp>1</ci_log_to_temp>
+            <root>/opt/hammerdb-ci</root>
+            <tmp>/opt/hammerdb-ci/TMP</tmp>
     </common>
     <MariaDB>
         <build>
             <repo_url>https://github.com/MariaDB/server.git</repo_url>
             <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
             <overwrite>false</overwrite>
-            <local_dir_root>/opt/hammerdb-ci/providers/mariadb/builds</local_dir_root>
+            <local_dir_root>/opt/hammerdb-ci/providers/mariadb</local_dir_root>
+            <build_dir>/opt/hammerdb-ci/providers/mariadb/builds</build_dir>
             <build_cmd>cmake . -DBUILD_CONFIG=mysql_release -DPLUGIN_AUTH_PAM=NO ; cmake --build .</build_cmd>
             <build_cmd_args>--parallel 8</build_cmd_args>
             <package_cmd>make package</package_cmd>
@@ -23,8 +26,9 @@
             <install_package>tar -xvf</install_package>
             <installer>scripts/mariadb-install-db</installer>
             <install_dir>/opt/hammerdb-ci/providers/mariadb/installs</install_dir>
-            <base_config_file>/opt/hammerdb-ci/providers/mariadb/config/maria.cnf</base_config_file>
-            <defaults_file>/opt/hammerdb-ci/providers/mariadb/maria.cnf</defaults_file>
+            <config_dir>/opt/hammerdb-ci/providers/mariadb/config</config_dir>
+            <defaults_file>/opt/hammerdb-ci/providers/mariadb/config/maria.cnf</defaults_file>
+            <io_config_file>/opt/hammerdb-ci/providers/mariadb/config/mariaio.cnf</io_config_file>
             <basedir>/opt/hammerdb-ci/providers/mariadb/installs</basedir>
             <datadir>data</datadir>
             <innodb_log_group_home_dir>redo</innodb_log_group_home_dir>
@@ -46,8 +50,8 @@
             <compare>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</compare>
         </test>
         <pipeline>
-            <single_c>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:oltp</single_c>
-            <single_h>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:olap</single_h>
+            <single_c>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:oltp run_sql:shutdown</single_c>
+            <single_h>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:olap run_sql:shutdown</single_h>
             <profile>profile</profile>
             <profileid>1000</profileid>
             <compare>compare</compare>

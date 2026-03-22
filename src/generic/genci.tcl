@@ -410,29 +410,460 @@ proc ci_latest_id {refname} {
     return $ci_id
 }
 
+proc ci_validate {cidict {verbose 0}} {
+
+    set say [list {msg verbose} {
+        if {$verbose} {
+            putsci $msg
+        }
+    }]
+
+    set check_dir [list {label path} {
+        if {$path eq ""} {
+            putsci "CI VALIDATE ERROR: $label is empty"
+            return 1
+        }
+        if {![file exists $path]} {
+            putsci "CI VALIDATE ERROR: missing directory: $path ($label)"
+            return 1
+        }
+        if {![file isdirectory $path]} {
+            putsci "CI VALIDATE ERROR: not a directory: $path ($label)"
+            return 1
+        }
+        if {![file readable $path]} {
+            putsci "CI VALIDATE ERROR: directory not readable: $path ($label)"
+            return 1
+        }
+        if {![file writable $path]} {
+            putsci "CI VALIDATE ERROR: directory not writable: $path ($label)"
+            return 1
+        }
+        return 0
+    }]
+
+    set check_file [list {label path} {
+        if {$path eq ""} {
+            putsci "CI VALIDATE ERROR: $label is empty"
+            return 1
+        }
+        if {![file exists $path]} {
+            putsci "CI VALIDATE ERROR: missing file: $path ($label)"
+            return 1
+        }
+        if {[file isdirectory $path]} {
+            putsci "CI VALIDATE ERROR: expected file but found directory: $path ($label)"
+            return 1
+        }
+        if {![file readable $path]} {
+            putsci "CI VALIDATE ERROR: file not readable: $path ($label)"
+            return 1
+        }
+        return 0
+    }]
+
+    set under_root [list {child parent} {
+        set child  [file normalize $child]
+        set parent [file normalize $parent]
+        return [expr {[string first "${parent}/" "${child}/"] == 0 || $child eq $parent}]
+    }]
+
+    set cfg $cidict
+    if {[dict exists $cfg ci]} {
+        set cfg [dict get $cfg ci]
+    }
+
+    if {$cfg eq ""} {
+        putsci "CI VALIDATE ERROR: no configuration loaded"
+        return 1
+    }
+
+    set errs 0
+    set pwd_here [pwd]
+
+    apply $say "CI VALIDATE: starting" $verbose
+
+    set common_root ""
+    if {[dict exists $cfg common root]} {
+        set common_root [string trim [dict get $cfg common root]]
+        if {$common_root ne ""} {
+            incr errs [apply $check_dir "common/root" $common_root]
+        }
+    }
+
+    if {[dict exists $cfg common tmp]} {
+        set tmpdir [string trim [dict get $cfg common tmp]]
+        if {$tmpdir ne ""} {
+            incr errs [apply $check_dir "common/tmp" $tmpdir]
+            if {$common_root ne "" && ![apply $under_root $tmpdir $common_root]} {
+                putsci "CI VALIDATE ERROR: common/tmp not under common/root ($tmpdir)"
+                incr errs
+            }
+        }
+    }
+
+    dict for {provider pdata} $cfg {
+        if {$provider eq "common"} {
+            continue
+        }
+        if {[catch {dict size $pdata}]} {
+            continue
+        }
+
+        apply $say "CI VALIDATE: provider $provider" $verbose
+
+        set provider_root ""
+        if {[dict exists $pdata build local_dir_root]} {
+            set provider_root [string trim [dict get $pdata build local_dir_root]]
+            if {$provider_root ne ""} {
+                incr errs [apply $check_dir "$provider/build/local_dir_root" $provider_root]
+                if {$common_root ne "" && ![apply $under_root $provider_root $common_root]} {
+                    putsci "CI VALIDATE ERROR: $provider/build/local_dir_root not under common/root ($provider_root)"
+                    incr errs
+                }
+            }
+        }
+
+        if {[dict exists $pdata build build_dir]} {
+            set build_dir [string trim [dict get $pdata build build_dir]]
+            if {$build_dir ne ""} {
+                incr errs [apply $check_dir "$provider/build/build_dir" $build_dir]
+                if {$provider_root ne "" && ![apply $under_root $build_dir $provider_root]} {
+                    putsci "CI VALIDATE ERROR: $provider/build/build_dir not under $provider/build/local_dir_root ($build_dir)"
+                    incr errs
+                }
+            }
+        }
+
+        set install_dir ""
+        if {[dict exists $pdata install install_dir]} {
+            set install_dir [string trim [dict get $pdata install install_dir]]
+            if {$install_dir ne ""} {
+                incr errs [apply $check_dir "$provider/install/install_dir" $install_dir]
+                if {$provider_root ne "" && ![apply $under_root $install_dir $provider_root]} {
+                    putsci "CI VALIDATE ERROR: $provider/install/install_dir not under $provider/build/local_dir_root ($install_dir)"
+                    incr errs
+                }
+            }
+        }
+
+        if {[dict exists $pdata install basedir]} {
+            set basedir [string trim [dict get $pdata install basedir]]
+            if {$basedir ne ""} {
+                incr errs [apply $check_dir "$provider/install/basedir" $basedir]
+                if {$provider_root ne "" && ![apply $under_root $basedir $provider_root]} {
+                    putsci "CI VALIDATE ERROR: $provider/install/basedir not under $provider/build/local_dir_root ($basedir)"
+                    incr errs
+                }
+            }
+        }
+
+        set config_dir ""
+        if {[dict exists $pdata install config_dir]} {
+            set config_dir [string trim [dict get $pdata install config_dir]]
+            if {$config_dir ne ""} {
+                incr errs [apply $check_dir "$provider/install/config_dir" $config_dir]
+                if {$provider_root ne "" && ![apply $under_root $config_dir $provider_root]} {
+                    putsci "CI VALIDATE ERROR: $provider/install/config_dir not under $provider/build/local_dir_root ($config_dir)"
+                    incr errs
+                }
+            }
+        }
+
+        if {[dict exists $pdata install defaults_file]} {
+            set path [string trim [dict get $pdata install defaults_file]]
+            if {$path ne ""} {
+                if {[file pathtype $path] ne "absolute"} {
+                    set path [file join $pwd_here $path]
+                }
+                incr errs [apply $check_file "$provider/install/defaults_file" $path]
+                if {$config_dir ne "" && ![apply $under_root $path $config_dir]} {
+                    putsci "CI VALIDATE ERROR: $provider/install/defaults_file not under $provider/install/config_dir ($path)"
+                    incr errs
+                }
+            }
+        }
+
+        if {[dict exists $pdata install io_config_file]} {
+            set path [string trim [dict get $pdata install io_config_file]]
+            if {$path ne ""} {
+                if {[file pathtype $path] ne "absolute"} {
+                    set path [file join $pwd_here $path]
+                }
+                incr errs [apply $check_file "$provider/install/io_config_file" $path]
+                if {$config_dir ne "" && ![apply $under_root $path $config_dir]} {
+                    putsci "CI VALIDATE ERROR: $provider/install/io_config_file not under $provider/install/config_dir ($path)"
+                    incr errs
+                }
+            }
+        }
+
+        if {[dict exists $pdata test]} {
+            set tdict [dict get $pdata test]
+            dict for {tkey tval} $tdict {
+                set path [string trim $tval]
+                if {$path eq ""} {
+                    continue
+                }
+                if {[file pathtype $path] ne "absolute"} {
+                    set path [file join $pwd_here $path]
+                }
+                incr errs [apply $check_file "$provider/test/$tkey" $path]
+            }
+        }
+    }
+
+    if {$errs > 0} {
+        putsci "CI VALIDATE: FAILED ($errs errors)"
+        putsci "CI VALIDATE: run cifix"
+        return 1
+    }
+
+    apply $say "CI VALIDATE: PASSED" $verbose
+    return 0
+}
+
+proc cifix {} {
+    global cidict
+
+    putscli "Running cifix..."
+    putsci "CI FIX: starting"
+
+    if {![info exists cidict] || $cidict eq ""} {
+        putsci "CI FIX ERROR: global cidict is empty"
+        return 1
+    }
+
+    set cfg $cidict
+    if {[dict exists $cfg ci]} {
+        set cfg [dict get $cfg ci]
+    }
+
+    if {[catch {dict keys $cfg}]} {
+        putsci "CI FIX ERROR: invalid cidict"
+        return 1
+    }
+
+    if {[catch {exec curl --version}]} {
+        putsci "CI FIX ERROR: curl not available"
+        return 1
+    }
+
+    set dirs {}
+    set files {}
+
+    if {[dict exists $cfg common root]} {
+        set p [string trim [dict get $cfg common root]]
+        if {$p ne ""} { lappend dirs $p }
+    }
+
+    if {[dict exists $cfg common tmp]} {
+        set p [string trim [dict get $cfg common tmp]]
+        if {$p ne ""} { lappend dirs $p }
+    }
+
+    dict for {provider pdata} $cfg {
+        if {$provider eq "common"} continue
+        if {[catch {dict size $pdata}]} continue
+
+        putsci "CI FIX: provider $provider"
+
+        if {[dict exists $pdata build local_dir_root]} {
+            set p [string trim [dict get $pdata build local_dir_root]]
+            if {$p ne ""} { lappend dirs $p }
+        }
+
+        if {[dict exists $pdata build build_dir]} {
+            set p [string trim [dict get $pdata build build_dir]]
+            if {$p ne ""} { lappend dirs $p }
+        }
+
+        if {[dict exists $pdata install install_dir]} {
+            set p [string trim [dict get $pdata install install_dir]]
+            if {$p ne ""} { lappend dirs $p }
+        }
+
+        if {[dict exists $pdata install basedir]} {
+            set p [string trim [dict get $pdata install basedir]]
+            if {$p ne ""} { lappend dirs $p }
+        }
+
+        if {[dict exists $pdata install config_dir]} {
+            set p [string trim [dict get $pdata install config_dir]]
+            if {$p ne ""} { lappend dirs $p }
+        }
+
+        foreach key {defaults_file io_config_file} {
+            if {[dict exists $pdata install $key]} {
+                set p [string trim [dict get $pdata install $key]]
+                if {$p ne ""} {
+                    lappend files $p
+                    lappend dirs [file dirname $p]
+                }
+            }
+        }
+    }
+
+    set dirs  [lsort -unique $dirs]
+    set files [lsort -unique $files]
+
+    if {[llength $dirs] == 0 && [llength $files] == 0} {
+        putsci "CI FIX ERROR: no fix targets found in CI configuration"
+        return 1
+    }
+
+    foreach d $dirs {
+        if {[file exists $d]} {
+            if {![file isdirectory $d]} {
+                putsci "CI FIX ERROR: path exists but is not a directory: $d"
+                return 1
+            }
+            putsci "CI FIX: directory exists $d"
+        } else {
+            putsci "CI FIX: creating directory $d"
+            if {[catch {file mkdir $d} err]} {
+                putsci "CI FIX ERROR: failed to create directory $d : $err"
+                return 1
+            }
+        }
+    }
+
+    if {[dict exists $cfg common root]} {
+        set rootdir [string trim [dict get $cfg common root]]
+        if {$rootdir ne ""} {
+            if {![catch {exec df -Pk $rootdir} out]} {
+                set lines [split [string trim $out] "\n"]
+                if {[llength $lines] >= 2} {
+                    set fields [regexp -inline -all {\S+} [lindex $lines end]]
+                    if {[llength $fields] >= 4} {
+                        set avail_kb [lindex $fields 3]
+                        if {[string is integer -strict $avail_kb]} {
+                            set gb [expr {$avail_kb / 1024 / 1024}]
+                            if {$gb < 100} {
+                                putsci "CI FIX WARNING: less than 100GB free under $rootdir (${gb}GB)"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    foreach f $files {
+        if {[file exists $f]} {
+            putsci "CI FIX: file exists $f"
+            continue
+        }
+
+        set name [file tail $f]
+        if {$name ni {"maria.cnf" "mariaio.cnf"}} {
+            putsci "CI FIX ERROR: no download rule for missing file $f"
+            return 1
+        }
+
+        set base_url "https://www.hammerdb.com/ci-config"
+        set file_url "$base_url/$name"
+        set ts_url "$base_url/$name.timestamp"
+        set sum_url "$base_url/$name.checksum"
+
+        set ts_tmp  "${f}.timestamp.tmp"
+        set sum_tmp "${f}.checksum.tmp"
+
+        catch {file delete -force $ts_tmp $sum_tmp}
+
+        putsci "CI FIX: fetching $name.timestamp"
+        if {[catch {exec curl -L -s $ts_url -o $ts_tmp} err]} {
+            putsci "CI FIX ERROR: failed to fetch $ts_url : $err"
+            return 1
+        }
+
+        putsci "CI FIX: fetching $name.checksum"
+        if {[catch {exec curl -L -s $sum_url -o $sum_tmp} err]} {
+            putsci "CI FIX ERROR: failed to fetch $sum_url : $err"
+            return 1
+        }
+
+        putsci "CI FIX: downloading $name"
+        if {[catch {exec curl -L -s $file_url -o $f} err]} {
+            catch {file delete -force $f}
+            putsci "CI FIX ERROR: failed to download $file_url : $err"
+            return 1
+        }
+
+        set fh [open $ts_tmp r]
+        set remote_ts [string trim [read $fh]]
+        close $fh
+
+        set fh [open $sum_tmp r]
+        set remote_sum_text [string trim [read $fh]]
+        close $fh
+
+        catch {file delete -force $ts_tmp $sum_tmp}
+
+        if {![regexp {([0-9A-Fa-f]{64})} $remote_sum_text -> remote_sum]} {
+            catch {file delete -force $f}
+            putsci "CI FIX ERROR: invalid checksum content for $name"
+            return 1
+        }
+        set remote_sum [string tolower $remote_sum]
+
+        set local_sum ""
+        if {![catch {exec sha256sum $f} out]} {
+            set local_sum [string tolower [lindex [regexp -inline -all {\S+} [string trim $out]] 0]]
+        } elseif {![catch {exec shasum -a 256 $f} out]} {
+            set local_sum [string tolower [lindex [regexp -inline -all {\S+} [string trim $out]] 0]]
+        } elseif {![catch {exec openssl dgst -sha256 $f} out]} {
+            if {[regexp {=\s*([0-9A-Fa-f]+)} $out -> hex]} {
+                set local_sum [string tolower $hex]
+            }
+        }
+
+        if {$local_sum eq ""} {
+            catch {file delete -force $f}
+            putsci "CI FIX ERROR: unable to compute sha256 for $f"
+            return 1
+        }
+
+        if {$local_sum ne $remote_sum} {
+            catch {file delete -force $f}
+            putsci "CI FIX ERROR: checksum mismatch for $name"
+            return 1
+        }
+
+        set fh [open "${f}.timestamp" w]
+        puts $fh $remote_ts
+        close $fh
+
+        set fh [open "${f}.checksum" w]
+        puts $fh $remote_sum
+        close $fh
+
+        putsci "CI FIX: downloaded and verified $name"
+    }
+
+    putsci "CI FIX: validating"
+    if {[ci_validate $cfg 1]} {
+        putsci "CI FIX: FAILED"
+        return 1
+    }
+
+    putsci "CI FIX: COMPLETE"
+    return 0
+}
+
 proc cilisten {args} {
     global cidict ci_optlog ci_flog ci_logfile
     set ci_optlog 1
     set ci_flog ""
     set ci_logfile ""
 
-    if {[catch {
-            set ci_optlog [dict get $cidict common ci_log_to_temp]
-        }]} {
-            set ci_optlog 1
-        }
-
-    if {![string is integer -strict $ci_optlog] || $ci_optlog < 0 || $ci_optlog > 1} {
-        set ci_optlog 1
+    if {[llength $args] != 0} {
+        putscli "Usage: cilisten"
+        return
     }
 
     if {[info exists ::listen_socket]} {
         putscli "CI listener already running; run cistop to stop"
-        return
-    }
-
-    if {[llength $args] != 0} {
-        putscli "Usage: cilisten"
         return
     }
 
@@ -449,8 +880,36 @@ proc cilisten {args} {
         return
     }
 
+    if {[ci_validate $cidict]} {
+        putsci "CI listener not started due to validation errors"
+        return
+    }
+
+    putsci "CI validation passed"
+
+    if {[dict exists $cidict common tmp]} {
+        set tmpdir [string trim [dict get $cidict common tmp]]
+        if {$tmpdir ne ""} {
+            if {[file exists $tmpdir] && [file isdirectory $tmpdir]} {
+                set ::env(TMP) $tmpdir
+                putsci "CI TMP: $tmpdir"
+            } else {
+                putsci "CI WARNING: TMP directory not found: $tmpdir"
+            }
+        }
+    }
+
+    if {[catch {
+        set ci_optlog [dict get $cidict common ci_log_to_temp]
+    }]} {
+        set ci_optlog 1
+    }
+
+    if {![string is integer -strict $ci_optlog] || $ci_optlog < 0 || $ci_optlog > 1} {
+        set ci_optlog 1
+    }
+
     set port [dict get $cidict common listen_port]
-    putscli "Starting CI GitHub webhook listener on port $port..."
 
     proc handle_connection {sock addr port} {
         global cidict
@@ -496,157 +955,167 @@ proc cilisten {args} {
         }
     }
 
-proc http_reply {sock code body} {
-    if {[lsearch -exact [chan names] $sock] == -1} { return }
-    puts $sock "HTTP/1.1 $code"
-    puts $sock "Content-Type: text/plain"
-    puts $sock "Content-Length: [string length $body]"
-    puts $sock "Connection: close"
-    puts $sock ""
-    puts $sock $body
-    flush $sock
-    close $sock
-}
-
-proc process_request {sock headers body cidict} {
-    global rdbms
-
-    if {[catch {set json_data [json::json2dict $body]} err]} {
-        putscli "Invalid JSON payload: $err"
-        http_reply $sock "400 Bad Request" "Invalid JSON"
-        return
-    }
-
-    if {![dict exists $json_data database]} {
-        putscli "CI payload missing database"
-        http_reply $sock "400 Bad Request" "Missing database"
-        return
-    }
-
-    set dbprefix [string tolower [string trim [dict get $json_data database]]]
-    if {$dbprefix eq ""} {
-        putscli "CI payload database empty"
-        http_reply $sock "400 Bad Request" "Empty database"
-        return
-    }
-
-    # Resolve dbprefix → rdbms using dbdict
-    upvar #0 dbdict dbdict
-    set dbl {}
-    set prefixl {}
-    dict for {database attributes} $dbdict {
-        dict with attributes {
-            lappend dbl $name
-            lappend prefixl $prefix
-        }
-    }
-
-    set ind [lsearch -exact $prefixl $dbprefix]
-    if {$ind eq -1} {
-        putscli "Unknown prefix $dbprefix (valid: $prefixl)"
-        http_reply $sock "400 Bad Request" "Unknown database prefix"
-        return
-    }
-
-    set resolved_rdbms [lindex $dbl $ind]
-
-    # check enabled
-    set enabled_dbs {}
-    foreach k [dict keys $cidict] {
-        if {$k eq "common"} continue
-        lappend enabled_dbs $k
-    }
-
-    if {[lsearch -exact $enabled_dbs $resolved_rdbms] == -1} {
-        putscli "$resolved_rdbms not enabled for CI"
-        http_reply $sock "400 Bad Request" "Database not enabled"
-        return
-    }
-
-    # switch DB
-    unset -nocomplain rdbms
-    dbset db $dbprefix
-    if {![info exists rdbms] || $rdbms eq ""} {
-        putscli "Failed to dbset db $dbprefix"
-        http_reply $sock "500 Internal Server Error" "Failed to set database context"
-        return
-    }
-
-    set pipeline "single"
-    if {[dict exists $json_data pipeline]} {
-        set pipeline [string tolower [string trim [dict get $json_data pipeline]]]
-    }
-
-    set workload "C"
-    if {[dict exists $json_data workload]} {
-        set workload [string toupper [string trim [dict get $json_data workload]]]
-    }
-
-    # map workload
-    if {$pipeline eq "single"} {
-        if {$workload eq "H"} {
-            set pipeline "single_h"
-        } else {
-            set pipeline "single_c"
-        }
-    }
-
-    if {![dict exists $json_data ref]} {
-        putscli "CI payload missing ref"
-        http_reply $sock "400 Bad Request" "Missing ref"
-        return
-    }
-
-    set ref [dict get $json_data ref]
-
-    set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
-    set overwrite  [dict get $cidict $rdbms build overwrite]
-
-    set matched 0
-
-    if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
-        set matched 1
-    } elseif {[regexp {^[0-9a-fA-F]{7,40}$} $ref]} {
-        set type "sha"
-        set name $ref
-        set matched 1
-    }
-
-    if {!$matched} {
-        putscli "Ref did not match CI rules: $ref"
-        http_reply $sock "400 Bad Request" "Invalid ref"
-        return
-    }
-
-    if {$overwrite} {
-        catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}}
-    }
-
-    if {[catch {
-        hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,pipeline,cidict)
-                      VALUES ($name,$dbprefix,$pipeline,$cidict)}
-    } err]} {
-        putscli "Error inserting JOBCI row: $err"
-        http_reply $sock "500 Internal Server Error" "Insert failed"
-        return
-    }
-
-    putscli "Recorded: $name db=$dbprefix pipeline=$pipeline"
-
-    if {[lsearch -exact [chan names] $sock] != -1} {
-        puts $sock "HTTP/1.1 200 OK"
+    proc http_reply {sock code body} {
+        if {[lsearch -exact [chan names] $sock] == -1} { return }
+        puts $sock "HTTP/1.1 $code"
         puts $sock "Content-Type: text/plain"
-        puts $sock "Content-Length: 2"
+        puts $sock "Content-Length: [string length $body]"
         puts $sock "Connection: close"
         puts $sock ""
-        puts $sock "OK"
+        puts $sock $body
         flush $sock
         close $sock
     }
-}
+
+    proc process_request {sock headers body cidict} {
+        global rdbms
+
+        if {[catch {set json_data [json::json2dict $body]} err]} {
+            putscli "Invalid JSON payload: $err"
+            http_reply $sock "400 Bad Request" "Invalid JSON"
+            return
+        }
+
+        if {![dict exists $json_data database]} {
+            putscli "CI payload missing database"
+            http_reply $sock "400 Bad Request" "Missing database"
+            return
+        }
+
+        set dbprefix [string tolower [string trim [dict get $json_data database]]]
+        if {$dbprefix eq ""} {
+            putscli "CI payload database empty"
+            http_reply $sock "400 Bad Request" "Empty database"
+            return
+        }
+
+        upvar #0 dbdict dbdict
+        set dbl {}
+        set prefixl {}
+        dict for {database attributes} $dbdict {
+            dict with attributes {
+                lappend dbl $name
+                lappend prefixl $prefix
+            }
+        }
+
+        set ind [lsearch -exact $prefixl $dbprefix]
+        if {$ind eq -1} {
+            putscli "Unknown prefix $dbprefix (valid: $prefixl)"
+            http_reply $sock "400 Bad Request" "Unknown database prefix"
+            return
+        }
+
+        set resolved_rdbms [lindex $dbl $ind]
+
+        set enabled_dbs {}
+        foreach k [dict keys $cidict] {
+            if {$k eq "common"} continue
+            lappend enabled_dbs $k
+        }
+
+        if {[lsearch -exact $enabled_dbs $resolved_rdbms] == -1} {
+            putscli "$resolved_rdbms not enabled for CI"
+            http_reply $sock "400 Bad Request" "Database not enabled"
+            return
+        }
+
+        unset -nocomplain rdbms
+        dbset db $dbprefix
+        if {![info exists rdbms] || $rdbms eq ""} {
+            putscli "Failed to dbset db $dbprefix"
+            http_reply $sock "500 Internal Server Error" "Failed to set database context"
+            return
+        }
+
+        set pipeline "single"
+        if {[dict exists $json_data pipeline]} {
+            set pipeline [string tolower [string trim [dict get $json_data pipeline]]]
+        }
+
+        set workload "C"
+        if {[dict exists $json_data workload]} {
+            set workload [string toupper [string trim [dict get $json_data workload]]]
+        }
+
+        set io_intensive 0
+        if {[dict exists $json_data io_intensive]} {
+            set io_intensive [dict get $json_data io_intensive]
+        }
+        if {$io_intensive ni {0 1 "0" "1"}} {
+            set io_intensive 0
+        }
+
+        if {$pipeline eq "single"} {
+            if {$workload eq "H"} {
+                set pipeline "single_h"
+            } else {
+                set pipeline "single_c"
+            }
+        }
+
+        if {![dict exists $json_data ref]} {
+            putscli "CI payload missing ref"
+            http_reply $sock "400 Bad Request" "Missing ref"
+            return
+        }
+
+        set ref [dict get $json_data ref]
+
+        set ref_regexp [string map {\" {}} [dict get $cidict $rdbms build ref_regexp]]
+        set overwrite  [dict get $cidict $rdbms build overwrite]
+
+        set matched 0
+        if {[regexp [subst {$ref_regexp}] $ref -> type name]} {
+            set matched 1
+        } elseif {[regexp {^[0-9a-fA-F]{7,40}$} $ref]} {
+            set type "sha"
+            set name $ref
+            set matched 1
+        }
+
+        if {!$matched} {
+            putscli "Ref did not match CI rules: $ref"
+            http_reply $sock "400 Bad Request" "Invalid ref"
+            return
+        }
+
+        if {$overwrite} {
+            catch {hdbjobs eval {DELETE FROM JOBCI WHERE refname=$name}}
+        }
+
+        if {[catch {
+            hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,pipeline,io_intensive,cidict)
+                          VALUES ($name,$dbprefix,$pipeline,$io_intensive,$cidict)}
+        } err]} {
+            putscli "Error inserting JOBCI row: $err"
+            http_reply $sock "500 Internal Server Error" "Insert failed"
+            return
+        }
+
+        putscli "Recorded: $name db=$dbprefix pipeline=$pipeline io_intensive=$io_intensive"
+
+        if {[lsearch -exact [chan names] $sock] != -1} {
+            puts $sock "HTTP/1.1 200 OK"
+            puts $sock "Content-Type: text/plain"
+            puts $sock "Content-Length: 2"
+            puts $sock "Connection: close"
+            puts $sock ""
+            puts $sock "OK"
+            flush $sock
+            close $sock
+        }
+    }
+
     set listen_socket [socket -server handle_connection $port]
     ci_open_logfile
-    putscli "CI webhook listening on port $port"
+
+    putsci "CI listener: port $port"
+    if {$ci_logfile ne ""} {
+        putsci "CI log: $ci_logfile"
+    }
+    putsci "CI watcher: started"
+
     initwatcher $listen_socket
 }
 
@@ -735,7 +1204,7 @@ proc putsci {output} {
     }
 }
 
-proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
+proc cipush {refname {pipeline single} {workload C} {dbprefix ""} {io_intensive 0}} {
     global rdbms cidict
 
     if {$dbprefix eq ""} {
@@ -762,7 +1231,7 @@ proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
         return
     }
 
-    if {[string match "refs/tags/*"  $refname]} {
+    if {[string match "refs/tags/*" $refname]} {
         set ref_type "tag"
     } elseif {[string match "refs/heads/*" $refname]} {
         set ref_type "branch"
@@ -782,14 +1251,19 @@ proc cipush {refname {pipeline single} {workload C} {dbprefix ""}} {
         return
     }
 
-    set body "{\"ref\":\"$refname\",\"database\":\"$dbprefix\",\"pipeline\":\"$pipeline\",\"workload\":\"$workload\"}"
+    if {$io_intensive ni {0 1 "0" "1"}} {
+        putscli "Error: io_intensive must be 0 or 1"
+        return
+    }
+
+    set body "{\"ref\":\"$refname\",\"database\":\"$dbprefix\",\"pipeline\":\"$pipeline\",\"workload\":\"$workload\",\"io_intensive\":$io_intensive}"
 
     set headers [dict create X-GitHub-Event "create"]
 
     # dispatch
     process_request dummy_sock $headers $body $cidict
 
-    putscli "Simulated webhook for $refname db=$dbprefix pipeline=$pipeline workload=$workload"
+    putscli "Simulated webhook for $refname db=$dbprefix pipeline=$pipeline workload=$workload io_intensive=$io_intensive"
 }
 
 # line reader
@@ -868,13 +1342,13 @@ proc job_watcher {} {
 }
 
 proc stopwatcher {} {
-    putscli "Job watcher stop."
+    putscli "CI watcher stop."
     set ::watcher_running 0
     return
 }
 
 proc startwatcher {} {
-    putscli "Job watcher start."
+    putscli "CI watcher start."
     set ::watcher_running 1
     job_watcher
     return
@@ -890,10 +1364,11 @@ proc initwatcher {listen_socket} {
 proc run_next_pending_job {} {
     global rdbms cidict
 
-    set ci_id    ""
-    set refname  ""
-    set pipeline ""
-    set dbprefix ""
+    set ci_id        ""
+    set refname      ""
+    set pipeline     ""
+    set dbprefix     ""
+    set io_intensive 0
 
     if {[catch {
         set ci_id [hdbjobs eval {
@@ -905,9 +1380,21 @@ proc run_next_pending_job {} {
         }]
 
         if {$ci_id ne ""} {
-            set refname  [hdbjobs eval { SELECT refname  FROM JOBCI WHERE ci_id = $ci_id }]
-            set pipeline [hdbjobs eval { SELECT pipeline FROM JOBCI WHERE ci_id = $ci_id }]
-            set dbprefix [hdbjobs eval { SELECT dbprefix FROM JOBCI WHERE ci_id = $ci_id }]
+        set refname ""
+        set pipeline ""
+        set dbprefix ""
+        set io_intensive 0
+
+        hdbjobs eval {
+            SELECT refname,pipeline,dbprefix,io_intensive
+            FROM JOBCI
+            WHERE ci_id = $ci_id
+        } row {
+            set refname      $row(refname)
+            set pipeline     $row(pipeline)
+            set dbprefix     $row(dbprefix)
+            set io_intensive $row(io_intensive)
+        }
         }
     } err]} {
         putsci "Error querying JOBCI: $err"
@@ -921,6 +1408,10 @@ proc run_next_pending_job {} {
     if {$dbprefix eq ""} {
         putsci "Job $ci_id missing dbprefix"
         return
+    }
+
+    if {$io_intensive ni {0 1 "0" "1"}} {
+        set io_intensive 0
     }
 
     upvar #0 dbdict dbdict
@@ -947,7 +1438,7 @@ proc run_next_pending_job {} {
         return
     }
 
-    putsci "Found pending job: $refname (db=$dbprefix)"
+    putsci "Found pending job: $refname (db=$dbprefix io_intensive=$io_intensive)"
     putsci "Pausing watcher for run"
     stopwatcher
 
@@ -964,7 +1455,7 @@ proc run_next_pending_job {} {
         PROFILE {
             putsci "Dispatching pipeline='profile' for $refname"
             if {[catch {
-                cisteps $cidict $refname profile
+                cisteps $cidict $refname profile $io_intensive
             } err]} {
                 putsci "CI PROFILE pipeline failed: $err"
             }
@@ -975,7 +1466,7 @@ proc run_next_pending_job {} {
         COMPARE {
             putsci "Dispatching pipeline='compare' for $refname"
             if {[catch {
-                cisteps $cidict $refname compare
+                cisteps $cidict $refname compare $io_intensive
             } err]} {
                 putsci "CI COMPARE pipeline failed: $err"
             }
@@ -986,7 +1477,7 @@ proc run_next_pending_job {} {
         default {
             putsci "Dispatching pipeline='$pipeline' for $refname"
             if {[catch {
-                cisteps $cidict $refname [string tolower $pipeline]
+                cisteps $cidict $refname [string tolower $pipeline] $io_intensive
             } err]} {
                 putsci "CI pipeline '$pipeline' failed: $err"
             }
@@ -997,7 +1488,7 @@ proc run_next_pending_job {} {
 }
 
 # run pipeline
-proc cisteps {cidict refname pipeline_name} {
+proc cisteps {cidict refname pipeline_name io_intensive} {
     global rdbms
     set r [string tolower $rdbms]
 
@@ -1005,10 +1496,11 @@ proc cisteps {cidict refname pipeline_name} {
         putsci "CI: unknown pipeline '$pipeline_name' under <$rdbms>/<pipeline>"
         return
     }
+
     set steps     [dict get $cidict $rdbms pipeline $pipeline_name]
     set step_list [split $steps " "]
 
-    putsci "CI: running pipeline '$pipeline_name' → $steps"
+    putsci "CI: running pipeline '$pipeline_name' io_intensive=$io_intensive → $steps"
 
     foreach step $step_list {
         if {$step eq ""} continue
@@ -1092,10 +1584,11 @@ proc cisteps {cidict refname pipeline_name} {
             }
         }
     }
+
     putsci "CI: pipeline '$pipeline_name' completed"
 }
 
-# Unix only
+# Unix only at this release
 if {![info exists ::tcl_platform(platform)] || $::tcl_platform(platform) ne "unix"} {
     foreach p {citmp cilisten cistop cistatus cipush cistep ciset} {
         if {[info procs $p] ne ""} {

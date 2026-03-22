@@ -250,11 +250,13 @@ proc getcirow_id {ci_id} {
     set ci [dict create]
     if {[catch {
         hdbjobs eval {SELECT
-            ci_id, refname, profile_id,
+            ci_id, refname, pipeline,
+            io_intensive, profile_id,
             clone_cmd, clone_output,
             build_cmd, build_output,
             install_cmd, install_output,
             package_cmd, commit_msg,
+            config_file, start_cmd,
             status, timestamp, end_timestamp,
             cidict
         FROM JOBCI
@@ -275,11 +277,12 @@ proc getcirow {refname} {
     set ci [dict create]
     if {[catch {
         hdbjobs eval {SELECT
-            ci_id, refname, profile_id,
-            clone_cmd, clone_output,
+            ci_id, refname, pipeline, io_intensive, 
+            profile_id, clone_cmd, clone_output,
             build_cmd, build_output,
             install_cmd, install_output,
             package_cmd, commit_msg,
+            config_file, start_cmd,
             status, timestamp, end_timestamp,
             cidict
         FROM JOBCI
@@ -357,6 +360,8 @@ proc wapp-page-ci {} {
             install_cmd    "Install command" \
             install_output "Install output" \
             package_cmd    "Package command" \
+            config_file    "Config file" \
+            start_cmd      "Start command" \
             cidict         "CI dictionary" \
         ]
 
@@ -373,6 +378,8 @@ proc wapp-page-ci {} {
             install_cmd
             install_output
             package_cmd
+            config_file
+            start_cmd
             cidict
         }
 
@@ -385,6 +392,7 @@ proc wapp-page-ci {} {
         wapp-subst {</ol>\n}
 
         # Performance profile
+        set pid ""
         if {[dict exists $ci profile_id]} {
             set pid [string trim [dict get $ci profile_id]]
         }
@@ -429,8 +437,8 @@ proc wapp-page-ci {} {
         clone_cmd clone_output
         build_cmd build_output
         install_cmd install_output
-        package_cmd
-        cidict
+        package_cmd config_file
+        start_cmd cidict
     }
 
     if {[lsearch -exact $allowed $field] < 0} {
@@ -445,15 +453,19 @@ proc wapp-page-ci {} {
     # summary is short
     if {$field eq "summary"} {
         wapp-subst {<pre style="white-space:pre-wrap; overflow-wrap:anywhere;">}
-        foreach k {ci_id refname profile_id status timestamp end_timestamp} {
-        set v [dict get $ci $k]
-        if {(($k eq "end_timestamp") || ($k eq "profile_id")) && $v eq ""} {
-                if  {($k eq "profile_id")} { 
-		set v "0" 
-                wapp-subst "%html($k): %html($v)\n"
-		 } else {
-                wapp-subst "%html($k):\n"
-		}
+        foreach k {ci_id refname pipeline io_intensive profile_id status timestamp end_timestamp} {
+            if {[dict exists $ci $k]} {
+                set v [dict get $ci $k]
+            } else {
+                set v ""
+            }
+            if {(($k eq "end_timestamp") || ($k eq "profile_id")) && $v eq ""} {
+                if {$k eq "profile_id"} {
+                    set v "0"
+                    wapp-subst "%html($k): %html($v)\n"
+                } else {
+                    wapp-subst "%html($k):\n"
+                }
             } else {
                 wapp-subst "%html($k): %html($v)\n"
             }
@@ -462,24 +474,26 @@ proc wapp-page-ci {} {
         return
     }
 
-    set val [dict get $ci $field]
+    if {[dict exists $ci $field]} {
+        set val [dict get $ci $field]
+    } else {
+        set val ""
+    }
 
     if {$val eq ""} {
         wapp-subst {<p><i>(empty)</i></p>}
         return
     }
 
+    # Normalise line endings first
+    if {$field in {clone_output build_output install_output}} {
+        set val [normalize_pre_text $val]
+    }
 
-# Normalise line endings first
-if {$field in {clone_output build_output install_output}} {
-    set val [normalize_pre_text $val]
-}
-
-# Only build_output: split glued CMake records
-if {$field eq "build_output"} {
-    set val [split_cmake_records $val]
-}
-
+    # Only build_output: split glued CMake records
+    if {$field eq "build_output"} {
+        set val [split_cmake_records $val]
+    }
 
     # Pretty print cidict (3+ level dict) in Tcl-dict style
     if {$field eq "cidict"} {

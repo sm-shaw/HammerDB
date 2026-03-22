@@ -697,7 +697,9 @@ if {[regexp {^refs/tags/(.+)$} $ref_trim -> r]} { set ref_short $r }
 set summary "$bench · $ptxt · $ref_short"
 
 # request text
-set payload_pretty "Request\n-------\nref:      $ref_trim\ndatabase: $dbprefix\npipeline: $pipeline_ui\nworkload: $workload_ui\nio:       $io_intensive\nqs:       $__qs\n\n(JSON)\n------\n$payload_json"
+#set payload_pretty "Request\n-------\nref:      $ref_trim\ndatabase: $dbprefix\npipeline: $pipeline_ui\nworkload: $workload_ui\nio:       $io_intensive\nqs:       $__qs\n\n(JSON)\n------\n$payload_json"
+#without query string
+set payload_pretty "Request\n-------\nref:      $ref_trim\ndatabase: $dbprefix\npipeline: $pipeline_ui\nworkload: $workload_ui\nio:       $io_intensive\n       \n(JSON)\n------\n$payload_json"
 
 # try POST
 set resp [__post_json $cilisten_url $payload_json]
@@ -917,7 +919,7 @@ wapp-subst {<div style='min-width:82px; font-weight:600;'>TPROC-C</div>}
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_single'$bench_c_single onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='single';\"> Single</label>"
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_profile'$bench_c_profile onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='profile';\"> Profile</label>"
 wapp-subst "<label style='cursor:pointer;'><input type='radio' name='bench' value='c_compare'$bench_c_compare onchange=\"document.getElementById('workload_hidden').value='C';document.getElementById('pipeline_hidden').value='compare';\"> Compare</label>"
-wapp-subst "<label style='cursor:pointer; margin-left:14px;'><input type='checkbox' name='io_intensive' value='1'$io_intensive> I/O intensive</label>"
+wapp-subst "<label style='cursor:pointer; margin-left:14px;'><input type='checkbox' name='io_intensive' value='1'$io_intensive> Full Durability + I/O intensive</label>"
 wapp-subst {</div>}
 
 # TPROC-H
