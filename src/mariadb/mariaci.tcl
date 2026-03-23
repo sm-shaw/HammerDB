@@ -1426,7 +1426,7 @@ proc mariadb_profile {cidict refname} {
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "PROFILE FAILED" }
-    if {![_profile_run_once $ham_root $runner_abs $bad_tag $bad_pid]} {
+    if {![_profile_run_once $ham_root $runner_abs $bad_tag $bad_pid $uaw]} {
         return "PROFILE FAILED"
     }
 }
