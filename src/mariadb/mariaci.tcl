@@ -235,28 +235,36 @@ proc mariadb_build {cidict refname} {
 
     set pipe_output ""
     set build_status "BUILD SUCCEEDED"
+    set failed_line ""
 
     if {[catch {
         set pipe [open "|bash -c \"$safe_cmd\"" "r"]
         fconfigure $pipe -blocking 1 -buffering line
+
         while {[gets $pipe line] >= 0} {
-            append pipe_output "$line"
+            append pipe_output "$line\n"
             putsci $line
-            if {![regexp {^troff:} $line] && [regexp -nocase {fatal:|error:} $line]} {
-                set build_status "BUILD FAILED"
+
+            if {$failed_line eq "" && ![regexp {^troff:} $line] && [regexp -nocase {fatal:|error:} $line]} {
                 set failed_line $line
             }
         }
-        if {[catch {close $pipe} close_err]} {
-            if {![regexp -nocase {warning} $close_err]} {
-                append pipe_output "Error closing pipe: $close_err"
-                set failed_line "Error closing pipe: $close_err"
-                set build_status "BUILD FAILED"
+
+        if {[catch {close $pipe} close_err close_opts]} {
+            if {[dict exists $close_opts -errorcode]} {
+                set ec [dict get $close_opts -errorcode]
+
+                if {[llength $ec] > 0 && [lindex $ec 0] eq "CHILDSTATUS"} {
+                    append pipe_output "Error closing pipe: $close_err\n"
+                    append pipe_output "errorcode: $ec\n"
+                    set failed_line "Error closing pipe: $close_err (errorcode: $ec)"
+                    set build_status "BUILD FAILED"
+                }
             }
         }
     } build_err]} {
-        append pipe_output "Failed to start build: $build_err"
-        set failed_line "Failed to start build: $build_err"
+        append pipe_output "Build runner error: $build_err\n"
+        set failed_line "Build runner error: $build_err"
         set build_status "BUILD FAILED"
     }
 
