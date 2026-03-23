@@ -495,6 +495,16 @@ proc ci_validate {cidict {verbose 0}} {
         set tmpdir [string trim [dict get $cfg common tmp]]
         if {$tmpdir ne ""} {
             incr errs [apply $check_dir "common/tmp" $tmpdir]
+        set runtime_tmp "/tmp"
+        if {[info exists ::env(TMP)] && [string trim $::env(TMP)] ne ""} {
+            set runtime_tmp [string trim $::env(TMP)]
+        }
+        
+        if {[file normalize $runtime_tmp] ne [file normalize $tmpdir]} {
+            putsci "CI VALIDATE ERROR: current TMP ($runtime_tmp) does not match common/tmp ($tmpdir)"
+            putsci "CI VALIDATE ERROR: start HammerDB with TMP=$tmpdir"
+            incr errs
+        }
             if {$common_root ne "" && ![apply $under_root $tmpdir $common_root]} {
                 putsci "CI VALIDATE ERROR: common/tmp not under common/root ($tmpdir)"
                 incr errs
@@ -615,7 +625,7 @@ proc ci_validate {cidict {verbose 0}} {
 
     if {$errs > 0} {
         putsci "CI VALIDATE: FAILED ($errs errors)"
-        putsci "CI VALIDATE: run cifix"
+        putsci "CI VALIDATE: run cifix to create directory structure"
         return 1
     }
 
@@ -1114,7 +1124,7 @@ proc cilisten {args} {
     if {$ci_logfile ne ""} {
         putsci "CI log: $ci_logfile"
     }
-    putsci "CI watcher: started"
+    putsci "CI watcher: initializing"
 
     initwatcher $listen_socket
 }
@@ -1178,7 +1188,6 @@ proc ci_open_logfile {} {
 
     puts $ci_flog "HammerDB Pipeline Log"
     puts $ci_flog "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
-    putscli "CI logging to $ci_logfile"
 }
 
 proc ci_close_logfile {} {
@@ -1348,7 +1357,7 @@ proc stopwatcher {} {
 }
 
 proc startwatcher {} {
-    putscli "CI watcher start."
+    putscli "CI watcher started."
     set ::watcher_running 1
     job_watcher
     return
