@@ -1131,46 +1131,48 @@ proc mariadb_ping {cidict refname} {
 
     # socket path
     set socket "/tmp/mariadb.sock"
-    if {[dict exists $install socket]} {
-        set socket [mariadb_normpath [dict get $install socket]]
+    if {[dict exists $cidict $rdbms install socket]} {
+        set socket [mariadb_normpath [dict get $cidict $rdbms install socket]]
     }
 
     # command
     set sql "SELECT @@version"
+    if {[dict exists $cidict $rdbms ping]} {
+        set sql [string trim [dict get $cidict $rdbms ping]]
+    }
     set sql_cmd "./bin/mariadb -S $socket --skip-ssl -vvv -e \\\"$sql\\\""
 
     putsci "PING:"
     putsci $sql_cmd
 
-    # init capture buffer
-    set ::_mariadb_ping_output ""
-    set ::pipe_done 0
-    set close_status OK
+    set attempts 30
+    set wait_ms 2000
 
-    if {[catch {
-        set pipe [open "|bash -c \"cd $basedir && $sql_cmd\"" "r"]
-        fconfigure $pipe -blocking 0 -buffering line
-        fileevent $pipe readable [list _mariadb_ping_capture $pipe]
-        after 15000 { if {$::pipe_done == 0} { set ::pipe_done 1 } }
-        vwait ::pipe_done
-        if {[catch {close $pipe} errMsg]} { set close_status $errMsg }
-    } errMsg]} {
-        putsci "PING failed to spawn: $errMsg"
-        return "PING FAILED"
-    }
+    for {set attempt 1} {$attempt <= $attempts} {incr attempt} {
+        set ::_mariadb_ping_output ""
+        set ::pipe_done 0
+        set close_status OK
 
-    if {$close_status ne "OK"} {
-        putsci "PING error: $close_status"
-        return "PING FAILED"
-    }
-    set version ""
-    if {[regexp {\|[[:space:]]*@@version[[:space:]]*\|[\r\n]+\+[-+]+\+[\r\n]+\|[[:space:]]*([^\|\r\n]+?)[[:space:]]*\|} $::_mariadb_ping_output -> version]} {
-        set version [string trim $version]
-        if {$version ne ""} {
-            putsci "PING MATCHED: $version"
+        if {[catch {
+            set pipe [open "|bash -c \"cd $basedir && $sql_cmd\"" "r"]
+            fconfigure $pipe -blocking 0 -buffering line
+            fileevent $pipe readable [list _mariadb_ping_capture $pipe]
+            after 3000 { if {$::pipe_done == 0} { set ::pipe_done 1 } }
+            vwait ::pipe_done
+            if {[catch {close $pipe} errMsg]} { set close_status $errMsg }
+        } errMsg]} {
+            set close_status $errMsg
+        }
+
+        if {$close_status eq "OK" && [string trim $::_mariadb_ping_output] ne ""} {
             return "PING SUCCEEDED"
         }
+
+        if {$attempt < $attempts} {
+            after $wait_ms
+        }
     }
+
     putsci "PING FAILED: no version returned"
     putsci $::_mariadb_ping_output
     return "PING FAILED"
@@ -1185,8 +1187,6 @@ proc mariadb_start_tests {cidict refname workload} {
 
     hdbjobs eval {UPDATE JOBCI SET status = 'RUNNING' WHERE ci_id = $ci_id}
     putsci "MariaDB is up and running for $refname"
-    putsci "Pausing for 10 seconds before running tests for $refname"
-    after 10000
 
     # script path
     set key [string tolower $workload]
