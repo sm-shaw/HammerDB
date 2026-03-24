@@ -106,7 +106,7 @@ Type \"help command\" for more details on specific commands below\n"
         buildschema checkschema deleteschema clearscript savescript customscript custommonitor datagenrun dbset dgset \
         diset distributescript giset jobs librarycheck loadscript metset metstart metstatus metstop print quit steprun switchmode tcset tcstart \
         tcstatus tcstop vucomplete vucreate vudestroy vurun vuset vustatus wsport wsstart wsstatus wsstop \
-        citmp cilisten cistop cistatus cipush ciset \
+        citmp cilisten cistop cistatus cipush ciset cifix\
     ]
 
     if {[ llength $args ] != 1} {
@@ -369,6 +369,13 @@ Changed commandline:keepalive_margin from 10 to 60 for generic"
                     putscli "  ciset MariaDB build repo_url https://github.com/MariaDB/server.git"
                     putscli "  ciset common listen_port 5001"
                 }
+                cifix {
+                    putscli "cifix - Usage: cifix"
+                    putscli "Initializes and repairs the HammerDB CI environment."
+                    putscli "Checks and creates required directories under the base directory, default of /opt/hammerdb-ci."
+                    putscli "downloads configuration files, and validates the setup."
+                    putscli "TMP mismatch is reported as a warning only."
+                }
             }
         }
     }
@@ -390,25 +397,23 @@ proc wapp-page-help {} {
         <body>
         <h3>HammerDB Web Service</h3>
         <br>
-        <b>GET jobs</b>: Show the job ids, configuration, output, status, results and timings of jobs created by buildschema and vurun. Job output is equivalent to the output viewed in the graphical interface or command line.
+
+        <b>GET jobs</b>: Show job ids, configuration, output, status and benchmark results for executed jobs.
         <br><br>
         get http://localhost:8080/jobs<br>
-        get http://localhost:8080/jobs?jobid=TEXT<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;bm<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;db<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;delete<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;dict<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;index<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;result<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;resultdata<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;status<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;tcount<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;tcountdata<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;timestamp<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;timing<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;timingdata<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;timing&amp;vuid=INTEGER<br>
-        get http://localhost:8080/jobs?jobid=TEXT&amp;vu=INTEGER<br>
+
+        <br>
+
+        <b>GET pipelines</b>: Show CI pipeline runs including database, reference, pipeline type and status.
+        <br><br>
+        get http://localhost:8080/pipelines<br>
+
+        <br>
+
+        <b>GET ci</b>: Show detailed CI pipeline information including build, install and associated jobs.
+        <br><br>
+        get http://localhost:8080/ci?ci_id=INTEGER<br>
+
         <br>
         </body>
         </html>

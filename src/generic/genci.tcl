@@ -501,9 +501,8 @@ proc ci_validate {cidict {verbose 0}} {
         }
         
         if {[file normalize $runtime_tmp] ne [file normalize $tmpdir]} {
-            putsci "CI VALIDATE ERROR: current TMP ($runtime_tmp) does not match common/tmp ($tmpdir)"
-            putsci "CI VALIDATE ERROR: start HammerDB with TMP=$tmpdir"
-            incr errs
+            putsci "CI VALIDATE WARNING: current TMP ($runtime_tmp) does not match common/tmp ($tmpdir)"
+            putsci "CI VALIDATE WARNING: export TMP=$tmpdir and restart HammerDB recommended"
         }
             if {$common_root ne "" && ![apply $under_root $tmpdir $common_root]} {
                 putsci "CI VALIDATE ERROR: common/tmp not under common/root ($tmpdir)"
@@ -625,7 +624,6 @@ proc ci_validate {cidict {verbose 0}} {
 
     if {$errs > 0} {
         putsci "CI VALIDATE: FAILED ($errs errors)"
-        putsci "CI VALIDATE: run cifix to create directory structure"
         return 1
     }
 
@@ -854,11 +852,11 @@ proc cifix {} {
     putsci "CI FIX: validating"
     if {[ci_validate $cfg 1]} {
         putsci "CI FIX: FAILED"
-        return 1
+        return
     }
 
     putsci "CI FIX: COMPLETE"
-    return 0
+        exit
 }
 
 proc cilisten {args} {

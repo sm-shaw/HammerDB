@@ -723,7 +723,7 @@ proc home-common-header {} {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 <link href="%url($url)" rel="stylesheet">
-<title>HammerDB Results</title>
+<title>HammerDB Jobs</title>
 }
 __auto_refresh_js 120000
     wapp-subst {
@@ -736,7 +736,7 @@ __auto_refresh_js 120000
 
 <div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
   <div style="display:flex; justify-content:flex-start; align-items:center; gap:12px;">
-    <h3 class="title" style="margin:0;">HammerDB Results</h3>
+    <h3 class="title" style="margin:0;">HammerDB Jobs</h3>
     <a href="%html($pipelines_url)"
        style="margin-top:2px;
               padding:6px 14px;
@@ -762,7 +762,7 @@ __auto_refresh_js 120000
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta http-equiv="content-type" content="text/html; charset=UTF-8">
       <link href="%url($url)" rel="stylesheet">
-      <title>HammerDB Results</title>
+      <title>HammerDB Jobs</title>
       </head>
       <body>
       <p><img src='%unsafe($logoimg)' width='55' height='60'></p>

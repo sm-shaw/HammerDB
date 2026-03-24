@@ -74,11 +74,11 @@ namespace eval pipelines {
         set btn_label ""
         set btn_url ""
 
-        if {$title eq "HammerDB Results"} {
+        if {$title eq "HammerDB Jobs"} {
             set btn_label "Pipelines"
             set btn_url "$B/pipelines"
         } elseif {$title eq "HammerDB Pipelines"} {
-            set btn_label "Results"
+            set btn_label "Jobs"
             set btn_url "$B/jobs"
         }
 
