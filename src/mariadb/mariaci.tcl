@@ -1853,14 +1853,14 @@ proc mariadb_compare {cidict refname} {
         putsci "COMPARE FAILED: shutdown failed after diff"
         return "COMPARE FAILED"
     }
-
     putsci "COMPARE PROFILEIDS  $bad_pid $good_pid"
-    if {[catch { set du [job diff $bad_pid $good_pid false] } dErr]} {
+    if {[catch { set du [job diff $good_pid $bad_pid false] } dErr]} {
         putsci $dErr
-        putsci "COMPARE PRECHECK DONE"
-        return "COMPARE PRECHECK DONE"
+        putsci "COMPARE DONE"
+        return "COMPARE DONE"
     }
-    putsci "Precheck summary (compare run):"
+    putsci "Compare summary:"
     putsci "  unweighted = $du"
-    return "COMPARE PRECHECK DONE"
+    putsci "COMPARE DONE"
+    return "COMPARE DONE"
 }
