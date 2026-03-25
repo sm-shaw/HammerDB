@@ -3685,9 +3685,6 @@ proc jobs_profile_diff {good_pid bad_pid weighting} {
     }
 
         proc __logical_cpus {jobid} {
-        if {![string is integer -strict $jobid] || $jobid < 1} {
-            return ""
-        }
         if {![catch {
             set cpucount [join [hdbjobs eval {
                 SELECT cpucount FROM JOBSYSTEM WHERE JOBID=$jobid
