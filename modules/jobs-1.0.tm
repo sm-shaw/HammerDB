@@ -2031,12 +2031,21 @@ if {$rawmode} {
         status {
             set v [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]]
         }
-        system {
-            set v "No system data available"
-            hdbjobs eval {SELECT hostname,cpucount,cpumodel FROM JOBSYSTEM WHERE JOBID=$jobid} {
-                set v "hostname: $hostname\ncpucount: $cpucount\ncpumodel: $cpumodel"
-            }
+       system {
+       set v "No system data available"
+       hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+           set lines {}
+           foreach col $row(*) {
+               if {$col eq "*"} continue
+               set val $row($col)
+               if {$val eq ""} continue
+               lappend lines "$col: $val"
+           }
+           if {[llength $lines] > 0} {
+               set v [join $lines "\n"]
+           }
         }
+      } 
         timestamp {
             set v [join [hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$jobid}]]
         }
@@ -2427,15 +2436,23 @@ if {$rawmode} {
     return $jobmetric
   }
 
-  proc getjobsystem { jobid } {
-    set jobsystem [ dict create ]
-	hdbjobs eval {select hostname,cpumodel,cpucount FROM JOBSYSTEM WHERE JOBID=$jobid} {
-        dict append jobsystem $cpumodel $cpucount
-	}
-    if { $jobsystem eq "" } {
-      set jobsystem [ list $jobid "Jobid has no system data" ]
-    }
-    return $jobsystem
+   proc getjobsystem { jobid } {
+   set jobsystem [dict create]
+
+   hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+      foreach col $row(*) {
+         if {$col eq "*"} continue
+         set val $row($col)
+         if {$val eq ""} continue
+         dict append jobsystem $col $val
+      }
+   }
+
+   if {[dict size $jobsystem] == 0} {
+      return [dict create jobid $jobid message "Jobid has no system data"]
+   }
+
+   return $jobsystem
   }
 
   proc getnopmtpm { jobresult } {
