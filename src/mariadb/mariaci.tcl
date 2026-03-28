@@ -1470,6 +1470,7 @@ proc mariadb_compare {cidict refname} {
         putsci "COMPARE FAILED: could not create/find JOBCI row for $bad_tag"
         return "COMPARE FAILED"
     }
+
     # I/O intensive set UAW
     set io_intensive [mariadb_get_io_intensive $ci_id]
     set uaw [expr {$io_intensive == 1 ? 1 : 0}]
@@ -1492,7 +1493,7 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
     set runner_raw [string map {\" {}} [dict get $cidict $rdbms test compare]]
-    set ham_root [pwd]  ;# runner expects ./hammerdbcli in cwd
+    set ham_root [pwd]
     if {[file pathtype $runner_raw] eq "relative"} {
         set runner_abs [file join $ham_root $runner_raw]
     } else {
@@ -1512,9 +1513,9 @@ proc mariadb_compare {cidict refname} {
     set bad_pid  $pid_base
     set good_pid [expr {$pid_base + 1}]
 
-# bump profile id
+    # bump profile id
     set maxpid ""
-    if {![ catch { set maxpid [ hdbjobs eval {SELECT COALESCE(MAX(profile_id),0) FROM JOBMAIN}]}]} {
+    if {![catch { set maxpid [hdbjobs eval {SELECT COALESCE(MAX(profile_id),0) FROM JOBMAIN}] }]} {
         set maxpid [string trim $maxpid]
         if {[string is integer -strict $maxpid] && $maxpid >= 1000} {
             set bad_pid  [expr {$maxpid + 1}]
@@ -1528,7 +1529,7 @@ proc mariadb_compare {cidict refname} {
     }
     putsci "COMPARE PROFILEIDS $bad_pid $good_pid"
 
-    # previous tag
+    # update selected/current tree
     set cmd "cd $repo && git fetch --all --tags"
     putsci $cmd
     set ::pipe_done 0
@@ -1571,6 +1572,7 @@ proc mariadb_compare {cidict refname} {
         return 1
     }
 
+    # ensure selected/current tree is on bad_tag
     set co_bad "cd $repo && git checkout -f $bad_tag"
     putsci $co_bad
     set ::pipe_done 0
@@ -1585,7 +1587,7 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
 
-    # 1) Run profile on BAD tag (current)
+    # 1) Run profile on selected/current tag
     catch { hdbjobs eval { UPDATE JOBCI SET status='CLONING' WHERE ci_id=$ci_id } }
     set cst [mariadb_clone $cidict $bad_tag]
     if {$cst eq "CLONE FAILED"}   { return "COMPARE FAILED" }
@@ -1612,7 +1614,7 @@ proc mariadb_compare {cidict refname} {
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
     catch { hdbjobs eval { UPDATE JOBCI SET status='PING' WHERE ci_id=$ci_id } }
     set pst [mariadb_ping $cidict $bad_tag]
-    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" } 
+    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" }
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $bad_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
@@ -1626,7 +1628,7 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
 
-    # detect commit
+    # detect commit/tag baseline
     set is_commit 0
     if {[regexp {^[0-9a-f]{7,40}$} $bad_tag]} {
         set is_commit 1
@@ -1635,7 +1637,7 @@ proc mariadb_compare {cidict refname} {
     catch {cd $ham_root}
 
     if {$is_commit} {
-        # baseline = parent
+        # baseline = parent commit
         set desc_cmd "cd $repo && git rev-list --max-count=1 $bad_tag^"
         putsci "COMPARE PRECHECK: $desc_cmd"
 
@@ -1669,7 +1671,6 @@ proc mariadb_compare {cidict refname} {
         }
 
         set good_tag [lindex $taglist [expr {$idx - 1}]]
-        putsci "COMPARE PRECHECK -> bad=$bad_tag good=$good_tag"
     }
 
     set good_tag [string trim $good_tag]
@@ -1680,28 +1681,15 @@ proc mariadb_compare {cidict refname} {
         return "COMPARE FAILED"
     }
 
-    hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict) VALUES ($good_tag,$dbprefix,$cidict)}
+    hdbjobs eval {INSERT INTO JOBCI (refname,dbprefix,cidict,io_intensive) VALUES ($good_tag,$dbprefix,$cidict,$io_intensive)}
     set ci_id [hdbjobs eval {SELECT last_insert_rowid()}]
     if {$ci_id ne ""} {
         hdbjobs eval {UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id}
         hdbjobs eval {UPDATE JOBCI SET profile_id = $good_pid WHERE ci_id = $ci_id}
         hdbjobs eval {UPDATE JOBCI SET pipeline = 'COMPARE' WHERE ci_id = $ci_id}
     }
-    putsci "COMPARE PRECHECK -> bad=$bad_tag  good=$good_tag"
-    set co_good "cd $repo && git checkout -f $good_tag"
-    putsci $co_good
-    set ::pipe_done 0
-    if {[catch {
-        set p [open "|bash -c \"$co_good\"" "r"]
-        fconfigure $p -blocking 0 -buffering line
-        fileevent  $p readable [list handle_output $p]
-        vwait ::pipe_done
-        close $p
-    } err]} {
-        putsci "CHECKOUT FAILED: $err"
-        return "COMPARE FAILED"
-    }
 
+    # baseline lives in separate worktree; leave original selected tree on bad_tag
     set abs_repo [file normalize $repo]
     set good_dir [file normalize [file join $build_root "ci_${ci_id}_${good_tag}"]]
     if {![file isdirectory $good_dir]} {
@@ -1713,9 +1701,7 @@ proc mariadb_compare {cidict refname} {
         putsci $cmd
         catch { hdbjobs eval { UPDATE JOBCI SET clone_cmd = $cmd WHERE ci_id = $ci_id } }
 
-        # escape quotes
         set safe_cmd [string map {\" \\\"} $cmd]
-
         set pipe_output ""
         set clone_status "CLONE SUCCEEDED"
 
@@ -1729,7 +1715,6 @@ proc mariadb_compare {cidict refname} {
                     set clone_status "CLONE FAILED"
                 }
             }
-
             if {[catch {close $pipe} close_err]} {
                 putsci "Warning: close pipe reported: $close_err"
             }
@@ -1816,6 +1801,7 @@ proc mariadb_compare {cidict refname} {
         putsci "Using existing worktree for $good_tag"
         catch { hdbjobs eval { UPDATE JOBCI SET clone_output='Using existing worktree' WHERE ci_id=$ci_id } }
     }
+
     catch { hdbjobs eval { UPDATE JOBCI SET status='COMMIT MSG' WHERE ci_id=$ci_id } }
     set cmst [mariadb_commit_msg $cidict $good_tag]
     if {$cmst eq "COMMIT_MSG FAILED"} { return "COMPARE FAILED" }
@@ -1839,7 +1825,7 @@ proc mariadb_compare {cidict refname} {
     if {$sst eq "START FAILED"} { return "COMPARE FAILED" }
     catch { hdbjobs eval { UPDATE JOBCI SET status='PING' WHERE ci_id=$ci_id } }
     set pst [mariadb_ping $cidict $good_tag]
-    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" } 
+    if {$pst eq "PING FAILED"} { return "PROFILE FAILED" }
     catch { hdbjobs eval { UPDATE JOBCI SET status='RUNNING' WHERE ci_id=$ci_id } }
     set rsy [mariadb_run_sql $cidict $good_tag change_password]
     if {$rsy eq "CHANGE_PASSWORD FAILED"} { return "COMPARE FAILED" }
@@ -1847,12 +1833,14 @@ proc mariadb_compare {cidict refname} {
     if {![_compare_run_once $ham_root $runner_abs $good_tag $good_pid $ci_id $uaw]} {
         return "COMPARE FAILED"
     }
+
     set stop_st [mariadb_run_sql $cidict $good_tag shutdown]
     putsci $stop_st
     if {$stop_st ne "SHUTDOWN SUCCEEDED"} {
         putsci "COMPARE FAILED: shutdown failed after diff"
         return "COMPARE FAILED"
     }
+
     putsci "COMPARE PROFILEIDS  $bad_pid $good_pid"
     if {[catch { set du [job diff $good_pid $bad_pid false] } dErr]} {
         putsci $dErr
