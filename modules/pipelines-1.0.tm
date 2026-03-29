@@ -537,7 +537,7 @@ proc __url_encode {s} {
 
     proc wapp-page-pipelines {} {
         set B [wapp-param BASE_URL]
-
+	set windows_host [expr {$::tcl_platform(platform) eq "windows"}]
 
         # parse query
         set __qs [wapp-param QUERY_STRING]
@@ -645,6 +645,17 @@ wapp-redirect "$B/pipelines?$q#runresult"
 
         # run
         if {$action eq "run"} {
+            if {$windows_host} {
+                __store_last 0 0 "CI pipelines are not available on Windows in this release." "" "" "Use HammerDB on Linux to run pipelines."
+                set q "db=$dbprefix"
+                if {$tag_sel ne ""} { append q "&tag_sel=[__url_encode $tag_sel]" }
+                if {$ref_custom ne ""} { append q "&ref_custom=[__url_encode $ref_custom]" }
+                if {$pipeline_ui ne ""} { append q "&pipeline=[__url_encode $pipeline_ui]" }
+                if {$workload_ui ne ""} { append q "&workload=[__url_encode $workload_ui]" }
+                if {$io_intensive ne ""} { append q "&io_intensive=[__url_encode $io_intensive]" }
+                wapp-redirect "$B/pipelines?$q#runresult"
+                return
+            }
             set ref_trim [string trim $ref]
             if {$ref_trim eq ""} {
                 __store_last 0 0 "Ref is required." "" "" "Ref is required."
@@ -733,6 +744,15 @@ return
         wapp-subst {<div class="aut-wrap">}
 
         __render_last_if_any
+
+	   if {$windows_host} {
+            wapp-subst {
+<div class="aut-banner aut-fail">
+    <b>CI pipelines are not available on Windows in this release.</b><br>
+    Use HammerDB on Linux to run pipelines.
+</div>
+}
+        }
 
         # recent runs
         wapp-subst {<table>}
@@ -851,13 +871,18 @@ return
         wapp-subst "</p>"
 
         # run form
-        
-if {$dbprefix ne "maria"} {
-    wapp-subst "<div class='aut-banner aut-fail' style='margin-top:10px;'>"
-    wapp-subst "<b>%html([string totitle $dbprefix]) pipelines are not yet enabled.</b><br>"
-    wapp-subst "MariaDB is currently enabled. Other databases will be added at future releases."
-    wapp-subst "</div>"
-} else {
+            if {$dbprefix ne "maria"} {
+            wapp-subst "<div class='aut-banner aut-fail' style='margin-top:10px;'>"
+            wapp-subst "<b>%html([string totitle $dbprefix]) pipelines are not yet enabled.</b><br>"
+            wapp-subst "MariaDB is currently enabled. Other databases will be added at future releases."
+            wapp-subst "</div>"
+        } elseif {$windows_host} {
+            wapp-subst {
+<div class="aut-banner aut-fail" style="margin-top:10px;">
+    <b>MariaDB CI pipelines are not available on Windows in this release.</b><br>
+</div>
+}
+        } else {
 wapp-subst "<form method='GET' action='%html($B)/pipelines' id='runform'>"
         wapp-subst {<input type='hidden' name='action' value='run'>}
         wapp-subst "<input type='hidden' name='db' value='%html($dbprefix)'>"
