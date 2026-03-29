@@ -988,7 +988,7 @@ wapp-subst "<script>
 
   async function refreshCILog() {
     try {
-      const res = await fetch('%html($B)/pipelines?tailci=1', {cache:'no-store'});
+      const res = await fetch('/pipelines?tailci=1', {cache:'no-store'});
       const txt = await res.text();
       box.textContent = txt;
       box.scrollTop = box.scrollHeight;

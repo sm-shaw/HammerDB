@@ -1731,7 +1731,7 @@ proc wapp-page-jobs {} {
 
           async function refreshWorkloadLog() {
             try {
-              const res = await fetch('%html($B)/jobs?tailworkload=1', {cache:'no-store'});
+              const res = await fetch('/jobs?tailworkload=1', {cache:'no-store'});
               const txt = await res.text();
 
               box.textContent = txt;
