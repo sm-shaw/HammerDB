@@ -607,7 +607,7 @@ proc configmariatpcc {option} {
         set Prompt $Parent.f1.p9
         ttk::label $Prompt -text "Virtual Users to Build Schema :"
         set Name $Parent.f1.e9
-        ttk::spinbox $Name -from 1 -to 512 -textvariable maria_num_vu
+        ttk::spinbox $Name -from 1 -to 100000 -textvariable maria_num_vu
 
         bind .tpc.f1.e9 <<Any-Button-Any-Key>> {
             if {$maria_num_vu > $maria_count_ware} {
@@ -913,7 +913,7 @@ proc configmariatpcc {option} {
         "default" {
             ttk::button $Name -command {
                 set maria_count_ware [ verify_warehouse $maria_count_ware 100000 ]
-                set maria_num_vu [ verify_build_threads $maria_num_vu $maria_count_ware 1024 ]
+                set maria_num_vu [ verify_build_threads $maria_num_vu $maria_count_ware ]
                 copyfieldstoconfig configmariadb [ subst $mariafields ] tpcc
                 Dict2SQLite "mariadb" $configmariadb
                 unset mariafields
@@ -1302,7 +1302,7 @@ proc configmariatpch {option} {
         }
         "default" {
             ttk::button $Name -command {
-                set maria_num_tpch_threads [ verify_build_threads $maria_num_tpch_threads 512 512 ]
+                set maria_num_tpch_threads [ verify_build_threads $maria_num_tpch_threads 512 ]
                 copyfieldstoconfig configmariadb [ subst $mariafields ] tpch
                 Dict2SQLite "mariadb" $configmariadb
                 unset mariafields

@@ -498,7 +498,7 @@ proc configdb2tpcc {option} {
         "default" {
             ttk::button $Name -command {
                 set db2_count_ware [ verify_warehouse $db2_count_ware 100000 ]
-                set db2_num_vu [ verify_build_threads $db2_num_vu $db2_count_ware 1024 ]
+                set db2_num_vu [ verify_build_threads $db2_num_vu $db2_count_ware ]
                 copyfieldstoconfig configdb2 [ subst $db2fields ] tpcc
                 Dict2SQLite "db2" $configdb2
                 unset db2fields
@@ -740,7 +740,7 @@ proc configdb2tpch {option} {
         }
         "default" {
             ttk::button $Name -command {
-                set db2_num_tpch_threads [ verify_build_threads $db2_num_tpch_threads 512 512 ]
+                set db2_num_tpch_threads [ verify_build_threads $db2_num_tpch_threads 512 ]
                 copyfieldstoconfig configdb2 [ subst $db2fields ] tpch
                 Dict2SQLite "db2" $configdb2
                 unset db2fields

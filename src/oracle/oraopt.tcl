@@ -361,7 +361,7 @@ proc configoratpcc {option} {
         set Prompt $Parent.f1.p11
         ttk::label $Prompt -text "Virtual Users to Build Schema :"
         set Name $Parent.f1.e11
-        ttk::spinbox $Name -from 1 -to 512 -textvariable num_vu
+        ttk::spinbox $Name -from 1 -to 100000 -textvariable num_vu
         bind .tpc.f1.e11 <<Any-Button-Any-Key>> {
             if {$num_vu > $count_ware} {
                 set num_vu $count_ware
@@ -575,7 +575,7 @@ proc configoratpcc {option} {
         "default" {
             ttk::button $Name -command {
                 set count_ware [ verify_warehouse $count_ware 100000 ]
-                set num_vu [ verify_build_threads $num_vu $count_ware 1024 ]
+                set num_vu [ verify_build_threads $num_vu $count_ware ]
                 copyfieldstoconfig configoracle [ subst $orafields ] tpcc
                 Dict2SQLite "oracle" $configoracle
                 unset orafields
@@ -860,7 +860,7 @@ proc configoratpch {option} {
         }
         "default" {
             ttk::button $Name -command {
-                set num_tpch_threads [ verify_build_threads $num_tpch_threads 512 512 ]
+                set num_tpch_threads [ verify_build_threads $num_tpch_threads 512 ]
                 copyfieldstoconfig configoracle [ subst $orafields ] tpch
                 Dict2SQLite "oracle" $configoracle
                 unset orafields

@@ -484,7 +484,7 @@ proc configmssqlstpcc {option} {
         set Prompt $Parent.f1.p11
         ttk::label $Prompt -text "Virtual Users to Build Schema :"
         set Name $Parent.f1.e11
-        ttk::spinbox $Name -from 1 -to 512 -textvariable mssqls_num_vu
+        ttk::spinbox $Name -from 1 -to 100000 -textvariable mssqls_num_vu
         bind .tpc.f1.e11 <<Any-Button-Any-Key>> {
             if {$mssqls_num_vu > $mssqls_count_ware} {
                 set mssqls_num_vu $mssqls_count_ware
@@ -713,7 +713,7 @@ proc configmssqlstpcc {option} {
 		set mssqls_msi_object_id "null" 
 	        }
                 set mssqls_count_ware [ verify_warehouse $mssqls_count_ware 100000 ]
-                set mssqls_num_vu [ verify_build_threads $mssqls_num_vu $mssqls_count_ware 1024 ]
+                set mssqls_num_vu [ verify_build_threads $mssqls_num_vu $mssqls_count_ware ]
                 copyfieldstoconfig configmssqlserver [ subst $mssqlsfields ] tpcc
                 Dict2SQLite "mssqlserver" $configmssqlserver
                 unset mssqlsfields
@@ -1097,7 +1097,7 @@ proc configmssqlstpch {option} {
 		tk_messageBox -message "MSI Object ID is not a valid format" 
 		set mssqls_msi_object_id "null" 
 	        }
-                set mssqls_num_tpch_threads [ verify_build_threads $mssqls_num_tpch_threads 512 512 ]
+                set mssqls_num_tpch_threads [ verify_build_threads $mssqls_num_tpch_threads 512 ]
                 copyfieldstoconfig configmssqlserver [ subst $mssqlsfields ] tpch
                 Dict2SQLite "mssqlserver" $configmssqlserver
                 unset mssqlsfields
