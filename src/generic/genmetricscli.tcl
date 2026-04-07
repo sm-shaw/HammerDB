@@ -219,12 +219,56 @@ proc ConfigureNetworkDisplayCLI {agentid agenthostname} {
     }
 }
 
+proc DoDiscovery {sysinfo_data caller} {
+global agent_hostname jobid discovery_data
+    set discovery_data $sysinfo_data
+    set cpumodel ""
+    set cpucount 0
+    set system_vendor ""
+    set system_type ""
+    set os_name ""
+    set memory ""
+    set nic ""
+    set storage ""
+    set cloud_instance ""
+    set other_software ""
+    set extra ""
+    if { [catch {
+        if { [dict exists $sysinfo_data cpumodel] } { set cpumodel [dict get $sysinfo_data cpumodel] }
+        if { [dict exists $sysinfo_data cpucount] } { set cpucount [dict get $sysinfo_data cpucount] }
+        if { [dict exists $sysinfo_data system_vendor] } { set system_vendor [dict get $sysinfo_data system_vendor] }
+        if { [dict exists $sysinfo_data system_type] } { set system_type [dict get $sysinfo_data system_type] }
+        if { [dict exists $sysinfo_data os_name] } { set os_name [dict get $sysinfo_data os_name] }
+        if { [dict exists $sysinfo_data memory] } { set memory [dict get $sysinfo_data memory] }
+        if { [dict exists $sysinfo_data nic] } { set nic [dict get $sysinfo_data nic] }
+        if { [dict exists $sysinfo_data storage] } { set storage [dict get $sysinfo_data storage] }
+        if { [dict exists $sysinfo_data cloud_instance] } { set cloud_instance [dict get $sysinfo_data cloud_instance] }
+        if { [dict exists $sysinfo_data other_software] } { set other_software [dict get $sysinfo_data other_software] }
+        if { [dict exists $sysinfo_data extra] } { set extra [dict get $sysinfo_data extra] }
+    } err] } {
+        putscli "Error parsing system discovery data: $err"
+        return
+    }
+    if { $cpumodel ne "" } {
+        putscli "System Discovery: $system_vendor $system_type | OS: $os_name | Memory: $memory"
+        if { [info exists jobid] && $jobid ne "" && $jobid != 0 } {
+            if { [string match Benchmark* $jobid] } {
+                set jobid [regsub {Benchmark.*=} $jobid ""]
+            }
+            hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount,system_vendor=excluded.system_vendor,system_type=excluded.system_type,os_name=excluded.os_name,memory=excluded.memory,nic=excluded.nic,storage=excluded.storage,cloud_instance=excluded.cloud_instance,other_software=excluded.other_software,extra=excluded.extra}
+        } else {
+            hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES('@@@',$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount,system_vendor=excluded.system_vendor,system_type=excluded.system_type,os_name=excluded.os_name,memory=excluded.memory,nic=excluded.nic,storage=excluded.storage,cloud_instance=excluded.cloud_instance,other_software=excluded.other_software,extra=excluded.extra}
+        }
+    }
+}
+
 proc DoDisplay {maxcpu cpu_model caller} {
-global agent_hostname jobid
+global agent_hostname jobid discovery_data
 	putscli "Started CPU Metrics for $cpu_model:($maxcpu CPUs)"
 	if { [ info exists cpu_model ] && ![ string match "AGENT CONNECTION FAILED" $cpu_model ] } {
+	#Only insert CPU-only data if DoDiscovery has not already stored system data
+	if { ![info exists discovery_data] || $discovery_data eq "" } {
 	if { [ info exists jobid] && $jobid != "" && $jobid != 0 } {
-        #If we have done set jobid [ vurun ] in script set jobid back
         if { [ string match Benchmark* $jobid ] } { 
         set jobid [ regsub {Benchmark.*=} $jobid ""]
 	}		
@@ -232,6 +276,7 @@ global agent_hostname jobid
     	} else {
 	#Started CPU metrics before a job is running, insert a placeholder making sure only one placeholder is current
         hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount) VALUES('@@@',$agent_hostname,$cpu_model,$maxcpu) ON CONFLICT(jobid) DO UPDATE SET hostname=excluded.hostname,cpumodel=excluded.cpumodel,cpucount=excluded.cpucount}
+	}
 	}
 	} else { 
 putscli "AGENT CONNECTION FAILED"
@@ -284,8 +329,8 @@ proc gmean L {
         if {$placehold eq ""} {
         #The jobid is not present in the jobsystem table and there is no placeholder
         #Likely metrics are continual running for multiple jobs so find system data from previous job
-        hdbjobs eval {select hostname,cpumodel,cpucount from JOBSYSTEM where hostname=$agent_hostname LIMIT 1} {
-        hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount)}}
+        hdbjobs eval {select hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra from JOBSYSTEM where hostname=$agent_hostname LIMIT 1} {
+        hdbjobs eval {INSERT INTO JOBSYSTEM(jobid,hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra) VALUES($jobid,$agent_hostname,$cpumodel,$cpucount,$system_vendor,$system_type,$os_name,$memory,$nic,$storage,$cloud_instance,$other_software,$extra)}}
         } else {
         hdbjobs eval {select hostname,cpumodel,cpucount from JOBSYSTEM where JOBID="@@@"} {
         hdbjobs eval {update JOBSYSTEM set jobid = $jobid where JOBID="@@@"}
