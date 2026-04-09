@@ -2244,10 +2244,19 @@ if {$rawmode} {
                         set v [string trim $v]
                     __pre_block $v
                 }
-                system {
+		 system {
                     set v "No system data available"
-                    hdbjobs eval {SELECT hostname,cpucount,cpumodel FROM JOBSYSTEM WHERE JOBID=$jobid} {
-                        set v "hostname: $hostname\ncpucount: $cpucount\ncpumodel: $cpumodel"
+                    hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+                        set lines {}
+                        foreach col $row(*) {
+                            if {$col eq "*"} continue
+                            set val $row($col)
+                            if {$val eq ""} continue
+                            lappend lines "$col: $val"
+                        }
+                        if {[llength $lines] > 0} {
+                            set v [join $lines "\n"]
+                        }
                     }
                     __pre_block $v
                 }
