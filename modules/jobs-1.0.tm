@@ -110,7 +110,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBMETRIC table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	} elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBSYSTEM table in SQLite in-memory database : $message"
           return
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
@@ -153,7 +153,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
              puts "Error creating JOBMETRIC table in SQLite on-disk database : $message"
              return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	     } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBSYSTEM table in SQLite on-disk database : $message"
               return
             } elseif [catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT)}} message ] {
@@ -192,7 +192,26 @@ namespace eval jobs {
               catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
               puts "Upgraded database $sqlite_db with Job Charts"
 		}
-           }}}}}
+		  }
+	   #Upgrade existing JOBSYSTEM table with new system discovery columns if not present
+           if { [catch {
+               set colinfo [hdbjobs eval {PRAGMA table_info(JOBSYSTEM)}]
+               set colnames [list]
+               foreach {cid name type notnull dfltval pk} $colinfo {
+                   lappend colnames $name
+               }
+               foreach newcol {system_vendor system_type os_name memory nic storage cloud_instance other_software extra} {
+                   if { $newcol ni $colnames } {
+                       hdbjobs eval "ALTER TABLE JOBSYSTEM ADD COLUMN $newcol TEXT"
+                   }
+               }
+               if { "system_vendor" ni $colnames } {
+                   puts "Upgraded database $sqlite_db JOBSYSTEM table with system discovery fields"
+               }
+           } message] } {
+               puts "Error upgrading JOBSYSTEM table with system discovery fields: $message"
+           }
+	   }}}}
       tsv::set commandline sqldb $sqlite_db
     }
   }
@@ -3450,14 +3469,18 @@ proc getjob { query } {
 
         # jobid + system
         if {[dict exists $paramdict system]} {
-            set jsondict [getjobsystem $jobid]
-            set huddleobj [huddle compile {list} $jsondict]
-            if {[string equal -nocase $outputformat "JSON"]} {
-                puts [huddle jsondump $huddleobj]
-            } else {
-                puts $jsondict
-            }
-            return
+           set jsondict [getjobsystem $jobid]
+           if { [llength $jsondict] == 2 && [lindex $jsondict 1] eq "Jobid has no system data" } {
+              set huddleobj [huddle compile {list} $jsondict]
+           } else {
+              set huddleobj [huddle compile {dict * string} $jsondict]
+           }
+           if {[string equal -nocase $outputformat "JSON"]} {
+              puts [huddle jsondump $huddleobj]
+           } else {
+              puts $jsondict
+           }
+           return
         }
 
         # jobid + db
