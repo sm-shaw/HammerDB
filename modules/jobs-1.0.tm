@@ -1,6 +1,6 @@
 package provide jobs 1.0
 namespace eval jobs {
-  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart
+  namespace export init_job_tables_gui init_job_tables init_job_tables_ws jobmain jobs job hdbjobs jobs_ws job_disable job_disable_check job_format wapp-page-jobs wapp-page-logo.png wapp-page-logo-full.png wapp-page-tick.png wapp-page-cross.png wapp-page-star.png wapp-page-nostatus.png getjob savechart home-common-header common-header common-footer getdatabasefile
   interp alias {} job {} jobs
 
   proc commify {x} {
@@ -29,7 +29,6 @@ namespace eval jobs {
       # 0.XY show two decimal places
       set q [expr {entier($q * 100) / 100.0}]
     } else {
-      # r$ctypeound it out, its big
       set q [expr {round($q)}]
     }
 
@@ -99,6 +98,7 @@ namespace eval jobs {
         catch {hdbjobs eval {DROP TABLE JOBSYSTEM}}
         catch {hdbjobs eval {DROP TABLE JOBOUTPUT}}
         catch {hdbjobs eval {DROP TABLE JOBCHART}}
+        catch {hdbjobs eval {DROP TABLE JOBCI}}
         if [catch {hdbjobs eval {CREATE TABLE JOBMAIN(jobid TEXT primary key, db TEXT, bm TEXT, jobdict TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')),profile_id INTEGER NOT NULL DEFAULT 0)}} message ] {
           puts "Error creating JOBMAIN table in SQLite in-memory database : $message"
           return
@@ -110,7 +110,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBMETRIC table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	      } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBSYSTEM table in SQLite in-memory database : $message"
           return
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
@@ -118,7 +118,9 @@ namespace eval jobs {
           return
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBCHART table in SQLite in-memory database : $message"
-
+          return
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, dbprefix TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST',  io_intensive INTEGER NOT NULL DEFAULT 0, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, config_file TEXT, start_cmd TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+          puts "Error creating JOBCI table in SQLite in-memory database : $message"
           return
         } else {
           catch {hdbjobs eval {CREATE INDEX JOBMAIN_IDX ON JOBMAIN(jobid)}}
@@ -128,6 +130,9 @@ namespace eval jobs {
           catch {hdbjobs eval {CREATE INDEX JOBSYSTEM_IDX ON JOBSYSTEM(jobid)}}
           catch {hdbjobs eval {CREATE INDEX JOBOUTPUT_IDX ON JOBOUTPUT(jobid)}}
           catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
+          catch {hdbjobs eval {CREATE INDEX JOBCI_REF_IDX ON JOBCI(refname)}}
+          catch {hdbjobs eval {CREATE INDEX JOBCI_PROFILE_IDX ON JOBCI(profile_id)}}
+
           puts "Initialized new Jobs in-memory database"
         }
       } else {
@@ -148,7 +153,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
              puts "Error creating JOBMETRIC table in SQLite on-disk database : $message"
              return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	          } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBSYSTEM table in SQLite on-disk database : $message"
               return
             } elseif [catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT)}} message ] {
@@ -156,6 +161,9 @@ namespace eval jobs {
               return
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCHART(jobid TEXT, chart TEXT, html TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBCHART table in SQLite on-disk database : $message"
+              return
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBCI (ci_id INTEGER PRIMARY KEY AUTOINCREMENT, refname TEXT NOT NULL, dbprefix TEXT NOT NULL, pipeline TEXT NOT NULL DEFAULT 'TEST', io_intensive INTEGER NOT NULL DEFAULT 0, profile_id INTEGER NULL, cidict TEXT, clone_cmd TEXT, clone_output TEXT, build_cmd TEXT, build_output TEXT, install_cmd TEXT, install_output TEXT, package_cmd TEXT, commit_msg TEXT, config_file TEXT, start_cmd TEXT, status TEXT NOT NULL DEFAULT 'PENDING', timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), end_timestamp DATETIME NULL)}} message ] {
+              puts "Error creating JOBCI table in SQLite on-disk database : $message"
               return
             } else {
               catch {hdbjobs eval {CREATE INDEX JOBMAIN_IDX ON JOBMAIN(jobid)}}
@@ -165,6 +173,8 @@ namespace eval jobs {
               catch {hdbjobs eval {CREATE INDEX JOBSYSTEM_IDX ON JOBSYSTEM(jobid)}}
               catch {hdbjobs eval {CREATE INDEX JOBOUTPUT_IDX ON JOBOUTPUT(jobid)}}
               catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
+              catch {hdbjobs eval {CREATE INDEX JOBCI_REF_IDX ON JOBCI(refname)}}
+              catch {hdbjobs eval {CREATE INDEX JOBCI_PROFILE_IDX ON JOBCI(profile_id)}}
               puts "Initialized new Jobs on-disk database $sqlite_db"
             }
           } else {
@@ -181,8 +191,8 @@ namespace eval jobs {
           } else {
               catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
               puts "Upgraded database $sqlite_db with Job Charts"
-		}
-           }
+		       }
+		  }
 	   #Upgrade existing JOBSYSTEM table with new system discovery columns if not present
            if { [catch {
                set colinfo [hdbjobs eval {PRAGMA table_info(JOBSYSTEM)}]
@@ -230,37 +240,288 @@ namespace eval jobs {
       if [catch {set tblname [ hdbjobs eval {SELECT name FROM sqlite_master WHERE type='table' AND name='JOBMAIN'}]} message ] {
         puts "Error querying  JOBOUTPUT table in SQLite on-disk database : $message"
         return
-      } else {
-        if { $tblname eq "" } {
-          puts "Error: Job tables not created, create and populate Jobs database with GUI or CLI and run Web Service to browse Jobs"
+      } elseif { $tblname eq "" } {
+      if [catch {init_job_tables} message ] {
+          puts "Error: Job tables not created:$message"
           exit
-        }
-      }
+	  }
+      } else {
+         puts "Web Service using $sqlite_db database"
+       }
     }
   }
 
-  proc jobmain { jobid jobtype } {
+proc _latest_workload_logname {} {
+    set tmpdir [findtempdir]
+    if {$tmpdir eq "notmpdir"} {
+        return "nologfile"
+    }
+
+    # Match both default and unique workload logs:
+    #   hammerdb.log
+    #   hammerdb_<GUID>.log
+    set logfiles [glob -nocomplain -types f -directory $tmpdir "hammerdb*.log"]
+    set logfiles [lsearch -all -inline -not -glob $logfiles "*hammerdbci.log"]
+
+    if {[llength $logfiles] == 0} {
+        return "nologfile"
+    }
+
+    set newest "nologfile"
+    set newest_mtime -1
+    foreach f $logfiles {
+        set mtime [file mtime $f]
+        if {$mtime > $newest_mtime} {
+            set newest_mtime $mtime
+            set newest $f
+        }
+    }
+
+    return $newest
+}
+
+proc jobmain { jobid jobtype } {
     global rdbms bm
     upvar #0 genericdict genericdict
     if [ job_disable_check ] { return 0 }
-    if {$jobtype in {check build check delete} || $bm != "TPC-C" } {
-	set jobs_profile_id 0
-	} else {
-    if [catch {set jobs_profile_id [ dict get $genericdict commandline jobs_profile_id ]} message ] {
-	set jobs_profile_id 0
-    	 }
-	}
+
+    set tmpdictforpt [ find_current_dict ]
+
+    set ci_mode 0
+    if {[dict exists $tmpdictforpt pipeline]} {
+        set ci_mode 1
+    } elseif {[dict exists $tmpdictforpt commandline pipeline]} {
+        set ci_mode 1
+    }
+
+    if {$ci_mode} {
+        set jobs_profile_id 0
+        set pl ""
+        if {[dict exists $tmpdictforpt pipeline]} {
+            set pl [string tolower [dict get $tmpdictforpt pipeline]]
+        } elseif {[dict exists $tmpdictforpt commandline pipeline]} {
+            set pl [string tolower [dict get $tmpdictforpt commandline pipeline]]
+        }
+
+        if {$bm eq "TPC-C" && $pl eq "profile"} {
+            if {[catch {set jobs_profile_id [dict get $genericdict commandline jobs_profile_id]}]} {
+                set jobs_profile_id 0
+            }
+            # sanity clamp
+            if {![string is integer -strict $jobs_profile_id] || $jobs_profile_id < 1000} {
+                set jobs_profile_id 1000
+            }
+        }
+    } else {
+        if {$jobtype in {check build delete} || $bm != "TPC-C" } {
+            set jobs_profile_id 0
+        } else {
+            if [catch {set jobs_profile_id [ dict get $genericdict commandline jobs_profile_id ]} message ] {
+                set jobs_profile_id 0
+            }
+        }
+    }
+
     set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBMAIN WHERE JOBID=$jobid} ]
     if { $query eq 0 } {
-      set tmpdictforpt [ find_current_dict ]
-      hdbjobs eval {INSERT INTO JOBMAIN(jobid,db,bm,jobdict,profile_id) VALUES($jobid,$rdbms,$bm,$tmpdictforpt,$jobs_profile_id)}
-      return 0
+        hdbjobs eval {INSERT INTO JOBMAIN(jobid,db,bm,jobdict,profile_id) VALUES($jobid,$rdbms,$bm,$tmpdictforpt,$jobs_profile_id)}
+        return 0
     } else {
-      return 1
+        return 1
     }
-  }
+}
 
-  proc jobs { args } {
+# Usage summary:
+#   jobs
+#   jobs result|timestamp|joblist|profileid
+#   jobs <jobid>
+#   jobs format <fmt>
+#   jobs disable <0|1>
+#   jobs profileid [<id>]
+#   jobs profile <id>
+#   jobs <jobid> <cmd>            (cmd may be integer vu -> vu=<n>)
+#   jobs <jobid> timing <vuid|vu=<n>>
+#   jobs <jobid> getchart <type>  (result|timing|tcount|metrics|profile|diff:<pid>)
+#   jobs diff <basepid> <comppid> [true|false]
+
+proc jobs {args} {
+    upvar #0 genericdict genericdict
+
+    # disabled
+    if {[catch {set jobs_disabled [dict get $genericdict commandline jobs_disable]} msg]} {
+        puts "Error: Detecting Jobs Enable/Disable: $msg"
+    } else {
+        # only allow jobs disable
+        set tokens $args
+        set first [expr {[llength $tokens] ? [lindex $tokens 0] : ""}]
+        if {$jobs_disabled && ![string equal -nocase $first "disable"]} {
+            puts "Error: Jobs Disabled: enable with command \"jobs disable 0\" and restart HammerDB"
+            return
+        }
+    }
+
+    # token list
+    set tokens $args
+    set nt [llength $tokens]
+
+    proc ::_jobs_usage_error {msg} {
+        puts $msg
+        puts "Error: Usage: \[ jobs | jobs format <fmt> | jobs disable <0|1> | jobs jobid | jobs jobid <command> \[option\] | jobs jobid timing <vuid|vu=n> | jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\] | jobs profileid \[id\] | jobs profile <id> | jobs diff basepid comppid \[true|false\] \] - type \"help jobs\""
+    }
+
+    # 0 args
+    if {$nt == 0} {
+        return [getjob ""]
+    }
+
+    # diff
+    set opt [lindex $tokens 0]
+    if {[string equal -nocase $opt "diff"]} {
+        if {$nt < 3 || $nt > 4} {
+            ::_jobs_usage_error "Error: Usage: jobs diff basepid comppid \[true|false\]"
+            return
+        }
+        set base_pid  [lindex $tokens 1]
+        set comp_pid  [lindex $tokens 2]
+        set weighting [expr {$nt == 4 ? [lindex $tokens 3] : "false"}]
+
+        if {![string is boolean -strict $weighting]} {
+            ::_jobs_usage_error "Error: Usage: jobs diff basepid comppid \[true|false\]"
+            return
+        }
+        set ratio [jobs_profile_diff $base_pid $comp_pid $weighting]
+        if {$ratio ne ""} {
+            return $ratio
+        } else {
+            return "null"
+        }
+    }
+
+    # route on first token
+    # global commands
+    switch -nocase -- $opt {
+        result {
+            if {$nt != 1} { ::_jobs_usage_error "Error: Usage: jobs result"; return }
+            return [getjob "allresults"]
+        }
+        timestamp {
+            if {$nt != 1} { ::_jobs_usage_error "Error: Usage: jobs timestamp"; return }
+            return [getjob "alltimestamps"]
+        }
+        joblist {
+            if {$nt != 1} { ::_jobs_usage_error "Error: Usage: jobs joblist"; return }
+            return [getjob "joblist"]
+        }
+        profileid {
+            # jobs profileid
+            # jobs profileid <id>
+            if {$nt == 1} {
+                return [job_profile_id]
+            } elseif {$nt == 2} {
+                return [job_profile_id [lindex $tokens 1]]
+            } else {
+                ::_jobs_usage_error "Error: Usage: jobs profileid \[id\]"
+                return
+            }
+        }
+        format {
+            if {$nt != 2} { ::_jobs_usage_error "Error: Usage: jobs format <fmt>"; return }
+            return [job_format [lindex $tokens 1]]
+        }
+        disable {
+            if {$nt != 2} { ::_jobs_usage_error "Error: Usage: jobs disable <0|1>"; return }
+            return [job_disable [lindex $tokens 1]]
+        }
+        profile {
+            if {$nt != 2} { ::_jobs_usage_error "Error: Usage: jobs profile <id>"; return }
+            return [job_profile [lindex $tokens 1]]
+        }
+        default {
+            # else jobid
+        }
+    }
+
+    # jobid commands
+    set jobid $opt
+
+    # jobs <jobid>
+    if {$nt == 1} {
+        set res [getjob "jobid=$jobid"]
+        puts $res
+        return
+    }
+
+    # jobs <jobid> <cmd> [arg]
+    set cmd [lindex $tokens 1]
+
+# jobs <jobid> timing [vu]
+if {[string equal -nocase $cmd "timing"]} {
+
+    # 2 tokens
+    if {$nt == 2} {
+        set res [getjob "jobid=$jobid&timing"]
+        puts $res
+        return
+    }
+
+    # 3 tokens
+    if {$nt == 3} {
+        set vusel [lindex $tokens 2]
+        if {[string is integer -strict $vusel]} { set vusel "vu=$vusel" }
+        set res [getjob "jobid=$jobid&timing&$vusel"]
+        puts $res
+        return
+    }
+
+    ::_jobs_usage_error "Error: Usage: jobs jobid timing | jobs jobid timing vuid | jobs jobid timing vu=n"
+    return
+}
+
+    # jobs <jobid> getchart
+    if {[string equal -nocase $cmd "getchart"]} {
+        if {$nt != 3} {
+            ::_jobs_usage_error "Error: Usage: jobs jobid getchart \[result|timing|tcount|metrics|profile|diff:pid\]"
+            return
+        }
+        set charttype [lindex $tokens 2]
+        if {![string equal -nocase $charttype "result"]
+            && ![string equal -nocase $charttype "timing"]
+            && ![string equal -nocase $charttype "tcount"]
+            && ![string equal -nocase $charttype "metrics"]
+            && ![string equal -nocase $charttype "profile"]
+            && ![string match -nocase "diff:*" $charttype]} {
+            ::_jobs_usage_error "Error: Usage: jobs jobid getchart \[ result | timing | tcount | metrics | profile | diff:pid \]"
+            return
+        }
+        set ctype "chart=$charttype"
+        return [getjob "jobid=$jobid&getchart&$ctype"]
+    }
+
+    # jobs <jobid> <cmd>
+    # integer cmd => vu
+    if {$nt == 2} {
+        if {[string is integer -strict $cmd]} { set cmd "vu=$cmd" }
+        set res [getjob "jobid=$jobid&$cmd"]
+        puts $res
+        return
+    }
+
+    # jobs <jobid> <cmd> <arg>
+    if {$nt == 3} {
+        set arg [lindex $tokens 2]
+        # integer arg => vu
+        if {[string is integer -strict $arg]} { set arg "vu=$arg" }
+        set res [getjob "jobid=$jobid&$cmd&$arg"]
+        puts $res
+        return
+    }
+
+    # too many args
+    ::_jobs_usage_error "Error: Too many arguments to jobs"
+    return
+}
+
+  proc old-jobs { args } {
     upvar #0 genericdict genericdict
     if [catch {set jobs_disabled [ dict get $genericdict commandline jobs_disable ]} message ] {
       puts "Error: Detecting Jobs Enable/Disable: $message"
@@ -270,6 +531,28 @@ namespace eval jobs {
         puts "Error: Jobs Disabled: enable with command \"jobs disable 0\" and restart HammerDB"
         return
       }
+    } 
+    set tokens [split $args]
+    set opt [expr {[llength $tokens] > 0 ? [lindex $tokens 0] : ""}]
+    if {[llength $tokens] >= 1 && [string equal -nocase $opt "diff"]} {
+        set argc [llength $tokens]
+        if {$argc < 3 || $argc > 4} {
+            puts "Error: Usage: jobs diff basepid comppid \[true|false\]"
+            return
+        }
+        set base_pid  [lindex $tokens 1]
+        set comp_pid  [lindex $tokens 2]
+        set weighting [expr {$argc == 4 ? [lindex $tokens 3] : "false"}]
+	if {![string is boolean -strict $weighting]} {
+            puts "Error: Usage: jobs diff basepid comppid \[true|false\]"
+            return
+        }
+        set ratio [jobs_profile_diff $base_pid $comp_pid $weighting]
+        if {$ratio ne ""} { 
+	return $ratio 
+	} else {
+        return "null"
+	}
     } 
     switch [ llength $args ] {
       0 {
@@ -322,8 +605,8 @@ namespace eval jobs {
           puts $res
         } elseif { [ string equal $cmd "getchart" ] } {
           set charttype $param3
-          if { ![string equal $charttype "result" ] && ![string equal $charttype "timing" ] && ![string equal $charttype "tcount" ]  && ![string equal $charttype "metrics" ] && ![string equal $charttype "profile" ] } {
-            puts "Error: Jobs Three Parameter Usage: jobs jobid getchart \[ result | timing | tcount | metrics | profile \]"
+          if { ![string equal $charttype "result" ] && ![string equal $charttype "timing" ] && ![string equal $charttype "tcount" ]  && ![string equal $charttype "metrics" ] && ![string equal $charttype "profile" ] && ![string match "diff:*" $charttype] } {
+            puts "Error: Jobs Three Parameter Usage: jobs jobid getchart \[ result | timing | tcount | metrics | profile | diff:pid \]"
           } else {
             set ctype "chart=$charttype"
             set res [getjob "jobid=$jobid&$cmd&$ctype" ]
@@ -334,7 +617,7 @@ namespace eval jobs {
         } 
       }
       default {
-        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id \] - type \"help jobs\""
+        puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id | jobs profile id | jobs diff basepid comppid \[true|false\]\] - type \"help jobs\""
       }
     }
   }
@@ -429,6 +712,64 @@ namespace eval jobs {
     }
   }
 
+proc __auto_refresh_js {{ms 120000}} {
+    set ms [string trim $ms]
+    if {![string is integer -strict $ms] || $ms < 2000} { set ms 120000 }
+
+    wapp-subst "<script>\n"
+    wapp-subst "(function(){\n"
+    wapp-subst "  var REFRESH_MS = $ms;\n"
+    wapp-subst "  setInterval(function(){\n"
+    wapp-subst "    var url = window.location.pathname + window.location.search + window.location.hash;\n"
+    wapp-subst "    window.location.replace(url);\n"
+    wapp-subst "  }, REFRESH_MS);\n"
+    wapp-subst "})();\n"
+    wapp-subst "</script>\n"
+}
+
+proc home-common-header {} {
+    wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+
+    set B [wapp-param BASE_URL]
+    set url "/style.css"
+    set logoimg "$B/logo.png"
+    set pipelines_url "$B/pipelines"
+
+    wapp-subst {
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="%url($url)" rel="stylesheet">
+<title>HammerDB Jobs</title>
+}
+__auto_refresh_js 120000
+    wapp-subst {
+</head>
+<body>
+
+<p style="margin:12px 16px 6px 16px;">
+  <img src="%unsafe($logoimg)" width="55" height="60">
+</p>
+
+<div style="margin:0 16px 18px 16px; padding-bottom:8px; border-bottom:1px solid #ddd;">
+  <div style="display:flex; justify-content:flex-start; align-items:center; gap:12px;">
+    <h3 class="title" style="margin:0;">HammerDB Jobs</h3>
+    <a href="%html($pipelines_url)"
+       style="margin-top:2px;
+              padding:6px 14px;
+              border:1px solid #bbb;
+              border-radius:4px;
+              text-decoration:none;
+              font-weight:500;">
+     Pipelines
+    </a>
+  </div>
+</div>
+}
+}
+
   proc common-header {} {
     wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
     set url "/style.css"
@@ -440,10 +781,10 @@ namespace eval jobs {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta http-equiv="content-type" content="text/html; charset=UTF-8">
       <link href="%url($url)" rel="stylesheet">
-      <title>HammerDB Results</title>
+      <title>HammerDB Jobs</title>
       </head>
       <body>
-      <p><img src='%unsafe($logoimg)' width='347' height='60'></p>
+      <p><img src='%unsafe($logoimg)' width='55' height='60'></p>
     }
   }
 
@@ -460,7 +801,7 @@ namespace eval jobs {
       <title>hdb_%html($jobid)</title>
       </head>
       <body>
-      <p><img src='%unsafe($logoimg)' width='347' height='60'></p>
+      <p><img src='%unsafe($logoimg)' width='55' height='60'></p>
     }
   }
 
@@ -468,7 +809,7 @@ namespace eval jobs {
     set B [wapp-param BASE_URL]
     set dbfile [ getdatabasefile ]
     set size "[ commify [ hdbjobs eval {SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()} ]]" 
-    wapp-subst {<h3 class="title">Env</h3>}
+    wapp-subst {<h3 class="title">ENV</h3>}
       wapp-subst {<table>\n}
       wapp-subst {<th>SQLite</th><th>Size (bytes)</th><th>Web Service</th>\n}
       wapp-subst {<tr><td>%html($dbfile)</td><td>%html($size)</td></td><td><a href='%html($B)/env'>Configuration</a></td></tr>\n}
@@ -494,11 +835,16 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIIAAPwCBMT+xATCBASCBARCBAQCBEQCBAAAACH5BAEAAAAA
-      LAAAAAAQABAAAAM2CLrc/itAF8RkdVyVye4FpzUgJwijORCGUhDDOZbLG6Nd
-      2xjwibIQ2y80sRGIl4IBuWk6Af4EACH+aENyZWF0ZWQgYnkgQk1QVG9HSUYg
-      UHJvIHZlcnNpb24gMi41DQqpIERldmVsQ29yIDE5OTcsMTk5OC4gQWxsIHJp
-      Z2h0cyByZXNlcnZlZC4NCmh0dHA6Ly93d3cuZGV2ZWxjb3IuY29tADs=
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwABZ/QAAWf0AWMpoScAAAGnSURBVDhPtdRPaxNRFIbx31QiVGrTulCh1K0L
+Fy4FTcG4CF1UaBT8JkJ145+FFtSvoiIRkVBd2NiNn8CdZCeknWAoxmrGxWQmM9NEo+gDWdz33Ptw
+Zubk8o8JikFKUxnrBioCZ4ZpW2TbvufqwsIJxgo/KOnYwE2B48XykC94LLTphm/ZQl7YsKjkhUAl
+l0+mZdZVK/aSYCSMO3vzB7KEltCVpNOZNO7Y+AsZXDLvVrKIO2wqi7SZ+M6y/EAHJ9Mk0nPUsqow
+7nCgPqWsb2BdyRI+pmlgzoG69JGne9Q+rlvV8NVZnC7UKzLvcDlf89l35/FwuI5lNS+9cs4RW5jP
+nYjiWR19lCyRAyWf1NzGnTGyU8UjCYmwnUsDSyKvNZXV3J9S1pYKI9vFKi6k0t/LmIkd8dg8s+CY
+tsBccR92MTv8jefQ2NSFAo+K+4ac+KUs5olqfFmMPkpoU+R9dtdURHZ0PUiW+cvhnUX7GgIXc/kk
+Ijsia1btJlF+bFbs6arirkgvV8vTE7in63JW5lCHWd5a0HdNoCIYDn78f2858NTa6Mr6r/wEzJFz
+C8GtSUkAAAAASUVORK5CYII=
     }]
   }
 
@@ -506,11 +852,17 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIIAAASC/PwCBMQCBEQCBIQCBAAAAAAAAAAAACH5BAEAAAAA
-      LAAAAAAQABAAAAMuCLrc/hCGFyYLQjQsquLDQ2ScEEJjZkYfyQKlJa2j7AQn
-      MM7NfucLze1FLD78CQAh/mhDcmVhdGVkIGJ5IEJNUFRvR0lGIFBybyB2ZXJz
-      aW9uIDIuNQ0KqSBEZXZlbENvciAxOTk3LDE5OTguIEFsbCByaWdodHMgcmVz
-      ZXJ2ZWQuDQpodHRwOi8vd3d3LmRldmVsY29yLmNvbQA7
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAACxMAAAsTAQCanBgAAAH6SURBVDhPrZVBTxNhEIaf+XZRpAFiwBgt0TR6
+8U49YRtbTXqURNT/QMKBEi6QNHCUcCHpfxA51OMeLEkb9dL+BBOikV48EMBiQbrjYWm7fG2sEJ7T
+fvPOvNmZfDsr9GAnmRwcdxovBZ1WmET0LoCo1IAqyoef/o2tWKnUsGvFDhymJ1+DrAsStbUwiu6C
+ZoeL1c1wvG2oOUz9U3wDZDac0B/NR6Yqc7KCD2Ba4cuZAchsUHt24qxNwbw7l3dBFP/NcLG6KTvJ
+5OC4e/S138z6oehuZGDsgbllfs/0MnNX13AXlsFxOkHHwV1Yxl1dC6cCIEi0frI3YxBe2CIAB/uY
+dAZ3MReYOg7uYg6TzsDBvp0NgKDT8iv1+BvCPVtsGyRS+OVtgPbz6dsVaDbtClT5Lofp+B9BXFuE
+86bAP80I5njavjZXhSH4nLqxWvbL25hEqjPTXqjUnKVY9AnCI1tzs0uYp8/bbfqfS8jEfUwihdy+
+g/+lbJcAFI0iBTsKwMgoftHrzKzZDIyLHoyM2tlnSOHKLjboj6GBsYcmVio1HGHeli+KEbLG844N
+wNDHynvQvJ30/2g+8Ahtm8hUZe5ypsH6ap26FuzRs/grX1kHmbC1MIruOsJ8681adBkC+JnM9frJ
+3gzoNKFfACo1gaoihci1m1vG847t2r87XMAQUQqvWAAAAABJRU5ErkJggg==
     }]
   }
 
@@ -518,12 +870,19 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-   R0lGODlhEAAQAIIAAPwCBDRy7AQ2rFyq/EyWzEyW3Jzi9KTK/CH5BAEAAAAA
-   LAAAAAAQABAAAAM7CArRLiuyQYQtxcpg8goDBn3VRo1KQAzo5EUg+4WtYo3B
-   UUpbV/OcF28mHKZORokmyWQ2minDrrmU+BMAIf5oQ3JlYXRlZCBieSBCTVBU
-   b0dJRiBQcm8gdmVyc2lvbiAyLjUNCqkgRGV2ZWxDb3IgMTk5NywxOTk4LiBB
-   bGwgcmlnaHRzIHJlc2VydmVkLg0KaHR0cDovL3d3dy5kZXZlbGNvci5jb20A
-   Ow==
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAJUSURBVDhPvZTNS1RhFMZ/586MX43DOBrRLiQl
+DKOFSBARVLgIXAW1FIIEaeF/kOY+ZhVFQUjtoqiNEVhIQdGiIr8WBUHt/MCKQJw7933PaTFzR+eq
+QRQ9cHi55z7neZ9zDvfCP4YkE0mYIe4DJwHSR3khgiU5fwQ/x6TOYv69mH+bmky+T+K3DnWW0wjP
+8ILF4TiTOe6fJ7kxgmQihs2QRiiigqlANUSlODNDOsmPsbtggWGM3igKuDd9iLvT3bgowDToPSGN
+w0l+jB0FdYGCwYSp8Gp+P7emurgx1cnL+b2ggjomfjzNFZJ17CZonnExaUeFTOCIojJRFJIRX209
+aG82N56sYydBXaAHkxHzAl4o7ClRdiFRFNKeDTEFVDDPSOlJtidZv00QTxEljYKp0JGtuCtHZTqy
+UcWhB1FJS0gxWV4nqPMMojIQbxSFfIvD+xDVEoUWD35z66YyUHrQOrhVoyZoCzSYl2tbyKBCAORb
+1sk3lwisTqxyuuCa3adhu6BnFKWrjqyVOY6dX+XqhTWozi8RXRth22isIwA6xz5z8gmVXPxV4ALM
+C1+Wcly+08dGaZ2bQ4sc7AgxH1Rad5ULzfGzyWW6g0sry0HFnYxhktvqKt7mu895Vr6HLH8r8eZj
+Y9U9mK9uWwUsyJXQK7WWTelHq87qhg6nepbpO7DEsc41zh5Zhyqn0i61MajSvzlDlUdUb0xGvslx
+fegrty+u0NZsm67qTkB5XJuhGeJep86JTx02b6IagAPi0wUkc/Gz+ZSpl8XWkdWHwl/+K/8LfgF7
+51H30c40eAAAAABJRU5ErkJggg==
     }]
   }
 
@@ -531,20 +890,97 @@ namespace eval jobs {
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
-      R0lGODlhEAAQAIUAAPwCBPy2BPSqBPSeBPS6HPSyDPSmBPzSXPzGNOyOBPSy
-      FPzujPzaPOyWBPy+DPyyDPy+LPzKTPzmZPzeTPSaFOSGBNxuBNxmBPzWVPzq
-      dPzmXPzePPzaRPzeRPS2FNxqBPzWNOyeBPTCLPzOJNxyBPzGHNReBOR6BOR2
-      BNRmBMxOBMxWBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-      AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAEAAAAALAAAAAAQABAAAAZz
-      QIBwSCwahYHA8SgYLIuEguFJFBwQCSpAMVgwEo2iI/mAECKSCYFCqVguF0BA
-      gFlkNBsGZ9PxXD5EAwQTEwwMICAhcUYJInkgIyEWSwMRh5ACJEsVE5EhJQQm
-      S40nKCQWAilHCSelQhcqsUatRisqWkt+QQAh/mhDcmVhdGVkIGJ5IEJNUFRv
-      R0lGIFBybyB2ZXJzaW9uIDIuNQ0KqSBEZXZlbENvciAxOTk3LDE5OTguIEFs
-      bCByaWdodHMgcmVzZXJ2ZWQuDQpodHRwOi8vd3d3LmRldmVsY29yLmNvbQA7
+iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAARnQU1BAACx
+jwv8YQUAAAAJcEhZcwAADsQAAA7EAZUrDhsAAAHwSURBVDhP5ZNBS1RRGIaf90z3Xq6jDEJYERFU
+C6kgbZM7NSOinyG1aeVC3I7uhaCgXfQzBAsaBS1FsoikRS4igmgWjjYzMjPe87W4zjReonDts3y/
+53znfIdz4MShbJDFNihYNZoFkDXmNE4l63TjskEWq0VFiSmJKVNUzNazOL8czvhSVPel8JVfJc4K
+WDY4il8l9kvhS1+K6n45nHF4zUrEkiY4CCe6ZdsgQDbUlQzZBkG3Qyu8LXRHIsZr1iFb6RS9Htjr
+nrMAZsiq4ROh8XZZ0phVw6dm6d37N/kzmB521stW5FeJaYXzQo8O411g0eCKYLgjd2GwKfgC3AUK
+aWbPCJrT6U7L0T0ZC9mFx8HM7rux5oIjHWUrKxwX5dwn2u/QDNlStCvR98cIIBeDC4HcYZiAb0Ky
+D9bqqGb80mijIGGdh+1L4Vud6r1FfBFy/dBoQaMGrQb4JJVcDoIIojxEASQ7sP8VS2prbrQxQvdP
+8WuXn8tdmOT7Z9j9Cebbpb8jB4UBOD+IJd9euJHtSY78lPz1deoV2Cv/vxmkzl4ZahXoubbejjsn
+NCs623o/zUFzSnvlc1R3/j1ybz/Wd/oHQfRYV4fmpTl/pGEbs6Lj44dhc/4m0iWMAbB82lA1JVa2
+HNuSe8fgjc12oxPMb5bIwls9AintAAAAAElFTkSuQmCC
     }]
   }
 
   proc wapp-page-logo.png {} {
+  #uses width 55, height 60
+    wapp-mimetype image/png
+    wapp-cache-control max-age=3600
+    wapp-unsafe [ binary decode base64 {
+      iVBORw0KGgoAAAANSUhEUgAAAUUAAAFjCAYAAACqgRl2AAAAAXNSR0IB2cksfwAAAARnQU1BAACx
+      jwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAAZiS0dE
+      AP8A/wD/oL2nkwAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+kIHxQ4D1maRiQAAA4FSURB
+      VHja7d3rbRtJFoDR6wET4IYgJ0BADkEOQQ5BHYIdghRCKwQ7BDOEEcAEzBSUAAHtjy6Or60XJTb7
+      eQ4geMaYXYr9+FhdXSQ/PDw8xJAsVtV5RCwjYv8nx9nuf3abemtzvPl4PIuI/MPEj80PQ4jiYlVd
+      RcRF+RHC07mPiHVErHeb+tbmePZ4vIiIy3I8CuHMjs1eo7hYVV8j4sqB14ttRHzbbeofNsV/x+My
+      Ir5HE0P6PTar3aZe9/HgvUSxHHzX0QSRflVGjf9N23wPL9BD8qWPF+1/enqydQjiUNRl+mLuBHGY
+      x2bn+6TzKJZL5kv7e1Cuy+h9lsqLgiAOzzIivnb9oH2MFL8GDr5hMVIe8L7p+gW70yiWV2R3lwd6
+      8M3xSZcT7tzuH7ROb3z9M+Unx5ssy82GuRFE++gP/0z5yfFmc3zR8kI9fNOMYrlMMZk9bPYPs9fl
+      SNEocfjmGEUvBMM36TlFGBo3/viDKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAi
+      igCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgC
+      JKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCI
+      IkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooA
+      iSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSi
+      CJCIIkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJA
+      IooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIko
+      AiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgCJAubgOR8sap+zu052+1koki2jIgLm4E5c/kMkIgi
+      QCKKAIkoAiSiCJCIIkAiigCJKAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigCJ
+      KAIkogiQiCJAIooAiSgCJKIIkIgiQCKKAIkoAiSiCJCIIkAiigDJwiZggNZP/N2FzUIXRJFTuouI
+      +/JnRMS2/EREbHebetvKQbyqziNimf4q//t5+XOZ/hmeP55sAlqyjYgfUSK429Trrh54t6nv/vqr
+      Fx97sar2o859PPexNBpFFA90W060u7eObv4axTz1z2MevdxFE8L1E2EarBTs9RP7a79P8v45Kz/M
+      wIeHh4dOHqi8Ov8c2fZZR0TV1mXeC9tmf9JdlJNw6COWHxFx2+VocAjKMbzfVzmcnNhuU3/o6rFE
+      8Xm3u01d9XgCXkXEZQwrkNtoXiRmFcNX9tOy7KP9jxHlCYhi/37sNvWXgZx0ZxHxNSKuev5V1hHx
+      Zbep752iL+6v8/j9YubGTktEsV/3EfFxaCd/2X7XPZ1ovY6ax6q8oF2WH4E8gij262a3qb8N+ES7
+      jmbk2JVvu01947Q8er/tA3kVLrHfrMsoekfLY4OeLyvB/hS/1/udUiWIre237W5T3+w29ceI+BzN
+      igYGSBQfH7yDv4lQlr98iohTBes+mvlDJ+6JjrEyHfG/iPgW3bzAcSCXz48P2A9D/x2f2K7fo72l
+      IfcR8XlM6w6nYKCrDWZ5Xhopjv9gWUfEx2hGjcfeHLqL5iaTIHa/H293m/pzNJfWP2yR/ojiNE6o
+      +zTXeBvvi+PNblN/suSm9325LsvBPoY49kIUp3VCbctc1cc4fK7qNprR4WDvuM94X36JZuRosXyH
+      zCk+PhhHNad4wHbPb0nL7nab2khkPPuxz3WqszovfSDE9A+m/cd1CeC49+M6Ij6VGzLX4T3XJ+Py
+      GUakLJPa31jjBEQRRuavG2tWCrRMFGGkdpv6brepT7mIf5ZEEUbOqLFdoggTUBbcfw6jxqOJIkxE
+      mmv8Ese/u2m2RBEmpqw/dTn9TqIIE1TWp/qIsncQRZiocjldRfOWTw4kijBx5YOCzTMeSBRhBso8
+      4+cQxleJIsxEWrbjBswLRBFmRBhfJ4owM+WDhIXxGaIIMySMzxNFmClhfJoowoylMLorXYgizJww
+      /kkUgXxXevZEEYiI/8JYzX07iCLwn/IdMLP+TEZRBP5QPpNxtt/+KIrAU6povhp3dkQReKTckf4y
+      x+cuisCTyo2X2X0WoygCzyqfxTir+UVRBF5TxYwWdosi8KIyvzib9YuiCLyqfHL3LC6jF3Y3nPgk
+      W1VnEZF/IiLOX/mf3UezJGb/c1dGbH2qIuIiIpaT3l8OWWj5pFpV59HE4yz92cb/b0TEOpqP+lrv
+      NvW6y+e129T3i1V1ExHXU95/Hx4eHro6UC4i4ufQN8huU39wWvOO4/s8Iq4i4jK6G0ndRxPJdTSR
+      3Hb0XP+N10e6oz0vjRThvSdPc1m8D+FZD7/Csjz2Zfl97iLiNiJ+nPhS+1uMYIDzXm60wBstVtXF
+      YlV9j4hfEfE1+gniU84joo6IX4tVdV2i3bpy2T7Zmy6iCAcqMfwZzSjpcsC/6jKaWP9arKqfi1V1
+      dYLHmOw7XUQRXrFYVWcphhcj+/UvIqJerKpfZV6/FWX+8naS+9shP90TOZrLuvP4PfGfJ8e38ftd
+      CuuI2HY1UT+y7Xgdzahr7M4i4udiVa0j4qalO9c30cypToq7z38Z893nxaq6jGZk8N5lINto5oru
+      ymLd2SrHax3DmS9s2200cTzqhXCxquroIIxdnpei2OPGb2m77uePrqLdpSDbctJM8hLplW06ldHh
+      IW7Kfn7X3epyRfJrSuelOcXxnrjLcvLu74C2vTbuLH7PRQ35pkKb2/SsrMGbSxCjPNd/3zvfOMW5
+      RVF8fGIMfiK9/I77k/fUC4XPIuJ7CfCU9/tl2abnU36eL+zjn2UZz3uOp0l9p4soPjbYKJbR4fdo
+      piG6nuv6ulhV/77zpBm0xar6GhHfY+Lv6T1kH0czanzTC0MZLa6nshFE8bHLIZ74ZSTzK/pdH3ce
+      zYhiMvEoNwomPQp+o7NowvjWbTKZS2hRfPqgGMxJUua5vsdwRjLnQ9o+R27bTu6cjtT+yuCgUWNZ
+      rTCJJV2i+LSrE70L4C0n7Fk5afseHT63fUYdxrIYWxBftr8yOPT4m8QyLktyXt/JVVefY1eWN+zX
+      GY7hju/HMS74NkJ8l2/l+1peO35PsjzHOsVhuY/fnzxy18J22L/DZBm/323y9ztPxuLHblOP6msw
+      BfEot7tNXb2yfU9yB18Uh+09d9nG9n7Zt/jc9YedHnEMCuLx7so+v39mG19F806gVvk8xWGbcuDe
+      4ypGsByjnKyCeLzzaO5Of3nmyulHnCCKXXKjhWMNcglTVqYsLLtpz36x96N57zKCHPWaRVGkDUO/
+      KVSHhdltW0bzTqenRt+iyOwN9q1xZenQHN+615X6iTCOemmOKNKGQY4UyxKROX24Q1/+CGNZpjXa
+      hdyiSBuWA51XFMTu/D1iHO0ltCjSlkFdoqavHKU7dXqn091Yn4Qo0pahzdsJYj++lvWgox0pWqdI
+      WwZz+Zy+j5l+XEXzTrD7IR0XhzJSZKonJf0a7XyuKNKWIY0IZvH1CY6J0xBF2jKIb70rN1im+g18
+      dEAUmRqjRI4iikyNKHIUUWQyyl1nl84cRRRpyxAm1X2sG0cTRdoyhMXbRokcTRSZEp+Gw9FEkSlx
+      +czRRJFJGPqnfzMeoshUuHSmFaJIa8o3NvbFSJFWiCJTYaRIK0QRIBFFgEQUARJRpE3nM31sJkQU
+      aVOfd4BH+5WaDIsoMhX3NgFtEEWmwuUzrRBFgEQUARJRBEhEESARRYBEFAESUQRIRBEgEUWARBQB
+      ElEESEQRIBFFgEQUARJRBEhEESARRYBEFAESUQRIRBEgEUWARBQBElEESEQRIBFFgEQUARJRBEhE
+      ESARRYBEFAESUQRIRBEgEUWARBQBElEESEQRIBFFgEQUARJRBEhEESARRYBEFAESUQRIRBEgEUWA
+      RBQBElEESEQRIBFFgEQUARJRBEhEESARRYBEFAESUQRIRBEgEUWARBQBkoVNwIE+H/DfbHv8/b5F
+      xPKJvz+LiNru41CiyCHudpt6PeRfcLep7549yFfVdTwdTHjE5TOHGHQQD/DDLuRQosghxh6VO7uQ
+      Q4kir7l/6dJ0JIwUOZgo8pqxXzrHblPfh9EiBxJFXjP6KE7seXBioshrphITI0UOIoq8ZLvb1Nsp
+      PJHdpjavyEFEkZdM7ZLTJTSvEkVeMrVLTpfQvEoUeYmRIrMjijxnMvOJe0N/qyLDIIo8Z6oBcQnN
+      i0SR50xqlJgYLfIiUeQ5RorMkijylCm83/k5ojjC47HLBxNFnjLZcJSbR1OdGnA8tqCzKLrz5yD0
+      /BiDrkeKXqHHYeovYKJofz2r6ygaLToIPT8Gvb/+mfKT41225fMHJ8tUzuh0ur86jeJuU9+GS2gH
+      oOfJ4W67fpHu4+7zjf08aHN50XLVMg63XT9g51Eso8XOnygHm0ssXLEMX9XHetle1inuNnUVwjhI
+      M5pvM1IctpsygOpcb4u3Sxg/h29aG5LZhGLC79gZu9uI+LTb1N/6+gUWPR+Y64hYL1bVMiIuIuI8
+      IpYRcZb+s7O//p3Tmdsl5bocd3R/nO2Ptfvyz3cRsR7CyocPDw8PdhFA4b3PAIkoAiT/Bw83tUxV
+      XmHAAAAAAElFTkSuQmCC
+    }]
+  }
+
+  proc wapp-page-logo-full.png {} {
+  #uses width 347, height 60
     wapp-mimetype image/png
     wapp-cache-control max-age=3600
     wapp-unsafe [ binary decode base64 {
@@ -1000,655 +1436,948 @@ namespace eval jobs {
     return $i
   }
 
-  proc wapp-page-jobs {} {
+  proc _tail_log_file {filename {maxbytes 65536}} {
+      if {$filename eq "" || $filename eq "nologfile" || ![file exists $filename] || ![file readable $filename]} {
+          return "No active workload log"
+      }
+
+      set fsize [file size $filename]
+      if {$fsize < 0} {
+          return "No active workload log"
+      }
+
+      set fh [open $filename r]
+      fconfigure $fh -translation binary -encoding iso8859-1
+
+      if {$fsize > $maxbytes} {
+          seek $fh [expr {$fsize - $maxbytes}] start
+      }
+
+      set data [read $fh]
+      close $fh
+
+      return [encoding convertfrom utf-8 $data]
+  }
+
+proc wapp-page-jobs {} {
     global bm hdb_version
-    set query [ wapp-param QUERY_STRING ]
-    set params [ split $query & ]
-    set paramlen [ llength $params ]
-    set tprocccombined {}
-    set tprochcombined {}
-    if { $paramlen eq 0 } {
-      set topjobs [ gettopjobs ]
-      common-header
-      wapp-subst {<h3 class="title">TPROC-C</h3>}
-      wapp-trim {
-        <div class='hammerdb' data-title='TPROC-C'>
-      }
-      set jcount 0
-      wapp-subst {<table>\n}
-      wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>NOPM</th><th>Status</th>\n}
-      #one loop builds data for both TPROC-C and TPROC-H tables
-      foreach job [ getjob joblist ] {
-        incr jcount
-	set nopm "--"
-	set geo "--"
-        set url "[wapp-param BASE_URL]/jobs?jobid=$job&index"
-        set db [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$job} ]]
-        set bm [ string map {TPC TPROC} [ join [ hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$job} ]]]
-        set date [ join [ hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$job} ]]
-        set output [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=0} ]]
-        set output1 [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=1} ]]
-        if { [ string match -nocase "*creating*" $output1 ] } {
-          set jobtype "Schema Build"
-        } elseif { [ string match -nocase "*delete*" $output1 ] } {
-          set jobtype "Schema Delete"
-        } elseif { [ string match -nocase "*checking*" $output1 ] } {
-          set jobtype "Schema Check"
-        } elseif { [ string match -nocase "*rampup*" $output1 ] || [ string match -nocase "*scale\ factor*" $output1 ]} {
-          set jobtype "Benchmark Run"
-          set jobresult [ getjobresult $job 1 ]
-          if { [ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ] } {
-		;
-		} else {
-          if { $bm eq "TPROC-C" } {
-           lassign [ getnopmtpm $jobresult ] jobid tstamp activevu nopm tpm dbdescription
-	    
-		} else {
-           set ctind 0
-           foreach ct {jobid tstamp geomean queryset} { 
-           set $ct [ lindex $jobresult $ctind ] 
-           incr ctind
-           }
-           set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
-           set geo [ format "%.2f" [ lindex $numbers 1]]
-		}
-            }
-        } else {
-          set jobtype "--"
-	}
-        set statusimg ""
-        if { [ string match "*ALL VIRTUAL USERS COMPLETE*" $output ] } {
-          if { [ string match "*FINISHED FAILED*" $output ] } {
-            set statusimg "<img src='[wapp-param BASE_URL]/cross.png'>"
-          } else {
-            if { [ llength [string_occurrences ":RUNNING" $output] ] eq [ llength [string_occurrences ":FINISHED SUCCESS" $output] ] } {
-              set statusimg "<img src='[wapp-param BASE_URL]/tick.png'>"
-              if { [ dict values $topjobs $job ] eq $job } {
-                set statusimg "<img src='[wapp-param BASE_URL]/star.png'>"
-              }
-            }
-          }
-	#Didn't get ALL VU COMPLETE MESSAGE, usually threads waiting to close, check to see if we got a result and mark as complete if we did
-        } else {
-	if { [ string match "*FINISHED FAILED*" $output ] } {
-            set statusimg "<img src='[wapp-param BASE_URL]/cross.png'>"
-          } else {
-        set output [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=1} ]]
-        if { [ string match "*TEST RESULT*" $output ] } {
-              if { [ dict values $topjobs $job ] eq $job } {
-                set statusimg "<img src='[wapp-param BASE_URL]/star.png'>"
-              } else {
-              set statusimg "<img src='[wapp-param BASE_URL]/tick.png'>"
-		}
-	} else {
-              set statusimg "<img src='[wapp-param BASE_URL]/nostatus.png'>"
-	}
-	}
-	}
-	if {$bm eq "TPROC-C"} { append tprocccombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($nopm)</td><td>%unsafe($statusimg)</td></tr>\n} ]
-           } else { append tprochcombined [ subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($geo)</td><td>%unsafe($statusimg)</td></tr>\n} ]
-	   }
-	}
-      wapp-subst $tprocccombined
-      wapp-subst {</table>\n}
-      if { $tprocccombined eq {} } {
-        wapp-subst {%html(No TPROC-C jobs found)\ in database file %html([ getdatabasefile ])}
-      }
-      set profcount 0
-      wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
-      wapp-subst {<table>\n}
-      wapp-subst {<th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th>\n}
-        set profileids [ join [ hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc} ]]
-      foreach profileid $profileids {
-        incr profcount
-	set url "[wapp-param BASE_URL]/jobs?profileid=$profileid"
-	set profiles [ get_job_profile $profileid ]
-	if { ![ huddle isHuddle $profiles ] || [ huddle llength $profiles ] eq 0 } {
-	# likely job is currently running so data is incomplete	
-	continue
-	} else {
-	set profdict [ huddle get_stripped $profiles ]
-        set maxnopm -1
-        dict for {job profiledata} $profdict {
-        set jobcount [ dict size $profdict ]
-        dict for {k v} $profiledata {
-        if { $k eq "nopm" } {
-        if {$v > $maxnopm} {
-	set maxjob $job
-        set maxurl "[wapp-param BASE_URL]/jobs?jobid=$maxjob&index"
-        set maxnopm $v
-	set maxdb [ dict get $profiledata db ]
-        set maxtpm [ dict get $profiledata tpm ]
-        set maxavu [ dict get $profiledata activevu ]
-	}}}}
-        wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td></td></tr>\n}
-	}
-	}
-      wapp-subst {</table>\n}
-      if { $profcount eq 0 } {
-        wapp-subst {%html(No performance profiles found)\ in database file %html([ getdatabasefile ])}
-      }
-      wapp-subst {<h3 class="title">TPROC-H</h3>}
-      wapp-trim {
-        <div class='hammerdb' data-title='TPROC-H'>
-      }
-      set jcount 0
-      wapp-subst {<table>\n}
-      wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>Geomean</th><th>Status</th>\n}
-      wapp-subst $tprochcombined
-      wapp-subst {</table>\n}
-      if { $tprochcombined eq {} } {
-        wapp-subst {%html(No TPROC-H jobs found)\ in database file %html([ getdatabasefile ])}
-      }
-      main-footer
-      return
-    } else {
-      if { $paramlen >= 1 && $paramlen <= 3 } {
-        foreach a $params {
-          lassign [split $a =] key value
-          dict append paramdict $key $value
-        }
-      } else {
-        dict set jsondict error message "Usage: jobs?query=parameter"
-        wapp-2-json 2 $jsondict
-        return
-      }
-      if { $paramlen eq 3 } {
-        if { [ dict keys $paramdict ] != "jobid timing vu" } {
-          dict set jsondict error message "Jobs Three Parameter Usage: jobs?jobid=JOBID&timing&vu=VUID"
-          wapp-2-json 2 $jsondict
-          return
-        } else {
-          #3 parameter case of 1-jobid 2-timing 3-vu
-          set jobid [ dict get $paramdict jobid ]
-          set vuid [ dict get $paramdict vu ]
-          if [ string is entier $vuid ] {
-            unset -nocomplain jobtiming
-            set jobtiming [ dict create ]
-            #query on jobtiming and VU=vuid so do not replace with call to getjobtiming
-            hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and VU=$vuid and SUMMARY=0 ORDER BY RATIO_PCT DESC}  {
-              set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p50_ms $p50_ms sd $sd ratio_pct $ratio_pct"
-              dict append jobtiming $procname $timing
-            }
-            if { ![ dict size $jobtiming ] eq 0 } {
-              wapp-2-json 2 $jobtiming
-              return
-            } else {
-              dict set jsondict error message "No Timing Data for VU $vuid for JOB $jobid: jobs?jobid=JOBID&timing&vu=VUID"
-              wapp-2-json 2 $jsondict
-              return
-            }
-          } else {
-            dict set jsondict error message "Jobs Three Parameter Usage: jobs?jobid=JOBID&timing&vu=VUID"
-            wapp-2-json 2 $jsondict
-            return
-          }
-        }
-      }
+
+    proc __norm_pre {s} {
+        # normalise newlines
+        regsub -all {\r\n} $s "\n" s
+        regsub -all {\r}   $s "\n" s
+        return $s
     }
-    #1 parameter
-    if { $paramlen eq 1 } {
-      if { [ dict keys $paramdict ] eq "jobid" } {
-        set jobid [ dict get $paramdict jobid ]
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-        if { $query eq 0 } {
-          dict set jsondict error message "Jobid $jobid does not exist"
-          wapp-2-json 2 $jsondict
-          return
-        } else {
-          set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-          set huddleobj [ huddle_escape_double [ huddle compile {list} $joboutput ]]
-          wapp-mimetype application/json
-          wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
+
+    proc __fmt_job_output {s} {
+        # format VU0
+        set s [__norm_pre $s]
+        if {[string first "\n" $s] < 0} {
+            if {[string match "*User *:*" $s]} {
+                # split User N:
+                regsub -all { ?User ([0-9]+):} $s "\nUser \\1:" s
+                set s [string trim $s]
+                # split final marker
+                regsub -all { ?ALL VIRTUAL USERS COMPLETE} $s "\nALL VIRTUAL USERS COMPLETE" s
+            }
         }
-      } elseif { [ dict keys $paramdict ] eq "profileid" } {
-        set profileid [ dict get $paramdict profileid ]
-        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-             foreach l [ split [ getchart $profileid 0 "profile" ] \n] {
-             if { [ string match [ string trim $l ] <body> ] } {
-                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
-                }
-        wapp-subst {%unsafe($l)\n}
-	}
-	set url "[wapp-param BASE_URL]/jobs?profileid=$profileid&profiledata"
-        set text "Profile Data"
-        wapp-subst {<a href='%html($url)'>%html($text)</a><br>\n}
-        common-footer
-        return
-      } else {
-        dict set jsondict error message "Jobs One Parameter Usage: jobs?jobid=TEXT | jobs?profileid=INTEGER"
-        wapp-2-json 2 $jsondict
-        return
-      }
-      #2 or more parameters
-    } else {
-      if { [ dict keys $paramdict ] eq "jobid index" || [ dict keys $paramdict ] eq "jobid summary" || [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" || [ dict keys $paramdict ] eq "jobid result" || [ dict keys $paramdict ] eq "jobid resultdata" || [ dict keys $paramdict ] eq "jobid DELETE" || [ dict keys $paramdict ] eq "jobid delete" || [ dict keys $paramdict ] eq "jobid timestamp" || [ dict keys $paramdict ] eq "jobid dict" || [ dict keys $paramdict ] eq "jobid timing" || [ dict keys $paramdict ] eq "jobid timingdata" || [ dict keys $paramdict ] eq "jobid db" ||  [ dict keys $paramdict ] eq "jobid bm" || [ dict keys $paramdict ] eq "jobid tcount" || [ dict keys $paramdict ] eq "jobid tcountdata" || [ dict keys $paramdict ] eq "jobid metrics"  || [ dict keys $paramdict ] eq "jobid metricsdata" ||  [ dict keys $paramdict ] eq "jobid system" ||  [ dict keys $paramdict ] eq "profileid profiledata"  } {
-	if { [ lindex [ dict keys $paramdict ] 0 ] eq "profileid" } {
-        set profileid [ dict get $paramdict profileid ]
-        if { [ dict keys $paramdict ] eq "profileid profiledata" } {
-        set huddleobj  [ huddle_escape_double [ get_job_profile $profileid ]]
-            wapp-mimetype application/json
-            wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
-        return
-	}
-	} else {
-        set jobid [ dict get $paramdict jobid ]
-	}
-        if { [ dict keys $paramdict ] eq "jobid vu" } {
-          set vuid [ dict get $paramdict vu ]
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid result" || [ dict keys $paramdict ] eq "jobid resultdata" } {
-            set vuid 1
-          } else {
-            set vuid 0
-          }
+        return $s
+    }
+
+    proc __is_true {v} {
+        set v [string tolower [string trim $v]]
+        expr {$v eq "1" || $v eq "true" || $v eq "yes" || $v eq "on"}
+    }
+
+    proc __pre_block {s} {
+        # truncate large output
+        set max 2000000
+        set total [string length $s]
+        if {$total > $max} {
+            wapp-subst "<p><i>Showing first %html($max) bytes of %html($total).</i></p>\n"
+            set s [string range $s 0 [expr {$max-1}]]
         }
-	#Summary page with all available charts
-        if { [ dict keys $paramdict ] eq "jobid summary" } {
-          summary-header $jobid
-        set jobresult [ getjobresult $jobid 1 ]
-        set db [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]
-        set bm [ string map {TPC TPROC} [ join [ hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid} ]]]
-          if { $bm eq "TPROC-C" } {
-	#TPROC-C Summary
-          if { !([ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ]) } {
-           lassign [ getnopmtpm $jobresult ] jobid tstamp activevu nopm tpm dbdescription
-           set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
-		} else {
-             ;#No result exclude summary
-	   return
-		}
-      wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
-      wapp-trim {
-            <div class='hammerdb' data-title='Jobs Summary'>
-          }
-	#Summary Table
-      wapp-subst {<table style="font-size: 150%;">\n}
-      wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>NOPM</th><th>TPM</th><th>Active VU</th>\n}
-      wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($nopm)</td><td>%html($tpm)</td><td>%html($avu)</td></tr>\n}
-      wapp-subst {</table>\n}
-	#Results chart - check for existence of result already done
-              wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-              foreach l [ split [ getchart $jobid 1 "result" ] \n] {
-                if { [ string match "*TPROC-C Result*" $l  ] } {
-                set l {"text": "Result",}
-                # continue 
+        wapp-subst "<pre style=\"white-space:pre-wrap; overflow-wrap:anywhere;\">%html($s)</pre>\n"
+    }
+
+    proc __job_exists {jobid} {
+        expr {[hdbjobs eval {SELECT COUNT(*) FROM JOBMAIN WHERE JOBID=$jobid}] > 0}
+    }
+
+    proc __job_field_link {B jobid name label} {
+        set url "$B/jobs?jobid=$jobid&$name"
+        wapp-subst "<li><a href='%html($url)'>%html($label)</a></li>\n"
+    }
+
+    set B [wapp-param BASE_URL]
+    set query  [wapp-param QUERY_STRING]
+    set params [split $query &]
+    set paramlen [llength $params]
+
+    set paramdict [dict create]
+    if {$paramlen >= 1 && $query ne ""} {
+        foreach a $params {
+            if {$a eq ""} continue
+            lassign [split $a =] key value
+            if {$key eq "diff"} {
+                dict lappend paramdict $key $value
+            } else {
+                dict set paramdict $key $value
+            }
+        }
+    }
+
+    if {[dict exists $paramdict tailworkload] && [dict get $paramdict tailworkload] eq "1"} {
+        set logfile [_latest_workload_logname]
+        set logtxt [_tail_log_file $logfile 65536]
+
+        wapp-mimetype "text/plain; charset=utf-8"
+        wapp-unsafe $logtxt
+        return
+    }
+
+    set rawmode 0
+    if {[dict exists $paramdict raw]} {
+        set rawmode [__is_true [dict get $paramdict raw]]
+    }
+
+    if {$paramlen eq 0 || $query eq ""} {
+        set topjobs [gettopjobs]
+        home-common-header
+        wapp-subst {<h3 class="title">TPROC-C</h3>}
+        wapp-trim {<div class='hammerdb' data-title='TPROC-C'>}
+
+        set tprocccombined {}
+        set tprochcombined {}
+
+        wapp-subst {<table>\n}
+        wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>NOPM</th><th>Status</th>\n}
+
+        foreach job [ lreverse [getjob joblist] ] {
+            set nopm "--"
+            set geo  "--"
+            set url  "$B/jobs?jobid=$job&index"
+            set db   [join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$job}]]
+            set bm   [string map {TPC TPROC} [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$job}]]]
+            set date [join [hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$job}]]
+
+            set output  [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=0}]]
+            set output1 [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=1}]]
+
+            if {[string match -nocase "*creating*" $output1]} {
+                set jobtype "Schema Build"
+            } elseif {[string match -nocase "*delete*" $output1]} {
+                set jobtype "Schema Delete"
+            } elseif {[string match -nocase "*checking*" $output1]} {
+                set jobtype "Schema Check"
+            } elseif {[string match -nocase "*rampup*" $output1] || [string match -nocase "*scale factor*" $output1]} {
+                set jobtype "Benchmark Run"
+
+                # add version if present in VU1 output
+                if {[string match "*DBVersion*" $output1]} {
+                    set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $output1 match header version]
+                    if {$matcheddbversion} { set db "$db ($version)" }
                 }
-                wapp-subst {%unsafe($l)\n}
-              }
-	#Tcount chart - check for existence first
-                set jobtcount [ getjobtcount $jobid ]
-                if { [ llength $jobtcount ] eq 2 && [ string match [ lindex $jobtcount 1 ] "Jobid has no transaction counter data" ] } {
-                  ;#No tcount data exclude link
+
+                set jobresult [getjobresult $job 1]
+                if {![llength $jobresult] eq 2 || ![string match [lindex $jobresult 1] "Jobid has no test result"]} {
+                    if {$bm eq "TPROC-C"} {
+                        lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
+                    } else {
+                        set ctind 0
+                        foreach ct {jobid tstamp geomean queryset} {
+                            set $ct [lindex $jobresult $ctind]
+                            incr ctind
+                        }
+                        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
+                        set geo [format "%.2f" [lindex $numbers 1]]
+                    }
+                }
+            } else {
+                set jobtype "--"
+            }
+
+            # status icon
+            set statusimg ""
+            if {[string match "*ALL VIRTUAL USERS COMPLETE*" $output]} {
+                if {[string match "*FINISHED FAILED*" $output]} {
+                    set statusimg "<img src='$B/cross.png'>"
                 } else {
-              foreach l [ split [ getchart $jobid 1 "tcount" ] \n] {
-                if { [ string match "*TPROC-C Transaction*" $l  ] } {
-                set l {"text": "Transaction Count",}
+                    if {[llength [string_occurrences ":RUNNING" $output]] eq [llength [string_occurrences ":FINISHED SUCCESS" $output]]} {
+                        set statusimg "<img src='$B/tick.png'>"
+                        if {[dict values $topjobs $job] eq $job} {
+                            set statusimg "<img src='$B/star.png'>"
+                        }
+                    }
                 }
-                wapp-subst {%unsafe($l)\n}
-              }
-                }
-	#Timing chart - check for existence first
-                  set jobtiming [ getjobtiming $jobid ]
-                  if { [ llength $jobtiming ] eq 2 && [ string match [ lindex $jobtiming 1 ] "Jobid has no timing data" ] } {
-                    ;#No timing data exclude link
-                  } else {
-              foreach l [ split [ getchart $jobid 1 "timing" ] \n] {
-                if { [ string match "*TPROC-C Response*" $l  ] } {
-                set l {"text": "Response Times",}
-                }
-                wapp-subst {%unsafe($l)\n}
-              }
-                  }
-	#Metrics chart - check for existence first
-                set jobmetrics [ getjobmetrics $jobid ]
-                if { [ llength $jobmetrics ] eq 2 && [ string match [ lindex $jobmetrics 1 ] "Jobid has no metric data" ] } {
-                  ;#No metrics data exclude link
+            } else {
+                if {[string match "*FINISHED FAILED*" $output]} {
+                    set statusimg "<img src='$B/cross.png'>"
                 } else {
-              foreach l [ split [ getchart $jobid 1 "metrics" ] \n] {
-                if { [ string match "*text*:*$jobid*" $l  ] } {
-		#strip jobid from chart title only show CPU
-		regsub $jobid $l "" l
+                    set output_vu1 [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$job AND VU=1}]]
+                    if {[string match "*TEST RESULT*" $output_vu1]} {
+                        if {[dict values $topjobs $job] eq $job} {
+                            set statusimg "<img src='$B/star.png'>"
+                        } else {
+                            set statusimg "<img src='$B/tick.png'>"
+                        }
+                    } else {
+                        set statusimg "<img src='$B/nostatus.png'>"
+                    }
                 }
-                wapp-subst {%unsafe($l)\n}
-              }
+            }
+
+            if {$bm eq "TPROC-C"} {
+                append tprocccombined [subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($nopm)</td><td class='status'>%unsafe($statusimg)</td></tr>\n}]
+            } else {
+                append tprochcombined [subst {<tr><td><a href='%html($url)'>%html($job)</a></td><td>%html($db)</td><td>%html($date)</td><td>%html($jobtype)</td><td>%html($geo)</td><td class='status'>%unsafe($statusimg)</td></tr>\n}]
+            }
+        }
+
+        wapp-subst $tprocccombined
+        if {$tprocccombined eq {}} {
+            wapp-subst {<tr><td colspan="6">No TPROC-C runs found in database file %html([getdatabasefile])</td></tr>\n}
+        }
+        wapp-subst {</table>\n}
+
+        # Profiles table
+        set profcount 0
+        if {![info exists ::profile_dbdesc]} {
+            set ::profile_dbdesc [dict create]
+        }
+        wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
+        wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Pick exactly two profiles, then click <b>Compare Profiles</b>.</p>}
+        wapp-subst {<form method="GET" action="%html([wapp-param BASE_URL]/jobs)">}
+        wapp-subst {<input type="hidden" name="cmd" value="profilediff">}
+        wapp-subst {<div style="max-width:800px;">}
+        wapp-subst {<table>\n}
+        wapp-subst {<tr><th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th><th>Pick</th></tr>\n}
+
+        set profileids [lreverse [join [hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc}]]]
+        foreach profileid $profileids {
+            set url "$B/jobs?profileid=$profileid"
+            set profiles [get_job_profile $profileid]
+            if {![huddle isHuddle $profiles] || [huddle llength $profiles] eq 0} {
+                continue
+            }
+            incr profcount
+            set profdict [huddle get_stripped $profiles]
+            set maxnopm -1
+            set maxjob ""
+            set maxdb  ""
+            set maxtpm ""
+            set maxavu ""
+            dict for {job profiledata} $profdict {
+                set jobcount [dict size $profdict]
+                dict for {k v} $profiledata {
+                    if {$k eq "nopm"} {
+                        if {$v > $maxnopm} {
+                            set maxjob $job
+                            set maxnopm $v
+                            set maxdb [dict get $profiledata db]
+                            set temp_db [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$maxjob AND VU=1}]]
+                            if {[string match "*DBVersion*" $temp_db]} {
+                                set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_db match header version]
+                                if {$matcheddbversion} { set maxdb "$maxdb ($version)" }
+                            }
+                            set maxtpm [dict get $profiledata tpm]
+                            set maxavu [dict get $profiledata activevu]
+                        }
+                    }
                 }
-		} else {
-	#TPROC-H Summary
-          if { !([ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ]) } {
-           set ctind 0
-           foreach ct {jobid tstamp geomean queryset} { 
-           set $ct [ lindex $jobresult $ctind ] 
-           incr ctind
-           }
-           set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
-           set geo [ format "%.2f" [ lindex $numbers 1]]
-	   regsub -all "Completed " $queryset "" queryset
-	   regsub -all "query set" $queryset "qset" queryset
-	   regsub -all "seconds" $queryset "secs" queryset
-                } else {
-             ;#No result exclude summary
-           return
+            }
+            if {$maxdb ne ""} {
+                    dict set ::profile_dbdesc $profileid $maxdb
                 }
-      wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
-      wapp-trim {
-            <div class='hammerdb' data-title='Jobs Summary'>
-          }
-        #Summary Table
-      wapp-subst {<table style="font-size: 150%;">\n}
-      wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>Geomean</th><th>Query Time</th>\n}
-      wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($geo)</td><td>%html($queryset)</td></tr>\n }
-      wapp-subst {</table>\n}
-	#Results chart - check for existence of result already done
-              wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-              foreach l [ split [ getchart $jobid 1 "result" ] \n] {
-                if { [ string match "*TPROC-H Result*" $l  ] } {
-                set l {"text": "Result",}
-                # continue 
-                }
-                wapp-subst {%unsafe($l)\n}
-              }
-	#Timing chart - check for existence first - note TPROC-H timing comes from the output
-        if { ![ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
-                    ;#No timing data exclude link
-                  } else {
-              foreach l [ split [ getchart $jobid 1 "timing" ] \n] {
-                if { [ string match "*TPROC-H Power*" $l  ] } {
-                set l {"text": "Power Query Times",}
-                }
-                wapp-subst {%unsafe($l)\n}
-              }
-                  }
-	#Metrics chart - check for existence first
-                set jobmetrics [ getjobmetrics $jobid ]
-                if { [ llength $jobmetrics ] eq 2 && [ string match [ lindex $jobmetrics 1 ] "Jobid has no metric data" ] } {
-                  ;#No metrics data exclude link
-                } else {
-              foreach l [ split [ getchart $jobid 1 "metrics" ] \n] {
-                if { [ string match "*text*:*$jobid*" $l  ] } {
-		#strip jobid from chart title only show CPU
-		regsub $jobid $l "" l
-                }
-                wapp-subst {%unsafe($l)\n}
-                }
-                }
-		}
-	common-footer
-	return
-	} else {
-        if { [ dict keys $paramdict ] eq "jobid index" } {
-          common-header
-          wapp-subst {<h3 class="title">Job:%html($jobid)</h3>}
-          wapp-trim {
-            <div class='hammerdb' data-title='Jobs Index'>
-          }
-          wapp-subst {<div><ol style='column-width: 20ex;'>\n}
-          set jobresult [ getjobresult $jobid 1 ]
-          if { [ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ] } {
-             ;#No result exclude summary
-	     } else {
-          set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&summary"
-          set text "summary"
-          wapp-subst {<li><a href='%html($url)'>%html($text)</a>\n}
-          }
-          set url "[wapp-param BASE_URL]/jobs?jobid=$jobid"
-          set text "output"
-          wapp-subst {<li><a href='%html($url)'>%html($text)</a>\n}
-          foreach option "bm db dict result status tcount system metrics timestamp timing delete" {
-            set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&$option"
-            switch $option {
-              bm {
-                wapp-subst {<li><a href='%html($url)'>%html(benchmark)</a>\n}
-              }
-              db {
-                wapp-subst {<li><a href='%html($url)'>%html(database)</a>\n}
-              }
-              dict {
-                wapp-subst {<li><a href='%html($url)'>%html(dict configuration)</a>\n}
-              }
-              result {
-                set jobresult [ getjobresult $jobid 1 ]
-                if { [ llength $jobresult ] eq 2 && [ string match [ lindex $jobresult 1 ] "Jobid has no test result" ] } {
-                  ;#No result exclude link
-                } else {
-                  wapp-subst {<li><a href='%html($url)'>%html($option)</a>\n}
-                }
-              }
-              tcount {
-                set jobtcount [ getjobtcount $jobid ]
-                if { [ llength $jobtcount ] eq 2 && [ string match [ lindex $jobtcount 1 ] "Jobid has no transaction counter data" ] } {
-                  ;#No result exclude link
-                } else {
-                  wapp-subst {<li><a href='%html($url)'>%html(transaction count)</a>\n}
-                }
-              }
-              system {
-                set jobsystem [ getjobsystem $jobid ]
-                if { [ llength $jobsystem ] eq 2 && [ string match [ lindex $jobsystem 1 ] "Jobid has no system data" ] } {
-                  ;#No result exclude link
-                } else {
-                wapp-subst {<li><a href='%html($url)'>%html(system)</a>\n}
-                }
-              }
-              metrics {
-                set jobmetrics [ getjobmetrics $jobid ]
-                if { [ llength $jobmetrics ] eq 2 && [ string match [ lindex $jobmetrics 1 ] "Jobid has no metric data" ] } {
-                  ;#No result exclude link
-                } else {
-                  wapp-subst {<li><a href='%html($url)'>%html(metrics)</a>\n}
-                }
-              }
-              timing {
-                set jobresult [ getjobresult $jobid 1 ]
-                set tproch 0
-                if { [ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
-                  #TPROC-H
-                  set tproch 1
-                  wapp-subst {<li><a href='%html($url)'>%html(timing data)</a>\n}
-                } else {
-                  #TPROC-C
-                  set jobtiming [ getjobtiming $jobid ]
-                  if { [ llength $jobtiming ] eq 2 && [ string match [ lindex $jobtiming 1 ] "Jobid has no timing data" ] } {
-                    ;#No result exclude link
-                  } else {
-                    wapp-subst {<li><a href='%html($url)'>%html(timing data)</a>\n}
-                  }
-                }
-              }
-              default {
-                wapp-subst {<li><a href='%html($url)'>%html($option)</a>\n}
-              }
+            set maxurl "$B/jobs?jobid=$maxjob&index"
+            wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td><input type="checkbox" name="diff_%html($profileid)" value="1"></td></tr>\n}
+        }
+
+        if {$profcount eq 0} {
+            wapp-subst {<tr><td colspan="8">No performance profiles found in database file %html([getdatabasefile])</td></tr>\n}
+        }
+        wapp-subst {</table>\n}
+        wapp-subst {<div style="margin-top:6px; text-align:right;"><button type="submit" style="padding:4px 10px;">Compare Profiles</button></div>}
+        wapp-subst {</div></form>\n}
+
+
+        # TPROC-H
+        wapp-subst {<h3 class="title">TPROC-H</h3>}
+        wapp-trim {<div class='hammerdb' data-title='TPROC-H'>}
+        wapp-subst {<table>\n}
+        wapp-subst {<th>Jobid</th><th>Database</th><th>Date</th><th>Workload</th><th>Geomean</th><th>Status</th>\n}
+        wapp-subst $tprochcombined
+        if {$tprochcombined eq {}} {
+            wapp-subst {<tr><td colspan="6">No TPROC-H jobs found in database file %html([getdatabasefile])</td></tr>\n}
+        }
+        wapp-subst {</table>\n}
+        # Benchmark Activity
+        wapp-subst {
+        <div style="margin:18px 0 20px 0; max-width:800px; border-radius:6px; background:#eef6ff; border:1px solid #d0d7de;">
+          <details id="workload-log-panel">
+            <summary style="cursor:pointer; padding:10px 14px; font-weight:600; color:#0a3d62; border-left:4px solid #0969da;">
+              Benchmark Activity
+            </summary>
+
+            <div style="padding:12px;">
+              <pre id="workload-log-box"
+                   style="margin:0;
+                          padding:12px;
+                          height:320px;
+                          overflow:auto;
+                          background:#eef6ff;
+                          color:#0a3d62;
+                          border:1px solid #d0d7de;
+                          border-radius:6px;
+                          font-family:monospace;
+                          font-size:13px;
+                          line-height:1.35;
+                          white-space:pre-wrap;">
+              </pre>
+            </div>
+
+          </details>
+        </div>
+        }
+
+        wapp-subst "<script>
+        (function () {
+
+          const panel = document.getElementById('workload-log-panel');
+          const box = document.getElementById('workload-log-box');
+
+          let timer = null;
+
+          async function refreshWorkloadLog() {
+            try {
+              const res = await fetch('/jobs?tailworkload=1', {cache:'no-store'});
+              const txt = await res.text();
+
+              box.textContent = txt;
+              box.scrollTop = box.scrollHeight;
+
+            } catch(e) {
+              box.textContent = 'Unable to load workload log';
             }
           }
-          wapp-subst {</ol></div>\n}
-          common-footer
-          return
+
+          panel.addEventListener('toggle', function () {
+
+            if (panel.open) {
+
+                refreshWorkloadLog();
+                timer = setInterval(refreshWorkloadLog, 3000);
+
+            } else {
+
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+
+            }
+
+          });
+
+        })();
+        </script>"
+        main-footer
+        return
+    }
+
+    if {[dict exists $paramdict cmd] && [dict get $paramdict cmd] eq "profilediff"} {
+        set difflist {}
+        foreach k [dict keys $paramdict] {
+            if {[string match "diff_*" $k]} {
+                set pid [string range $k 5 end]
+                if {[string is integer -strict $pid]} { lappend difflist $pid }
+            }
         }
-        }
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-        if { $query eq 0 } {
-          dict set jsondict error message "Jobid $jobid for virtual user $vuid does not exist"
-          wapp-2-json 2 $jsondict
-          return
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" } {
-            set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-            set huddleobj  [ huddle_escape_double [ huddle compile {list} $joboutput ]]
-            wapp-mimetype application/json
-            wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
-            return
-          }
-          if { [ dict keys $paramdict ] eq "jobid delete" } {
+        if {[llength $difflist] != 2} {
             common-header
-            wapp-trim {
-              <div class='hammerdb' data-title='Job Delete'>
-            }
-            wapp-subst {<div><ol style='column-width: 20ex;'>\n}
-            set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&DELETE"
-            set text "Confirm Delete Job $jobid"
-            wapp-subst {<li><a href='%html($url)'>%html($text)</a>\n}
-            wapp-subst {</ol></div>\n}
+            wapp-subst {<p style="color:#b00; font-weight:600;">Please select exactly 2 profiles to compare.</p>}
             common-footer
             return
-          }
-          if { [ dict keys $paramdict ] eq "jobid DELETE" } {
-            set date [ join [ hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$jobid} ]]
-            set current_time [ clock format [clock seconds] -format "%y-%m-%d %H:%M:%S"] 
-            set job_age_hrs [expr {([clock scan $current_time ] - [clock scan $date])/3600}]
-            set jobstatus [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0} ]
-            if { [ string match "*ALL VIRTUAL USERS COMPLETE*" $jobstatus ] || $job_age_hrs > 24 } {
-              set joboutput [ hdbjobs eval {DELETE FROM JOBMAIN WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-              set joboutput [ hdbjobs eval {DELETE FROM JOBCHART WHERE JOBID=$jobid} ]
-              dict set jsondict success message "Deleted Jobid $jobid"
-              global discardedjobs
-              unset -nocomplain discardedjobs
-              wapp-2-json 2 $jsondict
-            } else {
-              dict set jsondict error message "Cannot delete Jobid $jobid from $date did not complete and ran less than 24 hours ago"
-              wapp-2-json 2 $jsondict
+        }
+        set difflist [lsort -integer $difflist]
+        lassign $difflist a b
+        # first relative to second
+        set chart [jobs $b getchart diff:$a]
+        # reverse order
+        #set chart [jobs $a getchart diff:$b]
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        set d ""
+        foreach l [split $chart \n] {
+            if {[string match "*Compare summary*" $l]} {
+                set d "<div style=\"margin:10px 0 10px 60px; padding:8px 12px; background:transparent; color:inherit; border-left:4px solid #d0d7de; font-weight:600; max-width:900px;\">$l</div>"
+                continue
             }
-          } else {
-            if { [ dict keys $paramdict ] eq "jobid result" } {
-              wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-              wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-              foreach l [ split [ getchart $jobid $vuid "result" ] \n] {
-                if { [ string match [ string trim $l ] <body> ] } {
-                  set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>\n\t$d"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict jobid] && [dict exists $paramdict index]} {
+        set jobid [dict get $paramdict jobid]
+        if {![__job_exists $jobid]} {
+            dict set jsondict error message "Jobid $jobid does not exist"
+            wapp-2-json 2 $jsondict
+            return
+        }
+
+        common-header
+        wapp-subst "<h3 class='title'>Job:%html($jobid)</h3>\n"
+        wapp-trim {<div class='hammerdb' data-title='Jobs Index'>}
+        wapp-subst {<div><ol style='column-width: 20ex;'>\n}
+
+        # summary link
+        set jobresult [getjobresult $jobid 1]
+        if {![llength $jobresult] eq 2 || ![string match [lindex $jobresult 1] "Jobid has no test result"]} {
+            set url "$B/jobs?jobid=$jobid&summary"
+            wapp-subst "<li><a href='%html($url)'>%html(summary)</a></li>\n"
+        }
+
+        # output (human readable default)
+        set url "$B/jobs?jobid=$jobid"
+        wapp-subst "<li><a href='%html($url)'>%html(output)</a></li>\n"
+
+        foreach option "bm db dict result status tcount system metrics timestamp timing delete" {
+            set url "$B/jobs?jobid=$jobid&$option"
+            switch $option {
+                bm       { wapp-subst "<li><a href='%html($url)'>%html(benchmark)</a></li>\n" }
+                db       { wapp-subst "<li><a href='%html($url)'>%html(database)</a></li>\n" }
+                dict     { wapp-subst "<li><a href='%html($url)'>%html(dict configuration)</a></li>\n" }
+                result {
+                    set jr [getjobresult $jobid 1]
+                    if {![llength $jr] eq 2 || ![string match [lindex $jr 1] "Jobid has no test result"]} {
+                        wapp-subst "<li><a href='%html($url)'>%html(result)</a></li>\n"
+                    }
                 }
-                wapp-subst {%unsafe($l)\n}
-              }
-              set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&resultdata"
-              set text "Result Data"
-              wapp-subst {<a href='%html($url)'>%html($text)</a><br>\n}
-              common-footer
-              return
-            } else {
-              if { [ dict keys $paramdict ] eq "jobid timing" } {
-                wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-                wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-                foreach l [ split [ getchart $jobid $vuid "timing" ] \n] {
-                  if { [ string match [ string trim $l ] <body> ] } {
-                    set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
-                  }
-                  wapp-subst {%unsafe($l)\n}
+                tcount {
+                    set jt [getjobtcount $jobid]
+                    if {![llength $jt] eq 2 || ![string match [lindex $jt 1] "Jobid has no transaction counter data"]} {
+                        wapp-subst "<li><a href='%html($url)'>%html(transaction count)</a></li>\n"
+                    }
                 }
-                set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&timingdata"
-                set text "Timing Data"
-                wapp-subst {<a href='%html($url)'>%html($text)</a><br>\n}
-                common-footer
-                return
-              } else {
-                if { [ dict keys $paramdict ] eq "jobid timestamp" } {
-                  set joboutput [ hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobid} ]
-                  wapp-2-json 2 $joboutput
-                  return
-                } else {
-                  if { [ dict keys $paramdict ] eq "jobid dict" } {
-                    set joboutput [ join [ hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                    wapp-2-json 2 $joboutput
-                    return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid tcount" } {
-                      wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-                      wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-                      foreach l [ split [ getchart $jobid $vuid "tcount" ] \n] {
-                        if { [ string match [ string trim $l ] <body> ] } {
-                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
-                        }
-                        wapp-subst {%unsafe($l)\n}
-                      }
-                      set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&tcountdata"
-                      set text "Transaction Count Data"
-                      wapp-subst {<a href='%html($url)'>%html($text)</a><br>\n}
-                      common-footer
-                      return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid metrics" } {
-                      wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-                      wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
-                      foreach l [ split [ getchart $jobid $vuid "metrics" ] \n] {
-                        if { [ string match [ string trim $l ] <body> ] } {
-                          set l "\t<body>\n\t<p><img src='[wapp-param BASE_URL]/logo.png' width='347' height='60'></p>"
-                        }
-                        wapp-subst {%unsafe($l)\n}
-                      }
-                      set url "[wapp-param BASE_URL]/jobs?jobid=$jobid&metricsdata"
-                      set text "Metrics Data"
-                      wapp-subst {<a href='%html($url)'>%html($text)</a><br>\n}
-                      common-footer
-                      return
+                system {
+                    set js [getjobsystem $jobid]
+                    if {![llength $js] eq 2 || ![string match [lindex $js 1] "Jobid has no system data"]} {
+                        wapp-subst "<li><a href='%html($url)'>%html(system)</a></li>\n"
+                    }
+                }
+                metrics {
+                    set jm [getjobmetrics $jobid]
+                    if {![llength $jm] eq 2 || ![string match [lindex $jm 1] "Jobid has no metric data"]} {
+                        wapp-subst "<li><a href='%html($url)'>%html(metrics)</a></li>\n"
+                    }
+                }
+                timing {
+                    set jr [getjobresult $jobid 1]
+                    if {[string match "Geometric*" [lindex $jr 2]]} {
+                        wapp-subst "<li><a href='%html($url)'>%html(response times)</a></li>\n"
                     } else {
-                      if { [ dict keys $paramdict ] eq "jobid resultdata" } {
-                        set joboutput [ getjobresult $jobid $vuid ]
-                      } else {
-                        if { [ dict keys $paramdict ] eq "jobid timingdata" } {
-                          set jobresult [ getjobresult $jobid 1 ]
-                          if { [ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
-                            #TPROC-H
-                            set jobtiming [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]
-                            set huddleobj  [ huddle_escape_double [ huddle compile {list} $jobtiming ]]
-                            wapp-mimetype application/json
-                            wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
-                          } else {
-                            set jobtiming [ getjobtiming $jobid ]
-                            wapp-2-json 2 $jobtiming
-                          }
-                          return
-                        } else {
-                          if { [ dict keys $paramdict ] eq "jobid tcountdata" } {
-                            set jsondict [ getjobtcount $jobid ]
-                            wapp-2-json 2 $jsondict
-                            return
-                        } else {
-                          if { [ dict keys $paramdict ] eq "jobid metricsdata" } {
-                            set jsondict [ getjobmetrics $jobid ]
-                            wapp-2-json 2 $jsondict
-                            return
-                          } else {
-                            if { [ dict keys $paramdict ] eq "jobid db" } {
-                            #A Timed run will include a query for a version string, add the version if we find it
-		            set temp_output [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]]
-		            if { [ string match "*DBVersion*" $temp_output ] } {
-        		    set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version ]
-			    if { $matcheddbversion } {
-                            set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]] $version"
-			    } else {
-                            set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-			    }
-			    } else {
-                            set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-				}
-                            } else {
-                              if { [ dict keys $paramdict ] eq "jobid bm" } {
-                                set joboutput [ join [ hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                            } else {
-                              if { [ dict keys $paramdict ] eq "jobid system" } {
-				set joboutput [ list "No system data available" ]
-                                hdbjobs eval {SELECT hostname,cpucount,cpumodel,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra FROM JOBSYSTEM WHERE JOBID=$jobid} {
-				set joboutput [ list $hostname $cpucount $cpumodel $system_vendor $system_type $os_name $memory $nic $storage $cloud_instance $other_software $extra ]
-				}
-                              } else {
-                                set joboutput [ list $jobid "Cannot find Jobid output" ]
-                              }
-            }}}}}}}}}}}}
-            set huddleobj  [ huddle_escape_double [ huddle compile {list} $joboutput ]]
+                        set jt [getjobtiming $jobid]
+                        if {![llength $jt] eq 2 || ![string match [lindex $jt 1] "Jobid has no timing data"]} {
+                            wapp-subst "<li><a href='%html($url)'>%html(response times)</a></li>\n"
+                        }
+                    }
+                }
+                default { wapp-subst "<li><a href='%html($url)'>%html($option)</a></li>\n" }
+            }
+        }
+
+        wapp-subst {</ol></div>\n}
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict jobid] && [dict exists $paramdict summary]} {
+        set jobid [dict get $paramdict jobid]
+        summary-header $jobid
+
+        set jobresult [getjobresult $jobid 1]
+        set db [join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]
+        set bm [string map {TPC TPROC} [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid}]]]
+
+        if {$bm eq "TPROC-C"} {
+            if {[llength $jobresult] eq 2 && [string match [lindex $jobresult 1] "Jobid has no test result"]} { return }
+            lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
+            set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
+
+            wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
+            wapp-trim {<div class='hammerdb' data-title='Jobs Summary'>}
+
+            wapp-subst {<table style="font-size: 150%;">\n}
+            wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>NOPM</th><th>TPM</th><th>Active VU</th>\n}
+            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($nopm)</td><td>%html($tpm)</td><td>%html($avu)</td></tr>\n}
+            wapp-subst {</table>\n}
+
+            wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+            foreach l [split [getchart $jobid 1 "result"] \n] { wapp-subst {%unsafe($l)\n} }
+
+            set jobtcount [getjobtcount $jobid]
+            if {![llength $jobtcount] eq 2 || ![string match [lindex $jobtcount 1] "Jobid has no transaction counter data"]} {
+                foreach l [split [getchart $jobid 1 "tcount"] \n] { wapp-subst {%unsafe($l)\n} }
+            }
+
+            set jobtiming [getjobtiming $jobid]
+            if {![llength $jobtiming] eq 2 || ![string match [lindex $jobtiming 1] "Jobid has no timing data"]} {
+                foreach l [split [getchart $jobid 1 "timing"] \n] { wapp-subst {%unsafe($l)\n} }
+            }
+
+            set jobmetrics [getjobmetrics $jobid]
+            if {![llength $jobmetrics] eq 2 || ![string match [lindex $jobmetrics 1] "Jobid has no metric data"]} {
+                foreach l [split [getchart $jobid 1 "metrics"] \n] { wapp-subst {%unsafe($l)\n} }
+            }
+        } else {
+            if {[llength $jobresult] eq 2 && [string match [lindex $jobresult 1] "Jobid has no test result"]} { return }
+            set ctind 0
+            foreach ct {jobid tstamp geomean queryset} {
+                set $ct [lindex $jobresult $ctind]
+                incr ctind
+            }
+            set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
+            set geo [format "%.2f" [lindex $numbers 1]]
+            regsub -all "Completed " $queryset "" queryset
+            regsub -all "query set" $queryset "qset" queryset
+            regsub -all "seconds" $queryset "secs" queryset
+
+            wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
+            wapp-trim {<div class='hammerdb' data-title='Jobs Summary'>}
+
+            wapp-subst {<table style="font-size: 150%;">\n}
+            wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>Geomean</th><th>Query Time</th>\n}
+            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($geo)</td><td>%html($queryset)</td></tr>\n}
+            wapp-subst {</table>\n}
+
+            wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+            foreach l [split [getchart $jobid 1 "result"] \n] { wapp-subst {%unsafe($l)\n} }
+
+            if {[string match "Geometric*" [lindex $jobresult 2]]} {
+                foreach l [split [getchart $jobid 1 "timing"] \n] { wapp-subst {%unsafe($l)\n} }
+            }
+
+            set jobmetrics [getjobmetrics $jobid]
+            if {![llength $jobmetrics] eq 2 || ![string match [lindex $jobmetrics 1] "Jobid has no metric data"]} {
+                foreach l [split [getchart $jobid 1 "metrics"] \n] { wapp-subst {%unsafe($l)\n} }
+            }
+        }
+
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict profileid] && ![dict exists $paramdict jobid]} {
+        set profileid [dict get $paramdict profileid]
+
+        if {[dict exists $paramdict profiledata]} {
+            # profiledata is JSON
+            set huddleobj [huddle_escape_double [get_job_profile $profileid]]
             wapp-mimetype application/json
             wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
-          }
+            return
         }
-      } else {
-        dict set jsondict error message "Jobs Two Parameter Usage: jobs?jobid=TEXT&index jobs?jobid=TEXT&summary jobs?jobid=TEXT&status or jobs?jobid=TEXT&db or jobs?jobid=TEXT&bm or jobs?jobid=TEXT&system or jobs?jobid=TEXT&timestamp or jobs?jobid=TEXT&dict or jobs?jobid=TEXT&vu=INTEGER or jobs?jobid=TEXT&result or jobs?jobid=TEXT&timing or jobs?jobid=TEXT&delete jobs?profileid=INTEGER&profiledata" 
+
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        foreach l [split [getchart $profileid 0 "profile"] \n] {
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        set url "$B/jobs?profileid=$profileid&profiledata"
+        wapp-subst "<a href='%html($url)'>%html(Profile Data)</a><br>\n"
+        common-footer
+        return
+    }
+
+    if {![dict exists $paramdict jobid]} {
+        dict set jsondict error message "Usage: /jobs or jobs?jobid=JOBID or jobs?profileid=ID"
         wapp-2-json 2 $jsondict
         return
-      }
     }
-  }
+
+    set jobid [dict get $paramdict jobid]
+    if {![__job_exists $jobid]} {
+        dict set jsondict error message "Jobid $jobid does not exist"
+        wapp-2-json 2 $jsondict
+        return
+    }
+
+if {$rawmode} {
+
+    # JSON escape
+    proc __json_escape {s} {
+        set s [__norm_pre $s]
+        set s [string map {\\ \\\\ \" \\\" \n \\n \t \\t} $s]
+        return $s
+    }
+
+    # section
+    set section "output"
+    foreach s {bm db dict status system timestamp} {
+        if {[dict exists $paramdict $s]} { set section $s; break }
+    }
+
+    # OUTPUT as-is
+    if {$section eq "output"} {
+        set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
+        set huddleobj [huddle_escape_double [huddle compile {list} $joboutput]]
+        wapp-mimetype application/json
+        wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
+        return
+    }
+
+    # Otherwise: fetch raw value for the requested section
+    set v ""
+    switch $section {
+        bm {
+            set v [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid}]]
+            set v [string map {TPC TPROC} $v]
+        }
+        db {
+            set v [join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]
+        }
+        dict {
+            set v [join [hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid}]]
+        }
+        status {
+            set v [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]]
+        }
+       system {
+       set v "No system data available"
+       hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+           set lines {}
+           foreach col $row(*) {
+               if {$col eq "*"} continue
+               set val $row($col)
+               if {$val eq ""} continue
+               lappend lines "$col: $val"
+           }
+           if {[llength $lines] > 0} {
+               set v [join $lines "\n"]
+           }
+        }
+      } 
+        timestamp {
+            set v [join [hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$jobid}]]
+        }
+        default {
+            set v ""
+        }
+    }
+
+    # Emit strict JSON with string values (no dict auto-detection)
+    set j_jobid   [__json_escape $jobid]
+    set j_section [__json_escape $section]
+    set j_value   [__json_escape $v]
+
+    set json "{\"jobid\":\"$j_jobid\",\"section\":\"$j_section\",\"value\":\"$j_value\"}"
+
+    wapp-mimetype application/json
+    wapp-trim $json
+    return
+}
+
+
+    # Default (jobid only): show the same content as Raw JSON but human-readable
+    # grouped by VU
+    if {[llength [dict keys $paramdict]] eq 1} {
+        common-header
+        wapp-subst "<h3 class='title'>Job:%html($jobid)</h3>\n"
+        set back "$B/jobs?jobid=$jobid&index"
+        set raw  "$B/jobs?jobid=$jobid&raw=1"
+        wapp-subst "<p><a href='%html($back)'>Back</a> | <a href='%html($raw)'>Raw</a></p>\n"
+
+        # same rows as raw JSON
+        set rows [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
+        if {[llength $rows] < 2} {
+            wapp-subst "<h4>Output</h4>\n"
+            __pre_block "(empty)"
+            common-footer
+            return
+        }
+
+        # group by VU
+        set vudict [dict create]
+        for {set i 0} {$i < [llength $rows]} {incr i 2} {
+            set vu  [lindex $rows $i]
+            set out [lindex $rows [expr {$i+1}]]
+            dict lappend vudict $vu $out
+        }
+
+        wapp-subst "<h4>Output</h4>\n"
+
+        # numeric VU order
+        set vu_keys [lsort -integer [dict keys $vudict]]
+        foreach vu $vu_keys {
+            set outlist [dict get $vudict $vu]
+            set text [join $outlist "\n"]
+            if {$vu == 0} {
+                set text [__fmt_job_output $text]
+            } else {
+                set text [__norm_pre $text]
+            }
+            wapp-subst "<h5>VU %html($vu)</h5>\n"
+            __pre_block $text
+        }
+
+        common-footer
+        return
+    }
+
+    # vu=N readable output
+    if {[dict exists $paramdict vu]} {
+        set vuid [dict get $paramdict vu]
+        if {![string is integer -strict $vuid]} {
+            dict set jsondict error message "Usage: jobs?jobid=JOBID&vu=INTEGER"
+            wapp-2-json 2 $jsondict
+            return
+        }
+        common-header
+        wapp-subst "<h3 class='title'>Job:%html($jobid)</h3>\n"
+        set back "$B/jobs?jobid=$jobid&index"
+        set raw  "$B/jobs?jobid=$jobid&raw=1"
+        wapp-subst "<p><a href='%html($back)'>Back</a> | <a href='%html($raw)'>Raw</a></p>\n"
+        set out [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]]
+        if {$vuid == 0} { set out [__fmt_job_output $out] } else { set out [__norm_pre $out] }
+        wapp-subst "<h4>Output (VU %html($vuid))</h4>\n"
+        __pre_block $out
+        common-footer
+        return
+    }
+
+    # readable fields
+    # keep Raw JSON link
+    set keys [dict keys $paramdict]
+
+    # delete stays JSON
+    if {[dict exists $paramdict delete]} {
+        common-header
+        wapp-trim {<div class='hammerdb' data-title='Job Delete'>}
+        wapp-subst {<div><ol style='column-width: 20ex;'>\n}
+        set url "$B/jobs?jobid=$jobid&DELETE"
+        wapp-subst "<li><a href='%html($url)'>%html(Confirm Delete Job $jobid)</a></li>\n"
+        wapp-subst {</ol></div>\n}
+        common-footer
+        return
+    }
+    if {[dict exists $paramdict DELETE]} {
+        set date [join [hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$jobid}]]
+        set current_time [clock format [clock seconds] -format "%y-%m-%d %H:%M:%S"]
+        set job_age_hrs [expr {([clock scan $current_time] - [clock scan $date]) / 3600}]
+        set jobstatus [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]
+        if {[string match "*ALL VIRTUAL USERS COMPLETE*" $jobstatus] || $job_age_hrs > 24} {
+            hdbjobs eval {DELETE FROM JOBMAIN   WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBCHART  WHERE JOBID=$jobid}
+            dict set jsondict success message "Deleted Jobid $jobid"
+            global discardedjobs
+            unset -nocomplain discardedjobs
+            wapp-2-json 2 $jsondict
+        } else {
+            dict set jsondict error message "Cannot delete Jobid $jobid from $date did not complete and ran less than 24 hours ago"
+            wapp-2-json 2 $jsondict
+        }
+        return
+    }
+
+    # render readable fields
+    foreach {k label} {
+        bm        "Benchmark"
+        db        "Database"
+        dict      "Dict configuration"
+        status    "Status"
+        system    "System"
+        timestamp "Timestamp"
+    } {
+        if {[dict exists $paramdict $k]} {
+            common-header
+            wapp-subst "<h3 class='title'>Job:%html($jobid)</h3>\n"
+            set back "$B/jobs?jobid=$jobid&index"
+            set raw  "$B/jobs?jobid=$jobid&$k&raw=1"
+            wapp-subst "<p><a href='%html($back)'>Back</a> | <a href='%html($raw)'>Raw</a></p>\n"
+            wapp-subst "<h4>%html($label)</h4>\n"
+
+            switch $k {
+                bm {
+                    set v [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid}]]
+                    set v [string map {TPC TPROC} $v]
+                    __pre_block $v
+                }
+                db {
+                    set temp_output [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1}]]
+                    set dbv [join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]
+
+                    if {[string match "*DBVersion*" $temp_output]} {
+                        set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version]
+                        if {$matcheddbversion} { set dbv "$dbv ($version)" }
+                    }
+                    __pre_block $dbv
+                }
+                dict {
+                     set v [join [hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid}]]
+                     set v [__norm_pre $v]
+                     if {[info commands is-dict] ne ""} {
+                         if {[is-dict $v]} { set v [pretty_tcl_dict $v] }
+                     } else {
+                         if {![catch {dict size $v}]} { set v [pretty_tcl_dict $v] }
+                     }
+                     __pre_block $v
+                }
+                status {
+                    set v [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]]
+                        # break before User/Vuser
+                        regsub -all { ?(User [0-9]+:)}  $v "\n\\1" v
+                        regsub -all { ?(Vuser [0-9]+:)} $v "\n\\1" v
+                        regsub -all { ?(ALL VIRTUAL USERS COMPLETE)} $v "\n\\1" v
+                        set v [string trim $v]
+                    __pre_block $v
+                }
+		            system {
+                    set v "No system data available"
+                    hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+                        set lines {}
+                        foreach col $row(*) {
+                            if {$col eq "*"} continue
+                            set val $row($col)
+                            if {$val eq ""} continue
+                            lappend lines "$col: $val"
+                        }
+                        if {[llength $lines] > 0} {
+                            set v [join $lines "\n"]
+                        }
+                    }
+                    __pre_block $v
+                }
+                timestamp {
+                    set ts [join [hdbjobs eval {SELECT timestamp FROM JOBMAIN WHERE JOBID=$jobid}]]
+                    __pre_block $ts
+                }
+            }
+
+            common-footer
+            return
+        }
+    }
+
+    # existing chart/data endpoints
+    # result/tcount/metrics/timing unchanged
+    if {[dict exists $paramdict result]} {
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        foreach l [split [getchart $jobid 1 "result"] \n] {
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        set url "$B/jobs?jobid=$jobid&resultdata"
+        wapp-subst "<a href='%html($url)'>%html(Result Data)</a><br>\n"
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict timing]} {
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        foreach l [split [getchart $jobid 1 "timing"] \n] {
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        set url "$B/jobs?jobid=$jobid&timingdata"
+        wapp-subst "<a href='%html($url)'>%html(Timing Data)</a><br>\n"
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict tcount]} {
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        foreach l [split [getchart $jobid 1 "tcount"] \n] {
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        set url "$B/jobs?jobid=$jobid&tcountdata"
+        wapp-subst "<a href='%html($url)'>%html(Transaction Count Data)</a><br>\n"
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict metrics]} {
+        wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
+        wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
+        foreach l [split [getchart $jobid 1 "metrics"] \n] {
+            if {[string equal [string trim $l] "<body>"]} {
+                set l "\t<body>\n\t<p><img src='$B/logo.png' width='55' height='60'></p>"
+            }
+            wapp-subst {%unsafe($l)\n}
+        }
+        set url "$B/jobs?jobid=$jobid&metricsdata"
+        wapp-subst "<a href='%html($url)'>%html(Metrics Data)</a><br>\n"
+        common-footer
+        return
+    }
+
+    if {[dict exists $paramdict resultdata]} {
+        set joboutput [getjobresult $jobid 1]
+        wapp-2-json 2 $joboutput
+        return
+    }
+
+    if {[dict exists $paramdict timingdata]} {
+        set jobresult [getjobresult $jobid 1]
+        if {[string match "Geometric*" [lindex $jobresult 2]]} {
+            set jobtiming [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1}]
+            set huddleobj [huddle_escape_double [huddle compile {list} $jobtiming]]
+            wapp-mimetype application/json
+            wapp-trim { %unsafe([huddle jsondump $huddleobj]) }
+        } else {
+            set jobtiming [getjobtiming $jobid]
+            wapp-2-json 2 $jobtiming
+        }
+        return
+    }
+
+    if {[dict exists $paramdict tcountdata]} {
+        set jsondict [getjobtcount $jobid]
+        wapp-2-json 2 $jsondict
+        return
+    }
+
+    if {[dict exists $paramdict metricsdata]} {
+        set jsondict [getjobmetrics $jobid]
+        wapp-2-json 2 $jsondict
+        return
+    }
+
+    # 3-param timing JSON
+    if {[dict exists $paramdict timing] && [dict exists $paramdict vu] && [dict exists $paramdict jobid]} {
+        # else JSON fallback
+        dict set jsondict error message "Usage: jobs?jobid=JOBID&timing or jobs?jobid=JOBID&vu=VUID"
+        wapp-2-json 2 $jsondict
+        return
+    }
+
+    # usage
+    dict set jsondict error message "Usage: /jobs | jobs?jobid=JOBID | jobs?jobid=JOBID&index | jobs?jobid=JOBID&summary | jobs?jobid=JOBID&bm|db|dict|status|system|timestamp | add &raw=1 for JSON"
+    wapp-2-json 2 $jsondict
+    return
+}
 
   proc getdatabasefile {} {
     set dbfile [ join [ hdbjobs eval {select file from pragma_database_list where name='main'} ] ]
@@ -1735,26 +2464,23 @@ namespace eval jobs {
     return $jobmetric
   }
 
-  proc getjobsystem { jobid } {
-    set jobsystem [ dict create ]
-	hdbjobs eval {select hostname,cpumodel,cpucount,system_vendor,system_type,os_name,memory,nic,storage,cloud_instance,other_software,extra FROM JOBSYSTEM WHERE JOBID=$jobid} {
-        dict set jobsystem hostname $hostname
-        dict set jobsystem cpumodel $cpumodel
-        dict set jobsystem cpucount $cpucount
-        dict set jobsystem system_vendor $system_vendor
-        dict set jobsystem system_type $system_type
-        dict set jobsystem os_name $os_name
-        dict set jobsystem memory $memory
-        dict set jobsystem nic $nic
-        dict set jobsystem storage $storage
-        dict set jobsystem cloud_instance $cloud_instance
-        dict set jobsystem other_software $other_software
-        dict set jobsystem extra $extra
-	}
-    if { $jobsystem eq "" } {
-      set jobsystem [ list $jobid "Jobid has no system data" ]
-    }
-    return $jobsystem
+   proc getjobsystem { jobid } {
+   set jobsystem [dict create]
+
+   hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+      foreach col $row(*) {
+         if {$col eq "*"} continue
+         set val $row($col)
+         if {$val eq ""} continue
+         dict append jobsystem $col $val
+      }
+   }
+
+   if {[dict size $jobsystem] == 0} {
+      return [dict create jobid $jobid message "Jobid has no system data"]
+   }
+
+   return $jobsystem
   }
 
   proc getnopmtpm { jobresult } {
@@ -1853,7 +2579,7 @@ namespace eval jobs {
 	Oracle { color1 "#D00000" color2 "#ff6868" } MySQL {color1 "#FF7900" color2 "#ffbc80" } ]
     set color1 "#808080"
     set color2 "#bfbfbf"
-    switch $chart {
+    switch -glob $chart {
       "result" {
         set chartdata [ getjobresult $jobid $vuid ]
         if { [ llength $chartdata ] eq 2 && [ string match [ lindex $chartdata 1 ] "Jobid has no test result" ] } {
@@ -1881,7 +2607,7 @@ namespace eval jobs {
               set $ct [ lindex $chartdata  $ctind ] 
               incr ctind
             }
-            #geomean and queryset may have mutliple entries
+            #geomean and queryset may have multiple entries
             #puts "RESULT OF FOREACH IS jobid:$jobid\n tstamp:$tstamp\n geomean:$geomean\n queryset:$queryset\n"
             set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
             set qsettimes [regexp -all -inline -- {[0-9]+} $queryset]
@@ -2182,335 +2908,629 @@ namespace eval jobs {
           }
          return $html
       }
+         diff:* {
+             # chart = "diff:<other_profileid>"
+             set parts [split $chart ":"]
+             if {[llength $parts] != 2} {
+                 set html "Error: chart type diff should be diff:profileid"
+                 return
+             }
+
+             # first profile id is the base/reference profile from jobid
+             set base_pid $jobid
+             # second profile id is the compared profile from diff:PROFILEID
+             set comp_pid [lindex $parts 1]
+             # retain legacy names for existing code below
+             set profileid1 $base_pid
+             set profileid2 $comp_pid
+
+             # --- get profile1 series (same as 'profile' block logic) ---
+             set lineseries1_1 [list]
+             set lineseries2_1 [list]
+             set xaxisvals1    [list]
+             set profiles1 [get_job_profile $profileid1]
+             if {$profiles1 eq {}} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+             set profdict1 [huddle get_stripped $profiles1]
+             dict for {job profiledata} $profdict1 {
+                 set dbdescription1 [dict get $profiledata db]
+                 set timestamp1     [dict get $profiledata tstamp]
+                 dict for {k v} $profiledata {
+                     switch $k {
+                         "nopm"     { lappend lineseries1_1 $v }
+                         "tpm"      { lappend lineseries2_1 $v }
+                         "activevu" { lappend xaxisvals1    $v }
+                         default    { ; }
+                     }
+                 }
+             }
+             if {[llength $xaxisvals1] < 2} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+             # --- get profile2 series ---
+             set lineseries1_2 [list]
+             set lineseries2_2 [list]
+             set xaxisvals2    [list]
+             set profiles2 [get_job_profile $profileid2]
+             if {$profiles2 eq {}} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+             set profdict2 [huddle get_stripped $profiles2]
+             dict for {job profiledata} $profdict2 {
+                 set dbdescription2 [dict get $profiledata db]
+                 set timestamp2     [dict get $profiledata tstamp]
+                 dict for {k v} $profiledata {
+                     switch $k {
+                         "nopm"     { lappend lineseries1_2 $v }
+                         "tpm"      { lappend lineseries2_2 $v }
+                         "activevu" { lappend xaxisvals2    $v }
+                         default    { ; }
+                     }
+                 }
+             }
+             if {[llength $xaxisvals2] < 2} {
+                 set html "Error: Not enough data for performance profile chart type"
+                 return
+             }
+
+              # ---- align Active VU sets (intersection) ----
+              
+              # Build maps for profile1
+              set map_nopm1 [dict create]
+              set map_tpm1  [dict create]
+              for {set i 0} {$i < [llength $xaxisvals1]} {incr i} {
+                  dict set map_nopm1 [lindex $xaxisvals1 $i] [lindex $lineseries1_1 $i]
+                  dict set map_tpm1  [lindex $xaxisvals1 $i] [lindex $lineseries2_1 $i]
+              }
+              
+              # Build maps for profile2
+              set map_nopm2 [dict create]
+              set map_tpm2  [dict create]
+              for {set i 0} {$i < [llength $xaxisvals2]} {incr i} {
+                  dict set map_nopm2 [lindex $xaxisvals2 $i] [lindex $lineseries1_2 $i]
+                  dict set map_tpm2  [lindex $xaxisvals2 $i] [lindex $lineseries2_2 $i]
+              }
+              
+              # Intersection in profile1 order
+              set xaxisvals [list]
+              set lineseries1_1_f [list]; set lineseries2_1_f [list]
+              set lineseries1_2_f [list]; set lineseries2_2_f [list]
+              
+              foreach av $xaxisvals1 {
+                  if {[dict exists $map_nopm2 $av]} {
+                      lappend xaxisvals $av
+                      lappend lineseries1_1_f [dict get $map_nopm1 $av]
+                      lappend lineseries2_1_f [dict get $map_tpm1  $av]
+                      lappend lineseries1_2_f [dict get $map_nopm2 $av]
+                      lappend lineseries2_2_f [dict get $map_tpm2  $av]
+                  }
+              }
+              
+              # Replace originals with filtered series
+              set lineseries1_1 $lineseries1_1_f
+              set lineseries2_1 $lineseries2_1_f
+              set lineseries1_2 $lineseries1_2_f
+              set lineseries2_2 $lineseries2_2_f
+              
+              if {[llength $xaxisvals] < 2} {
+                  set html "Error: Not enough overlapping Active VU points to compare"
+                  return
+              }
+
+             # use dbdescription from profile1 (should match profile2)
+             set dbdescription $dbdescription1
+
+             # colours based on DB
+             foreach colour {color1 color2} {set $colour [dict get $chartcolors $dbdescription $colour]}
+
+             # --- Build combined diff chart ---
+             set line [ticklecharts::chart new]
+             set ::ticklecharts::htmlstdout "True"
+
+        set pdesc1 ""
+        set pdesc2 ""
+        catch {upvar #0 profile_dbdesc profile_dbdesc}
+
+        if {[info exists profile_dbdesc]} {
+            if {[dict exists $profile_dbdesc $profileid1]} {
+                set pdesc1 [dict get $profile_dbdesc $profileid1]
+            }
+            if {[dict exists $profile_dbdesc $profileid2]} {
+                set pdesc2 [dict get $profile_dbdesc $profileid2]
+            }
+        }
+
+        $line SetOptions \
+            -title  [subst {text "Performance Profile Compare $comp_pid $pdesc2 relative to $base_pid $pdesc1"}] \
+            -tooltip {show "True"} \
+            -legend  {bottom "5%" left "40%"}
+
+             $line Xaxis -name "Active VU" -data [list $xaxisvals] -axisLabel [list show "True"]
+             $line Yaxis -name "Transactions" -position "left" -axisLabel {formatter {"{value}"}}
+
+             # profile1: solid
+             $line Add "lineSeries" -name "NOPM $profileid1" -data [list $lineseries1_1] \
+                 -itemStyle [subst {color $color1 opacity 0.90}]
+             $line Add "lineSeries" -name "TPM $profileid1" -data [list $lineseries2_1] \
+                 -itemStyle [subst {color $color2 opacity 0.90}]
+
+             # profile2: dashed
+             $line Add "lineSeries" -name "NOPM $profileid2" -data [list $lineseries1_2] \
+                 -itemStyle [subst {color $color1 opacity 0.60}] \
+                 -lineStyle {type "dashed"}
+             $line Add "lineSeries" -name "TPM $profileid2" -data [list $lineseries2_2] \
+                 -itemStyle [subst {color $color2 opacity 0.60}] \
+                 -lineStyle {type "dashed"}
+
+             # --- Numeric summary using jobs_profile_diff (comp relative to base) ---
+             set ratio [jobs_profile_diff $profileid1 $profileid2 true]
+             set summary ""
+             if {$ratio ne ""} {
+                 regsub {%$} $ratio "" cleanRatio
+                 catch { set r [expr {double($cleanRatio)}] }
+                 if {[info exists r]} {
+
+                     # threshold (ratio) from cidict, default 0.025
+		     upvar #0 cidict cidict
+                     if {![info exists cidict]} {
+                     set cidict [ SQLite2Dict "ci" ]
+			}
+                     set threshold_value 0.025
+                         if {[dict exists $cidict common diff_threshold]} {
+                             set threshold_value [dict get $cidict common diff_threshold]
+                         } 
+                     if {![string is double -strict $threshold_value] || $threshold_value < 0.0} {
+                         set threshold_value 0.025
+                     }
+
+                     if {$r < (0.0 - $threshold_value)} {
+                         set status "FAIL"
+                     } else {
+                         set status "PASS"
+                     }
+
+                     # ratio with sign (no %)
+                     set delta [format "%+.2f" $r]
+                     set summary "Compare summary: $comp_pid relative to $base_pid: Δ = $delta $status (threshold $threshold_value)"
+                 } else {
+                     set summary "Compare summary: $comp_pid relative to $base_pid: $cleanRatio"
+                 }
+             }
+             set html [$line toHTML -title "Performance Profile Compare $comp_pid to $base_pid"]
+
+             # Neutralise the green "success" wrapper emitted by toHTML (first <div ...>)
+             if {[regexp {^<div([^>]*)>} $html -> attrs]} {
+                 if {[regexp {style="([^"]*)"} $attrs -> st]} {
+                     # prepend overrides to existing style
+                     set newst "background-color: transparent !important; border-left: 0 !important; $st"
+                     set newattrs [regsub {style="[^"]*"} $attrs "style=\"$newst\""]
+                 } else {
+                     # add a style attribute if none exists
+                     set newattrs "$attrs style=\"background-color: transparent !important; border-left: 0 !important;\""
+                 }
+                 regsub {^<div[^>]*>} $html "<div$newattrs>" html
+             }
+
+             if {$summary ne ""} {
+                 if {[info exists status] && $status eq "FAIL"} {
+                     set bannerStyle "font-family:sans-serif; margin-bottom:0.5em; padding:10px; font-weight:bold; background-color:#fdecea; color:#b00020; border-left:6px solid #e74c3c;"
+                 } else {
+                     set bannerStyle "font-family:sans-serif; margin-bottom:0.5em; padding:10px; font-weight:bold; background-color:#e6f4ea; color:#1e7e34; border-left:6px solid #2ecc71;"
+                 }
+                 set html "<div style=\"$bannerStyle\">$summary</div>\n$html"
+             }
+             return $html
+       }
+
       default {
-        set html "Error: chart type should be metrics, profile, result, tcount or timing"
+        set html "Error: chart type should be metrics, profile, result, tcount, timing, diff:pid1:pid2"
         return
       }
     }
   }
 
-  proc getjob { query } {
+proc getjob { query } {
     global bm
     upvar #0 genericdict genericdict
+
+    # Output format (HammerDB uses "JSON" in places, keep both cases tolerant)
     if {[dict exists $genericdict commandline jobsoutput]} {
-      set outputformat [ dict get $genericdict commandline jobsoutput ]
+        set outputformat [dict get $genericdict commandline jobsoutput]
     } else {
-      set outputformat "text"
+        set outputformat "text"
     }
 
-    set params [ split $query & ]
-    set paramlen [ llength $params ]
-    if { $paramlen eq 0 } {
-      set joboutput [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-      set huddleobj [ huddle compile {list} $joboutput ]
-      if { $outputformat eq "JSON" } {
-        puts [ huddle jsondump $huddleobj ]
-      } else {
-        puts [ join $joboutput "\n" ]
-      }
-      return
-    } else {
-      if { $paramlen >= 1 && $paramlen <= 3 } {
-        foreach a $params {
-          lassign [split $a =] key value
-          dict append paramdict $key $value
+    # parse query string
+    set params   [split $query &]
+    set paramlen [llength $params]
+
+    # 0 params
+    if {$paramlen == 0} {
+        set joboutput [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+        set huddleobj [huddle compile {list} $joboutput]
+        if {[string equal -nocase $outputformat "JSON"]} {
+            puts [huddle jsondump $huddleobj]
+        } else {
+            puts [join $joboutput "\n"]
         }
-      } else {
+        return
+    }
+
+    if {$paramlen < 1 || $paramlen > 3} {
         puts "Error: Usage: \[ jobs | jobs format | jobs jobid | jobs jobid command | jobs jobid command option | jobs profileid | jobs profileid id\] - type \"help jobs\""
         return
-      }
-      if { $paramlen eq 3 } {
-        if { [ dict keys $paramdict ] != "jobid timing vu" && [ dict keys $paramdict ] != "jobid getchart chart" } {
-          puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid getchart chart \]"
-          return
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid timing vu" } {
-            set jobid [ dict get $paramdict jobid ]
-            set vuid [ dict get $paramdict vu ]
-            if [ string is entier $vuid ] {
-              unset -nocomplain jobtiming
-              set jobtiming [ dict create ]
-              hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and VU=$vuid and SUMMARY=0 ORDER BY RATIO_PCT DESC}  {
+    }
+
+    # reset paramdict
+    set paramdict [dict create]
+    foreach a $params {
+        if {$a eq ""} continue
+        # bare tokens and key=value
+        set parts [split $a =]
+        set key   [lindex $parts 0]
+        set value ""
+        if {[llength $parts] > 1} {
+            set value [join [lrange $parts 1 end] "="]
+        }
+        dict set paramdict $key $value
+    }
+
+    #   jobid=JOBID&timing&vu=VUID
+    #   jobid=JOBID&timing&VUID            (old CLI paths)
+    #   jobid=JOBID&getchart&chart=NAME
+    if {$paramlen == 3} {
+
+        # timing per VU
+        if {[dict exists $paramdict jobid] && [dict exists $paramdict timing]} {
+
+            set jobid [dict get $paramdict jobid]
+
+            # accept
+            # vu=2
+            # bare VUID token
+            set vuid ""
+
+            if {[dict exists $paramdict vu]} {
+                set vuid [dict get $paramdict vu]
+            } else {
+                # integer key => VUID
+                foreach k [dict keys $paramdict] {
+                    if {[string is integer -strict $k]} {
+                        set vuid $k
+                        break
+                    }
+                }
+            }
+
+            # also accept vu=2 value
+            if {$vuid ne "" && [regexp -nocase {^vu=(\d+)$} $vuid -> vv]} {
+                set vuid $vv
+            }
+
+            if {$vuid eq "" || ![string is integer -strict $vuid]} {
+                puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid timing vu=n \]"
+                return
+            }
+
+            unset -nocomplain jobtiming
+            set jobtiming [dict create]
+
+            # JOBTIMING for VU
+            hdbjobs eval {
+                SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct
+                FROM JOBTIMING
+                WHERE JOBID=$jobid AND VU=$vuid AND SUMMARY=0
+                ORDER BY RATIO_PCT DESC
+            } {
                 set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p50_ms $p50_ms sd $sd ratio_pct $ratio_pct"
                 dict append jobtiming $procname $timing
-              }
-              if { ![ dict size $jobtiming ] eq 0 } {
-                set huddleobj [ huddle compile {dict * dict} $jobtiming ]
-                if { $outputformat eq "JSON" } {
-                  return [ huddle jsondump $huddleobj ]
+            }
+
+            if {[dict size $jobtiming] != 0} {
+                set huddleobj [huddle compile {dict * dict} $jobtiming]
+                if {[string equal -nocase $outputformat "JSON"]} {
+                    return [huddle jsondump $huddleobj]
                 } else {
-                  return $jobtiming
+                    return $jobtiming
                 }
-              } else {
+            } else {
                 puts "No Timing Data for VU $vuid for JOB $jobid: jobs jobid timing vuid"
                 return
-              }
-            } else {
-              puts "Jobs Three Parameter Usage: jobs jobid timing vuid"
-              return
             }
-          } else {
-            if { [ dict keys $paramdict ] eq "jobid getchart chart" } {
-              set html [ getchart [ dict get $paramdict jobid ] 1 [ dict get $paramdict chart ] ]
-              return $html
-            } else {
-              puts "Jobs Three Parameter Usage: jobs jobid getchart chart"
-              return
-            }
-          }
         }
-      }
-    }
-    if { $paramlen eq 1 } {
-      if { [ dict keys $paramdict ] eq "joblist" } {
-        return [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-      } elseif { [ dict keys $paramdict ] eq "allresults" } {
-        set alljobs [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-	  set huddleobj [ huddle create ]
-        foreach jobres $alljobs {	
-    	hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jobres} {
-	set jobresult [ getjobresult $jobres 1 ]
-    if { [ lindex $jobresult 1 ] eq "Jobid has no test result" } {
-#NO RESULT 
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict} $jobresult ]]
-        continue
-      } elseif { [ string match "Geometric*" [ lindex $jobresult 2 ] ] } {
-#TPROC-H RESULT only report first result for first VU
-        set ctind 0
-        foreach ct {jobid tstamp geomean queryset} {
-          set $ct [ lindex $jobresult $ctind ]
-          incr ctind
+
+        # getchart
+        if {[dict exists $paramdict jobid] && [dict exists $paramdict getchart] && [dict exists $paramdict chart]} {
+            set html [getchart [dict get $paramdict jobid] 1 [dict get $paramdict chart]]
+            return $html
         }
-        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
-        set geo [ lindex $numbers 1]
-        set queries [ lindex $numbers 0]
-        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $queryset]
-	set querysets [ lindex $numbers 0]
-	set querytime [ lindex $numbers 1]
-	set tprochresult [list $jobres [ subst {db $db bm $bm tstamp {$timestamp} queries $queries querysets $querysets geomean $geo querytime $querytime} ]]
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict * dict} $tprochresult ]]
-        continue
-      } elseif { [ string match "TEST RESULT*" [ lindex $jobresult 3 ] ] } {
-#TPROC-C RESULT 
-        lassign [ getnopmtpm $jobresult ] jobid tstamp activevu nopm tpm dbdescription
-        set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
-	set tproccresult [list $jobres [ subst {db $db bm $bm tstamp {$timestamp} activevu $avu nopm $nopm tpm $tpm} ]]
-	set huddleobj [ huddle combine $huddleobj [ huddle compile {dict * dict} $tproccresult ]]
-        continue
-}}}
-                  if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts [ huddle get_stripped $huddleobj ]
-                  }
-      } elseif { [ dict keys $paramdict ] eq "alltimestamps" } {
-        set alljobs [ hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN} ]
-	  set huddleobj [ huddle create ]
-          foreach jobres $alljobs {
- 		set joboutput [ hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobres} ]
-		set huddleobj [ huddle combine $huddleobj [ huddle compile {dict} $joboutput ]]
-		}
-                  if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts [ huddle get_stripped $huddleobj ]
-                  }
-      } elseif { [ dict keys $paramdict ] eq "jobid" } {
-        set jobid [ dict get $paramdict jobid ]
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-        if { $query eq 0 } {
-          puts "Jobid $jobid does not exist"
-          return
-        } else {
-          set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-          set huddleobj [ huddle compile {list} $joboutput ]
-          if { $outputformat eq "JSON" } {
-            puts [ huddle jsondump $huddleobj ]
-          } else {
-            set res ""
-            set num 0
-            foreach row $joboutput {
-              if { $num == 0 } {
-                set res "Virtual User $row:"
-                incr num
-              } else {
-                set res "$res $row"
-                puts $res
-                set num 0
-              }
-            }
-          }
-        }
-      } else {
-        puts "Jobs One Parameter Usage: jobs jobid=TEXT"
+
+        puts "Error: Jobs Three Parameter Usage: \[ jobs jobid timing vuid | jobs jobid timing vu=n | jobs jobid getchart chart \]"
         return
-      }
-    } else {
-      if { [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" || [ dict keys $paramdict ] eq "jobid result" || [ dict keys $paramdict ] eq "jobid delete" || [ dict keys $paramdict ] eq "jobid timestamp" || [ dict keys $paramdict ] eq "jobid dict" || [ dict keys $paramdict ] eq "jobid timing" || [ dict keys $paramdict ] eq "jobid db" ||  [ dict keys $paramdict ] eq "jobid bm" || [ dict keys $paramdict ] eq "jobid tcount"  || [ dict keys $paramdict ] eq "jobid metrics"  ||  [ dict keys $paramdict ] eq "jobid system" } {
-        set jobid [ dict get $paramdict jobid ]
-        if { [ dict keys $paramdict ] eq "jobid vu" } {
-          set vuid [ dict get $paramdict vu ]
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid result" } {
-            set vuid 1
-          } else {
-            set vuid 0
-          }
-        }
-        set query [ hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-        if { $query eq 0 } {
-          puts "Jobid $jobid for virtual user $vuid does not exist"
-          return
-        } else {
-          if { [ dict keys $paramdict ] eq "jobid vu" || [ dict keys $paramdict ] eq "jobid status" } {
-            set joboutput [ hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid} ]
-            set huddleobj [ huddle compile {list} $joboutput ]
-            if { $outputformat eq "JSON" } {
-              puts [ huddle jsondump $huddleobj ]
-            } else {
-              set res ""
-              set num 0
-              foreach row $joboutput {
-                if { $num == 0 } {
-                  set res "Virtual User $row:"
-                  incr num
-                } else {
-                  set res "$res $row"
-                  puts $res
-                  set num 0
+    }
+
+    if {$paramlen == 1} {
+        if {[dict exists $paramdict joblist]} {
+            return [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+        } elseif {[dict exists $paramdict allresults]} {
+            set alljobs [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+            set huddleobj [huddle create]
+            foreach jobres $alljobs {
+                hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jobres} {
+                    set jobresult [getjobresult $jobres 1]
+                    if {[lindex $jobresult 1] eq "Jobid has no test result"} {
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict} $jobresult]]
+                        continue
+                    } elseif {[string match "Geometric*" [lindex $jobresult 2]]} {
+                        # TPROC-H first result only
+                        set ctind 0
+                        foreach ct {jobid tstamp geomean queryset} {
+                            set $ct [lindex $jobresult $ctind]
+                            incr ctind
+                        }
+                        set numbers [regexp -all -inline -- {[0-9]*\.?[0-9]+} $geomean]
+                        set geo     [lindex $numbers 1]
+                        set queries  [lindex $numbers 0]
+                        set numbers  [regexp -all -inline -- {[0-9]*\.?[0-9]+} $queryset]
+                        set querysets [lindex $numbers 0]
+                        set querytime [lindex $numbers 1]
+                        set tprochresult [list $jobres [subst {db $db bm $bm tstamp {$timestamp} queries $queries querysets $querysets geomean $geo querytime $querytime}]]
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict * dict} $tprochresult]]
+                        continue
+                    } elseif {[string match "TEST RESULT*" [lindex $jobresult 3]]} {
+                        # TPROC-C result
+                        lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
+                        set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
+                        set tproccresult [list $jobres [subst {db $db bm $bm tstamp {$timestamp} activevu $avu nopm $nopm tpm $tpm}]]
+                        set huddleobj [huddle combine $huddleobj [huddle compile {dict * dict} $tproccresult]]
+                        continue
+                    }
                 }
-              }
+            }
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [huddle get_stripped $huddleobj]
             }
             return
-          }
-          if { [ dict keys $paramdict ] eq "jobid delete" } {
-            set joboutput [ hdbjobs eval {DELETE FROM JOBMAIN WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid} ]
-            set joboutput [ hdbjobs eval {DELETE FROM JOBCHART WHERE JOBID=$jobid} ]
-            puts "Deleted Jobid $jobid"
-          } else {
-            if { [ dict keys $paramdict ] eq "jobid result" } {
-              set joboutput [ getjobresult $jobid $vuid ]
-              #huddle JSON is list return at end
+        } elseif {[dict exists $paramdict alltimestamps]} {
+            set alljobs [hdbjobs eval {SELECT DISTINCT JOBID FROM JOBMAIN}]
+            set huddleobj [huddle create]
+            foreach jobres $alljobs {
+                set joboutput [hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobres}]
+                set huddleobj [huddle combine $huddleobj [huddle compile {dict} $joboutput]]
+            }
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
             } else {
-              if { [ dict keys $paramdict ] eq "jobid timing" } {
-                set jobtiming [ getjobtiming $jobid ]
-                set huddleobj [ huddle compile {dict * dict} $jobtiming ]
-                if { $outputformat eq "JSON" } {
-                  puts [ huddle jsondump $huddleobj ]
-                } else {
-                  puts $jobtiming
-                }
+                puts [huddle get_stripped $huddleobj]
+            }
+            return
+        } elseif {[dict exists $paramdict jobid]} {
+            set jobid [dict get $paramdict jobid]
+            set q [hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid}]
+            if {$q == 0} {
+                puts "Jobid $jobid does not exist"
                 return
-              } else {
-                if { [ dict keys $paramdict ] eq "jobid timestamp" } {
-                  set joboutput [ hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobid} ]
-                  #huddle JSON is dict return here
-                  set huddleobj [ huddle compile {dict} $joboutput ]
-                  if { $outputformat eq "JSON" } {
-                    puts [ huddle jsondump $huddleobj ]
-                  } else {
-                    puts $joboutput
-                  }
-                  return
-                } else {
-                  if { [ dict keys $paramdict ] eq "jobid dict" } {
-                    set joboutput [ join [ hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                    #huddle JSON is dict*dict return here
-                    set huddleobj [ huddle compile {dict * dict} $joboutput ]
-                    if { $outputformat eq "JSON" } {
-                      puts [ huddle jsondump $huddleobj ]
-                    } else {
-                      puts $joboutput
-                    }
-                    return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid tcount" } {
-                      set jsondict [ getjobtcount $jobid ]
-                      #huddle JSON is dict*dict return here
-                      set huddleobj [ huddle compile {dict * dict} $jsondict ]
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid metrics" } {
-                      set jsondict [ getjobmetrics $jobid ]
-                      #huddle JSON is dict*dict return here
-                      set huddleobj [ huddle compile {dict * dict} $jsondict ]
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                  } else {
-                    if { [ dict keys $paramdict ] eq "jobid system" } {
-                      set jsondict [ getjobsystem $jobid ]
-                      #huddle JSON is dict return here
-                      if { [llength $jsondict] == 2 && [lindex $jsondict 1] eq "Jobid has no system data" } {
-                        set huddleobj [ huddle compile {list} $jsondict ]
-                      } else {
-                        set huddleobj [ huddle compile {dict * string} $jsondict ]
-                      }
-                      if { $outputformat eq "JSON" } {
-                        puts [ huddle jsondump $huddleobj ]
-                      } else {
-                        puts $jsondict
-                      }
-                      return
-                    } else {
-                      if { [ dict keys $paramdict ] eq "jobid db" } {
-                      #A Timed run will include a query for a version string, add the version if we find it
-		      set temp_output [ join [ hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1} ]]
-		      if { [ string match "*DBVersion*" $temp_output ] } {
-        		set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version ]
-			if { $matcheddbversion } {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]] $version"
-			} else {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-			}
-			} else {
-                        set joboutput "[ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]"
-			}
-                        #huddle JSON is list return at end
-                      } else {
-                        if { [ dict keys $paramdict ] eq "jobid bm" } {
-                          set joboutput [ join [ hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid} ]]
-                          #huddle JSON is list return at end
-                        } else {
-                          set joboutput [ list $jobid "Cannot find Jobid output" ]
-                          #huddle JSON is list return at end
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
             }
-            #huddle list
-            set huddleobj [ huddle compile {list} $joboutput ]
-            if { $outputformat eq "JSON" } {
-              puts [ huddle jsondump $huddleobj ]
+            set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid}]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
             } else {
-              puts [ join $joboutput "\n" ]
+                set res ""
+                set num 0
+                foreach row $joboutput {
+                    if {$num == 0} {
+                        set res "Virtual User $row:"
+                        incr num
+                    } else {
+                        set res "$res $row"
+                        puts $res
+                        set num 0
+                    }
+                }
             }
-          }
+            return
+        } else {
+            puts "Jobs One Parameter Usage: jobs jobid=TEXT"
+            return
         }
-      } else {
+    }
+
+    # order-independent
+    if {$paramlen == 2} {
+
+        # need jobid
+        if {![dict exists $paramdict jobid]} {
+            puts "Jobs Two Parameter Usage: jobs jobid status or jobs jobid db or jobs jobid bm or jobid system or jobs jobid timestamp or jobs jobid dict or jobs jobid vuid or jobs jobid result or jobs jobid timing or jobs jobid delete or jobs jobid metrics or jobs jobid system"
+            return
+        }
+
+        set jobid [dict get $paramdict jobid]
+
+        # select VU rows
+        if {[dict exists $paramdict vu]} {
+            set vuid [dict get $paramdict vu]
+        } elseif {[dict exists $paramdict result]} {
+            set vuid 1
+        } else {
+            set vuid 0
+        }
+
+        set q [hdbjobs eval {SELECT COUNT(*) FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]
+        if {$q == 0} {
+            puts "Jobid $jobid for virtual user $vuid does not exist"
+            return
+        }
+
+        # jobid + (vu|status)
+        if {[dict exists $paramdict vu] || [dict exists $paramdict status]} {
+            set joboutput [hdbjobs eval {SELECT VU,OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=$vuid}]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                set res ""
+                set num 0
+                foreach row $joboutput {
+                    if {$num == 0} {
+                        set res "Virtual User $row:"
+                        incr num
+                    } else {
+                        set res "$res $row"
+                        puts $res
+                        set num 0
+                    }
+                }
+            }
+            return
+        }
+
+        # jobid + delete
+        if {[dict exists $paramdict delete]} {
+            hdbjobs eval {DELETE FROM JOBMAIN   WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTIMING WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBTCOUNT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBMETRIC WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBSYSTEM WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBOUTPUT WHERE JOBID=$jobid}
+            hdbjobs eval {DELETE FROM JOBCHART  WHERE JOBID=$jobid}
+            puts "Deleted Jobid $jobid"
+            return
+        }
+
+        # jobid + result
+        if {[dict exists $paramdict result]} {
+            set joboutput [getjobresult $jobid $vuid]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
+        # jobid + timing  (SUMMARY across VUs)
+        if {[dict exists $paramdict timing]} {
+            set jobtiming [getjobtiming $jobid]
+            set huddleobj [huddle compile {dict * dict} $jobtiming]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jobtiming
+            }
+            return
+        }
+
+        # jobid + timestamp
+        if {[dict exists $paramdict timestamp]} {
+            set joboutput [hdbjobs eval {SELECT jobid, timestamp FROM JOBMAIN WHERE JOBID=$jobid}]
+            set huddleobj [huddle compile {dict} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $joboutput
+            }
+            return
+        }
+
+        # jobid + dict
+        if {[dict exists $paramdict dict]} {
+            set joboutput [join [hdbjobs eval {SELECT jobdict FROM JOBMAIN WHERE JOBID=$jobid}]]
+            set huddleobj [huddle compile {dict * dict} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $joboutput
+            }
+            return
+        }
+
+        # jobid + tcount
+        if {[dict exists $paramdict tcount]} {
+            set jsondict [getjobtcount $jobid]
+            set huddleobj [huddle compile {dict * dict} $jsondict]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jsondict
+            }
+            return
+        }
+
+        # jobid + metrics
+        if {[dict exists $paramdict metrics]} {
+            set jsondict [getjobmetrics $jobid]
+            set huddleobj [huddle compile {dict * dict} $jsondict]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts $jsondict
+            }
+            return
+        }
+
+        # jobid + system
+        if {[dict exists $paramdict system]} {
+           set jsondict [getjobsystem $jobid]
+           if { [llength $jsondict] == 2 && [lindex $jsondict 1] eq "Jobid has no system data" } {
+              set huddleobj [huddle compile {list} $jsondict]
+           } else {
+              set huddleobj [huddle compile {dict * string} $jsondict]
+           }
+           if {[string equal -nocase $outputformat "JSON"]} {
+              puts [huddle jsondump $huddleobj]
+           } else {
+              puts $jsondict
+           }
+           return
+        }
+
+        # jobid + db
+        if {[dict exists $paramdict db]} {
+            # A Timed run will include a query for a version string, add the version if we find it
+            set temp_output [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1}]]
+            if {[string match "*DBVersion*" $temp_output]} {
+                set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $temp_output match header version]
+                if {$matcheddbversion} {
+                    set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]] $version"
+                } else {
+                    set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]"
+                }
+            } else {
+                set joboutput "[join [hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid}]]"
+            }
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
+        # jobid + bm
+        if {[dict exists $paramdict bm]} {
+            set joboutput [join [hdbjobs eval {SELECT bm FROM JOBMAIN WHERE JOBID=$jobid}]]
+            set huddleobj [huddle compile {list} $joboutput]
+            if {[string equal -nocase $outputformat "JSON"]} {
+                puts [huddle jsondump $huddleobj]
+            } else {
+                puts [join $joboutput "\n"]
+            }
+            return
+        }
+
         puts "Jobs Two Parameter Usage: jobs jobid status or jobs jobid db or jobs jobid bm or jobid system or jobs jobid timestamp or jobs jobid dict or jobs jobid vuid or jobs jobid result or jobs jobid timing or jobs jobid delete or jobs jobid metrics or jobs jobid system"
         return
-      }
     }
-  }
+}
 
 proc job_get_ppid {} {
         global jobs_profile_id
@@ -2543,12 +3563,52 @@ proc job_profile_id { args } {
         }
         1 {
             set tmp_ppid $args
+            # profileid all: returns all used profile ids.
+            if {[string equal -nocase $tmp_ppid "all"]} {
+                # match 'jobs' output style
+                if {[dict exists $genericdict commandline jobsoutput]} {
+                    set outputformat [dict get $genericdict commandline jobsoutput]
+                } else {
+                    set outputformat "text"
+                }
+
+                set profileids {}
+                if {[catch {
+                    set profileids [hdbjobs eval {
+                        SELECT DISTINCT(profile_id)
+                        FROM JOBMAIN
+                        WHERE profile_id > 0
+                        ORDER BY profile_id ASC
+                    }]
+                } err]} {
+                    putscli "Error querying profile ids: $err"
+                    return
+                }
+
+                if {[llength $profileids] == 0} {
+                    putscli "No performance profiles found"
+                    return
+                }
+
+                if {[string equal -nocase $outputformat "JSON"]} {
+                    # print as JSON array like 'jobs'
+                    if {[catch {package require huddle}]} {}
+                    if {[catch {package require json}]} {}
+                    set h [huddle compile {list} $profileids]
+                    puts [huddle jsondump $h]
+                } else {
+                    # plain list, one per line (like 'jobs' text mode)
+                    puts [join $profileids "\n"]
+                }
+                return
+            }
+
             if { ![string is integer -strict $tmp_ppid ] } {
                 putscli "Error: Performance profile id should be an integer"
             } else {
                 set jobs_profile_id $tmp_ppid
                 putscli "Setting performance profile id to $jobs_profile_id"
-		dict set genericdict "commandline" "jobs_profile_id" $jobs_profile_id
+                dict set genericdict "commandline" "jobs_profile_id" $jobs_profile_id
                 Dict2SQLite "generic" $genericdict
             }
         }
@@ -2616,6 +3676,163 @@ return $huddleobj
             putscli "Error :profile accepts one integer argument"
         }
 }	
+}
+# Compare two performance profiles and return signed ratio:
+# Always prints an unweighted summary. If weighting=true, also prints a weighted summary
+# using w = max(1.0, activevu / phys_cores) with phys_cores = ceil(logical/2), no upper cap.
+
+# Compare two performance profiles and return signed ratio:
+#   ratio = (avg_comp - avg_base) / avg_base
+# Weighting:
+#   weighting = "true"  → weighted, phys_cores auto = ceil(logical/2)
+#             = "false" → unweighted
+# Weighted w = max(1.0, activevu / phys_cores)  (no cap)
+
+proc jobs_profile_diff {good_pid bad_pid weighting} {
+    # ---- validate ids ----
+    if {![string is integer -strict $good_pid] || $good_pid < 1} {
+        putscli "Error: good profile id must be an integer > 0"
+        return
+    }
+    if {![string is integer -strict $bad_pid] || $bad_pid < 1} {
+        putscli "Error: bad profile id must be an integer > 0"
+        return
+    }
+    # ---- boolean weighting only ----
+    if {![string is true $weighting] && ![string is false $weighting]} {
+        putscli "Error: weighting must be true or false"
+        return
+    }
+    set do_weight [string is true $weighting]
+
+    # ---- helpers ----
+    proc __collect_profile_points {pid mapVar jobsVar} {
+        upvar 1 $mapVar m
+        upvar 1 $jobsVar jl
+        set m [dict create]
+        set jl {}
+        set jobs [hdbjobs eval "SELECT DISTINCT JOBID FROM JOBMAIN WHERE profile_id=$pid"]
+        if {[llength $jobs] == 0} { return "empty" }
+        foreach jid $jobs {
+            hdbjobs eval {SELECT bm, db, timestamp FROM JOBMAIN WHERE JOBID=$jid ORDER BY timestamp} {
+                set jr [getjobresult $jid 1]
+                if {[lindex $jr 1] eq "Jobid has no test result"} { continue }
+                if {[string match "Geometric*" [lindex $jr 2]]} { continue }
+                if {![string match "TEST RESULT*" [lindex $jr 3]]} { continue }
+                lassign [getnopmtpm $jr] _jid _ts avu_str nopm _tpm _desc
+                if {![regexp -- {\d+} $avu_str avu_num]} { continue }
+                scan $avu_num "%d" avu
+                if {![string is integer -strict $nopm]} {
+                    if {![regexp -- {\d+} $nopm nopm_num]} { continue }
+                    scan $nopm_num "%d" nopm
+                }
+                dict set m $avu $nopm
+                lappend jl $jid
+            }
+        }
+        return "ok"
+    }
+
+        proc __logical_cpus {jobid} {
+        if {![catch {
+            set cpucount [join [hdbjobs eval {
+                SELECT cpucount FROM JOBSYSTEM WHERE JOBID=$jobid
+            }]]
+        }]} {
+            set cpucount [string trim $cpucount]
+            if {[string is integer -strict $cpucount] && $cpucount > 0} {
+                return $cpucount
+            }
+        }
+        return ""
+        }
+
+    # Format ratio with sign; avoid ±0.00 by bumping precision if needed
+    proc __fmt_ratio {r {decs 2}} {
+        set s [format "%.*f" $decs $r]
+        if {$s eq "0.00" || $s eq "-0.00" || $s eq "+0.00"} {
+            if {$r == 0.0} { return "0.00" }
+            set s4 [format "%+.4f" $r]
+            if {$s4 eq "+0.0000" || $s4 eq "-0.0000"} { return "0.0000" }
+            return $s4
+        }
+        if {$r > 0} { return "+$s" }
+        return $s
+    }
+
+    # ---- collect points ----
+    if {[__collect_profile_points $good_pid good_map good_jobs] eq "empty"} {
+        putscli "Error: no jobs found for good profile id $good_pid"
+        return
+    }
+    if {[__collect_profile_points $bad_pid bad_map bad_jobs] eq "empty"} {
+        putscli "Error: no jobs found for bad profile id $bad_pid"
+        return
+    }
+
+    # ---- intersect VU points ----
+    array set seen {}
+    foreach av [dict keys $good_map] { set seen($av) 1 }
+    set matched {}
+    foreach av [dict keys $bad_map] {
+        if {[info exists seen($av)]} { lappend matched $av }
+    }
+    if {[llength $matched] == 0} {
+        putscli "Error: the two profiles have no overlapping activevu points"
+        return
+    }
+    set matched [lsort -integer -unique $matched]
+
+    # ---- unweighted (always print) ----
+    set g_sum_u 0.0
+    set b_sum_u 0.0
+    foreach av $matched {
+        set g_sum_u [expr {$g_sum_u + [dict get $good_map $av]}]
+        set b_sum_u [expr {$b_sum_u + [dict get $bad_map  $av]}]
+    }
+    set n [llength $matched]
+    set g_avg_u [expr {$g_sum_u / $n}]
+    set b_avg_u [expr {$b_sum_u / $n}]
+    if {$g_avg_u <= 0.0} {
+        putscli "Error: good profile average NOPM is zero; cannot compute ratio"
+        return
+    }
+    set ratio_u [expr {($b_avg_u - $g_avg_u) / $g_avg_u}]
+    putscli [format "Profiles compared (unweighted): matched=%d, avg_base=%.0f, avg_comp=%.0f" $n $g_avg_u $b_avg_u]
+
+    # ---- weighted (optional) ----
+    if {$do_weight} {
+        set logical [__logical_cpus [lindex $good_jobs 0]]
+        if {$logical eq ""} {
+            putscli "Error: CPU-weighted requested but logical CPU count not found; using unweighted only"
+            return [__fmt_ratio $ratio_u 2]
+        }
+        set phys_cores [expr {int(ceil($logical / 2.0))}]
+        set g_sum 0.0
+        set b_sum 0.0
+        set w_sum 0.0
+        foreach av $matched {
+            set w [expr {max(1.0, double($av)/double($phys_cores))}]  ;# linear, no cap
+            set g_sum [expr {$g_sum + $w * [dict get $good_map $av]}]
+            set b_sum [expr {$b_sum + $w * [dict get $bad_map  $av]}]
+            set w_sum [expr {$w_sum + $w}]
+        }
+        if {$w_sum > 0.0} {
+            set g_avg [expr {$g_sum / $w_sum}]
+            set b_avg [expr {$b_sum / $w_sum}]
+            if {$g_avg > 0.0} {
+                set ratio_w [expr {($b_avg - $g_avg) / $g_avg}]
+                putscli [format "Profiles compared (weighted linear, no cap): matched=%d, phys_cores=%d, avg_base=%.0f, avg_comp=%.0f" \
+                                 $n $phys_cores $g_avg $b_avg]
+                return [__fmt_ratio $ratio_w 2]
+            }
+        }
+        # fallback
+        return [__fmt_ratio $ratio_u 2]
+    }
+
+    # return unweighted result
+    return [__fmt_ratio $ratio_u 2]
 }
 }
 namespace import jobs::*

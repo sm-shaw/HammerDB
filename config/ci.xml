@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ci>
+    <common>
+            <listen_port>5000</listen_port>
+            <clone_cmd>git clone</clone_cmd>
+            <clone_cmd_args>--branch :branch :repo_url .</clone_cmd_args>
+            <commit_msg_cmd>git log -1 --pretty=%B</commit_msg_cmd>
+            <diff_threshold>0.025</diff_threshold>
+            <use_sudo>false</use_sudo>
+            <ci_log_to_temp>1</ci_log_to_temp>
+            <root>/opt/hammerdb-ci</root>
+            <tmp>/opt/hammerdb-ci/TMP</tmp>
+    </common>
+    <MariaDB>
+        <build>
+            <repo_url>https://github.com/MariaDB/server.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+            <overwrite>false</overwrite>
+            <local_dir_root>/opt/hammerdb-ci/providers/mariadb</local_dir_root>
+            <build_dir>/opt/hammerdb-ci/providers/mariadb/builds</build_dir>
+            <build_cmd>cmake . -DBUILD_CONFIG=mysql_release -DPLUGIN_AUTH_PAM=NO ; cmake --build .</build_cmd>
+            <build_cmd_args>--parallel 8</build_cmd_args>
+            <package_cmd>make package</package_cmd>
+        </build>
+        <install>
+            <install_package>tar -xvf</install_package>
+            <installer>scripts/mariadb-install-db</installer>
+            <install_dir>/opt/hammerdb-ci/providers/mariadb/installs</install_dir>
+            <config_dir>/opt/hammerdb-ci/providers/mariadb/config</config_dir>
+            <defaults_file>/opt/hammerdb-ci/providers/mariadb/config/maria.cnf</defaults_file>
+            <io_config_file>/opt/hammerdb-ci/providers/mariadb/config/mariaio.cnf</io_config_file>
+            <basedir>/opt/hammerdb-ci/providers/mariadb/installs</basedir>
+            <datadir>data</datadir>
+            <innodb_log_group_home_dir>redo</innodb_log_group_home_dir>
+            <innodb_buffer_pool_size>auto</innodb_buffer_pool_size>
+            <init_args>defaults_file basedir datadir innodb_log_group_home_dir</init_args>
+            <start_cmd>bin/mariadbd</start_cmd>
+            <start_args>defaults_file basedir datadir innodb_log_group_home_dir socket port</start_args>
+            <socket>/tmp/mariadb.sock</socket>
+            <port>3306</port>
+            <run_sql_cmd>./bin/mariadb -S {socket} --skip-ssl -vvv -e "{sql}"</run_sql_cmd>
+            <change_password>ALTER USER 'root'@'localhost' IDENTIFIED BY 'maria'</change_password>
+            <shutdown>shutdown</shutdown>
+            <ping>select @@version</ping>
+        </install>
+        <test>
+            <oltp>scripts/tcl/maria/tprocc/maria_tprocc_single.sh</oltp>
+            <olap>scripts/tcl/maria/tproch/maria_tproch_single.sh</olap>
+            <profile>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</profile>
+            <compare>scripts/tcl/maria/tprocc/maria_tprocc_profile.sh</compare>
+        </test>
+        <pipeline>
+            <single_c>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:oltp run_sql:shutdown</single_c>
+            <single_h>clone build package commit_msg install init run_sql:shutdown start ping run_sql:change_password start_tests:olap run_sql:shutdown</single_h>
+            <profile>profile</profile>
+            <profileid>1000</profileid>
+            <compare>compare</compare>
+            <compare_profileid>1000</compare_profileid>
+        </pipeline>
+    </MariaDB>
+    <PostgreSQL>
+        <build>
+            <repo_url>https://github.com/postgres/postgres.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+        </build>
+    </PostgreSQL>
+    <MySQL>
+        <build>
+            <repo_url>https://github.com/mysql/mysql-server.git</repo_url>
+            <ref_regexp>refs/(tags|heads)/(.+)</ref_regexp>
+        </build>
+    </MySQL>
+    <Oracle>
+    <!-- Placeholder for Oracle database automation -->
+    </Oracle>
+    <SQLServer>
+    <!-- Placeholder for SQL Server database automation -->
+    </SQLServer>
+    <Db2>
+    <!-- Placeholder for IBM Db2 database automation -->
+    </Db2>
+</ci>
