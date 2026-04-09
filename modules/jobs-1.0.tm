@@ -110,7 +110,7 @@ namespace eval jobs {
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBMETRIC table in SQLite in-memory database : $message"
           return
-	} elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	      } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBSYSTEM table in SQLite in-memory database : $message"
           return
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
@@ -153,7 +153,7 @@ namespace eval jobs {
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBMETRIC (jobid TEXT, usr REAL, sys REAL, irq REAL, idle REAL, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
              puts "Error creating JOBMETRIC table in SQLite on-disk database : $message"
              return
-	     } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+	          } elseif [ catch {hdbjobs eval {CREATE TABLE JOBSYSTEM (jobid TEXT primary key, hostname TEXT, cpumodel TEXT, cpucount INTEGER, system_vendor TEXT, system_type TEXT, os_name TEXT, memory TEXT, nic TEXT, storage TEXT, cloud_instance TEXT, other_software TEXT, extra TEXT, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBSYSTEM table in SQLite on-disk database : $message"
               return
             } elseif [catch {hdbjobs eval {CREATE TABLE JOBOUTPUT(jobid TEXT, vu INTEGER, output TEXT)}} message ] {
@@ -191,7 +191,7 @@ namespace eval jobs {
           } else {
               catch {hdbjobs eval {CREATE INDEX JOBCHART_IDX ON JOBCHART(jobid)}}
               puts "Upgraded database $sqlite_db with Job Charts"
-		}
+		       }
 		  }
 	   #Upgrade existing JOBSYSTEM table with new system discovery columns if not present
            if { [catch {
@@ -2244,7 +2244,7 @@ if {$rawmode} {
                         set v [string trim $v]
                     __pre_block $v
                 }
-		 system {
+		            system {
                     set v "No system data available"
                     hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
                         set lines {}

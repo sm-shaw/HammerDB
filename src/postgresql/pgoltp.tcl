@@ -2993,7 +2993,7 @@ switch $myposition {
                 } else {
                     pg_result $result -clear
                 }
-                set result [pg_exec $lda "vacuum" ]
+                set result [pg_exec $lda1 "vacuum" ]
                 if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
                     if { $RAISEERROR } {
                         error "[pg_result $result -error]"
@@ -3432,7 +3432,7 @@ switch $myposition {
                 } else {
                     pg_result $result -clear
                 }
-                set result [pg_exec $lda "vacuum" ]
+                set result [pg_exec $lda1 "vacuum" ]
                 if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
                     if { $RAISEERROR } {
                         error "[pg_result $result -error]"

@@ -117,6 +117,125 @@ puts "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-"
     }
 }
 
+proc DiscoverSystemWindows {} {
+global S cpu_model sysinfo
+set sysinfo [dict create]
+dict set sysinfo cpumodel $cpu_model
+dict set sysinfo cpucount $S(cpus)
+#OS Name and Version
+if { [catch {
+    set osver [twapi::get_os_version]
+    set osdesc [twapi::get_os_description]
+    dict set sysinfo os_name "$osdesc (Build [join $osver .])"
+} err] } {
+    dict set sysinfo os_name "Windows (version unavailable)"
+}
+#System Vendor and Type via WMI
+if { [catch {
+    set wmi [twapi::_wmi]
+    set items [$wmi ExecQuery "SELECT Manufacturer,Model FROM Win32_ComputerSystem"]
+    $items -iterate item {
+        dict set sysinfo system_vendor [$item -get Manufacturer]
+        dict set sysinfo system_type [$item -get Model]
+        $item destroy
+    }
+    $items destroy
+    $wmi destroy
+} err] } {
+    dict set sysinfo system_vendor "Unknown"
+    dict set sysinfo system_type "Unknown"
+}
+#Total Physical Memory via WMI
+if { [catch {
+    set wmi [twapi::_wmi]
+    set items [$wmi ExecQuery "SELECT TotalPhysicalMemory FROM Win32_ComputerSystem"]
+    $items -iterate item {
+        set totalmem [$item -get TotalPhysicalMemory]
+        set totalmem_gb [format "%.1f" [expr {$totalmem / 1073741824.0}]]
+        dict set sysinfo memory "${totalmem_gb} GB"
+        $item destroy
+    }
+    $items destroy
+    $wmi destroy
+} err] } {
+    dict set sysinfo memory "Unknown"
+}
+#NIC Information via WMI
+if { [catch {
+    set wmi [twapi::_wmi]
+    set items [$wmi ExecQuery "SELECT Description,Speed FROM Win32_NetworkAdapter WHERE NetConnectionStatus=2"]
+    set niclist [list]
+    $items -iterate item {
+        set nicdesc [$item -get Description]
+        if { [catch {set nicspeed [$item -get Speed]}] } {
+            set nicspeed "Unknown"
+        } else {
+            set nicspeed "[format "%.0f" [expr {$nicspeed / 1000000000.0}]] Gbps"
+        }
+        lappend niclist "$nicdesc ($nicspeed)"
+        $item destroy
+    }
+    $items destroy
+    $wmi destroy
+    dict set sysinfo nic [join $niclist "; "]
+} err] } {
+    dict set sysinfo nic "Unknown"
+}
+#Disk/Storage via WMI
+if { [catch {
+    set wmi [twapi::_wmi]
+    set items [$wmi ExecQuery "SELECT Model,Size FROM Win32_DiskDrive"]
+    set disklist [list]
+    $items -iterate item {
+        set diskmodel [$item -get Model]
+        if { [catch {set disksize [$item -get Size]}] } {
+            set disksize "Unknown"
+        } else {
+            set disksize "[format "%.0f" [expr {$disksize / 1073741824.0}]] GB"
+        }
+        lappend disklist "$diskmodel ($disksize)"
+        $item destroy
+    }
+    $items destroy
+    $wmi destroy
+    dict set sysinfo storage [join $disklist "; "]
+} err] } {
+    dict set sysinfo storage "Unknown"
+}
+#Cloud Instance Detection
+dict set sysinfo cloud_instance [DetectCloudInstance]
+return $sysinfo
+}
+
+proc DetectCloudInstance {} {
+#Detect cloud environment by checking metadata services
+#AWS
+if { [catch {
+    package require http
+    set tok [::http::geturl "http://169.254.169.254/latest/meta-data/instance-type" -timeout 1000]
+    set itype [::http::data $tok]
+    ::http::cleanup $tok
+    if { $itype ne "" } { return "AWS $itype" }
+} err] } { ; }
+#Azure
+if { [catch {
+    package require http
+    set tok [::http::geturl "http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text" -timeout 1000 -headers [list Metadata true]]
+    set vmsize [::http::data $tok]
+    ::http::cleanup $tok
+    if { $vmsize ne "" } { return "Azure $vmsize" }
+} err] } { ; }
+#GCP
+if { [catch {
+    package require http
+    set tok [::http::geturl "http://metadata.google.internal/computeMetadata/v1/instance/machine-type" -timeout 1000 -headers [list Metadata-Flavor Google]]
+    set mtype [::http::data $tok]
+    ::http::cleanup $tok
+    if { $mtype ne "" } { return "GCP [file tail $mtype]" }
+} err] } { ; }
+return "Not Detected"
+}
+
 proc HowManyProcessorsLinux {} {
 global cpu_model
     set fin [open /proc/cpuinfo r]
@@ -133,6 +252,134 @@ global cpu_model
     break
 	}
     }
+}
+
+proc DiscoverSystemLinux {} {
+global S cpu_model sysinfo
+set sysinfo [dict create]
+dict set sysinfo cpumodel $cpu_model
+dict set sysinfo cpucount $S(cpus)
+#OS Name and Version
+if { [catch {
+    if { [file exists /etc/os-release] } {
+        set fin [open /etc/os-release r]
+        set data [read $fin]
+        close $fin
+        foreach line [split $data "\n"] {
+            if { [string match "PRETTY_NAME=*" $line] } {
+                regexp {PRETTY_NAME="?([^"]*)"?} $line all os_name
+                dict set sysinfo os_name $os_name
+                break
+            }
+        }
+    } else {
+        set os_name [exec uname -s -r]
+        dict set sysinfo os_name $os_name
+    }
+} err] } {
+    dict set sysinfo os_name "Linux (version unavailable)"
+}
+#System Vendor and Type
+if { [catch {
+    if { [file exists /sys/class/dmi/id/sys_vendor] } {
+        set fin [open /sys/class/dmi/id/sys_vendor r]
+        set vendor [string trim [read $fin]]
+        close $fin
+        dict set sysinfo system_vendor $vendor
+    } else {
+        dict set sysinfo system_vendor "Unknown"
+    }
+} err] } {
+    dict set sysinfo system_vendor "Unknown"
+}
+if { [catch {
+    if { [file exists /sys/class/dmi/id/product_name] } {
+        set fin [open /sys/class/dmi/id/product_name r]
+        set product [string trim [read $fin]]
+        close $fin
+        dict set sysinfo system_type $product
+    } else {
+        dict set sysinfo system_type "Unknown"
+    }
+} err] } {
+    dict set sysinfo system_type "Unknown"
+}
+#Total Memory from /proc/meminfo
+if { [catch {
+    set fin [open /proc/meminfo r]
+    set data [read $fin]
+    close $fin
+    foreach line [split $data "\n"] {
+        if { [string match "MemTotal:*" $line] } {
+            regexp {MemTotal:\s+(\d+)\s+kB} $line all memkb
+            set memgb [format "%.1f" [expr {$memkb / 1048576.0}]]
+            dict set sysinfo memory "${memgb} GB"
+            break
+        }
+    }
+} err] } {
+    dict set sysinfo memory "Unknown"
+}
+#NIC Information
+if { [catch {
+    set niclist [list]
+    set netdir "/sys/class/net"
+    if { [file exists $netdir] } {
+        foreach iface [glob -nocomplain -directory $netdir *] {
+            set ifname [file tail $iface]
+            if { $ifname eq "lo" } continue
+            set speed "Unknown"
+            if { [file exists "$iface/speed"] } {
+                catch {
+                    set fin [open "$iface/speed" r]
+                    set spd [string trim [read $fin]]
+                    close $fin
+                    if { [string is integer -strict $spd] && $spd > 0 } {
+                        if { $spd >= 1000 } {
+                            set speed "[expr {$spd / 1000}] Gbps"
+                        } else {
+                            set speed "${spd} Mbps"
+                        }
+                    }
+                }
+            }
+            lappend niclist "$ifname ($speed)"
+        }
+    }
+    if { [llength $niclist] > 0 } {
+        dict set sysinfo nic [join $niclist "; "]
+    } else {
+        dict set sysinfo nic "Unknown"
+    }
+} err] } {
+    dict set sysinfo nic "Unknown"
+}
+#Disk/Storage from lsblk
+if { [catch {
+    set disklist [list]
+    set lsblkout [exec lsblk -dnbo NAME,SIZE,MODEL 2>/dev/null]
+    foreach line [split $lsblkout "\n"] {
+        set line [string trim $line]
+        if { $line eq "" } continue
+        set parts [regexp -all -inline {\S+} $line]
+        set dname [lindex $parts 0]
+        set dsize [lindex $parts 1]
+        set dmodel [join [lrange $parts 2 end]]
+        if { $dmodel eq "" } { set dmodel $dname }
+        set dsizegb [format "%.0f" [expr {$dsize / 1073741824.0}]]
+        lappend disklist "$dmodel (${dsizegb} GB)"
+    }
+    if { [llength $disklist] > 0 } {
+        dict set sysinfo storage [join $disklist "; "]
+    } else {
+        dict set sysinfo storage "Unknown"
+    }
+} err] } {
+    dict set sysinfo storage "Unknown"
+}
+#Cloud Instance Detection
+dict set sysinfo cloud_instance [DetectCloudInstance]
+return $sysinfo
 }
 
 proc ConfigureNetworkAgent { port restart } {
@@ -224,11 +471,25 @@ puts "Error Sending Data: $b"
 }
 
 proc StartMetrics {} {
-global agentlist S cpu_model iswin
+global agentlist S cpu_model iswin sysinfo
 puts "Prepared CPU metrics for $cpu_model"
+#Discover system information before sending metrics
+if {$iswin} {
+    if { [catch { set sysinfo [DiscoverSystemWindows] } err] } {
+        puts "System discovery failed: $err"
+        set sysinfo [dict create cpumodel $cpu_model cpucount $S(cpus)]
+    }
+} else {
+    if { [catch { set sysinfo [DiscoverSystemLinux] } err] } {
+        puts "System discovery failed: $err"
+        set sysinfo [dict create cpumodel $cpu_model cpucount $S(cpus)]
+    }
+}
+puts "System discovery complete: [dict size $sysinfo] fields gathered"
 foreach f $agentlist {
-puts -nonewline "Sending CPU metrics to $f ..."
+puts -nonewline "Sending system discovery and CPU metrics to $f ..."
 if { [catch {
+Agent send $f DoDiscovery [list $sysinfo] agent
 Agent send $f DoDisplay $S(cpus) [ list $cpu_model] agent
 Agent send $f update
 	} b] } {

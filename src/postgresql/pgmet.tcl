@@ -2452,46 +2452,82 @@ namespace eval pgmet {
         set public(waits,CPU) CPU
         set public(waits,BCPU) CPU
 
+        #Activity
         set public(waits,ArchiverMain) Activity
         set public(waits,AutoVacuumMain) Activity
+        set public(waits,AutovacuumMain) Activity
         set public(waits,BgWriterHibernate) Activity
         set public(waits,BgWriterMain) Activity
+        set public(waits,BgwriterHibernate) Activity
+        set public(waits,BgwriterMain) Activity
         set public(waits,CheckpointerMain) Activity
+        set public(waits,CheckpointerShutdown) Activity
+        set public(waits,IoWorkerMain) Activity
         set public(waits,LogicalApplyMain) Activity
         set public(waits,LogicalLauncherMain) Activity
+        set public(waits,LogicalParallelApplyMain) Activity
         set public(waits,PgStatMain) Activity
         set public(waits,RecoveryWalAll) Activity
         set public(waits,RecoveryWalStream) Activity
+        set public(waits,ReplicationSlotsyncMain) Activity
+        set public(waits,ReplicationSlotsyncShutdown) Activity
         set public(waits,SysLoggerMain) Activity
+        set public(waits,SysloggerMain) Activity
         set public(waits,WalReceiverMain) Activity
         set public(waits,WalSenderMain) Activity
+        set public(waits,WalSummarizerWal) Activity
         set public(waits,WalWriterMain) Activity
 
+        #BufferPin
         set public(waits,BufferPin) BufferPin
 
+        #Client
         set public(waits,ClientRead) Client
         set public(waits,ClientWrite) Client
         set public(waits,GSSOpenServer) Client
+        set public(waits,GssOpenServer) Client
         set public(waits,LibPQWalReceiverConnect) Client
         set public(waits,LibPQWalReceiverReceive) Client
+        set public(waits,LibpqwalreceiverConnect) Client
+        set public(waits,LibpqwalreceiverReceive) Client
         set public(waits,SSLOpenServer) Client
+        set public(waits,SslOpenServer) Client
+        set public(waits,WaitForStandbyConfirmation) Client
         set public(waits,WalReceiverWaitStart) Client
         set public(waits,WalSenderWaitForWAL) Client
+        set public(waits,WalSenderWaitForWal) Client
         set public(waits,WalSenderWriteData) Client
 
+        #Extension
         set public(waits,Extension) Extension
 
+        #IO
+        set public(waits,AioIoCompletion) IO
+        set public(waits,AioIoUringExecution) IO
+        set public(waits,AioIoUringSubmit) IO
+
         set public(waits,BaseBackupRead) IO
+        set public(waits,BasebackupRead) IO
+        set public(waits,BasebackupSync) IO
+        set public(waits,BasebackupWrite) IO
+
         set public(waits,BufFileRead) IO
         set public(waits,BufFileWrite) IO
         set public(waits,BufFileTruncate) IO
+        set public(waits,BuffileRead) IO
+        set public(waits,BuffileWrite) IO
+        set public(waits,BuffileTruncate) IO
+
         set public(waits,ControlFileRead) IO
         set public(waits,ControlFileSync) IO
         set public(waits,ControlFileSyncUpdate) IO
         set public(waits,ControlFileWrite) IO
         set public(waits,ControlFileWriteUpdate) IO
+
+        set public(waits,CopyFileCopy) IO
         set public(waits,CopyFileRead) IO
         set public(waits,CopyFileWrite) IO
+
         set public(waits,DataFileExtend) IO
         set public(waits,DataFileFlush) IO
         set public(waits,DataFileImmediateSync) IO
@@ -2500,45 +2536,71 @@ namespace eval pgmet {
         set public(waits,DataFileSync) IO
         set public(waits,DataFileTruncate) IO
         set public(waits,DataFileWrite) IO
+
+        set public(waits,DsmAllocate) IO
         set public(waits,DSMFillZeroWrite) IO
+        set public(waits,DsmFillZeroWrite) IO
+
         set public(waits,LockFileAddToDataDirRead) IO
         set public(waits,LockFileAddToDataDirSync) IO
         set public(waits,LockFileAddToDataDirWrite) IO
+        set public(waits,LockFileReCheckDataDirRead) IO
+        set public(waits,LockFileAddtodatadirRead) IO
+        set public(waits,LockFileAddtodatadirSync) IO
+        set public(waits,LockFileAddtodatadirWrite) IO
+        set public(waits,LockFileRecheckdatadirRead) IO
+
         set public(waits,LockFileCreateRead) IO
         set public(waits,LockFileCreateSync) IO
         set public(waits,LockFileCreateWrite) IO
-        set public(waits,LockFileReCheckDataDirRead) IO
+
         set public(waits,LogicalRewriteCheckpointSync) IO
         set public(waits,LogicalRewriteMappingSync) IO
         set public(waits,LogicalRewriteMappingWrite) IO
         set public(waits,LogicalRewriteSync) IO
         set public(waits,LogicalRewriteTruncate) IO
         set public(waits,LogicalRewriteWrite) IO
+
         set public(waits,RelationMapRead) IO
         set public(waits,RelationMapSync) IO
         set public(waits,RelationMapWrite) IO
+        set public(waits,RelationMapReplace) IO
+
         set public(waits,ReorderBufferRead) IO
         set public(waits,ReorderBufferWrite) IO
         set public(waits,ReorderLogicalMappingRead) IO
+
         set public(waits,ReplicationSlotRead) IO
         set public(waits,ReplicationSlotRestoreSync) IO
         set public(waits,ReplicationSlotSync) IO
         set public(waits,ReplicationSlotWrite) IO
+
         set public(waits,SLRUFlushSync) IO
         set public(waits,SLRURead) IO
         set public(waits,SLRUSync) IO
         set public(waits,SLRUWrite) IO
+        set public(waits,SlruFlushSync) IO
+        set public(waits,SlruRead) IO
+        set public(waits,SlruSync) IO
+        set public(waits,SlruWrite) IO
+
         set public(waits,SnapbuildRead) IO
         set public(waits,SnapbuildSync) IO
         set public(waits,SnapbuildWrite) IO
+
         set public(waits,TimelineHistoryFileSync) IO
         set public(waits,TimelineHistoryFileWrite) IO
         set public(waits,TimelineHistoryRead) IO
         set public(waits,TimelineHistorySync) IO
         set public(waits,TimelineHistoryWrite) IO
+
         set public(waits,TwophaseFileRead) IO
         set public(waits,TwophaseFileSync) IO
         set public(waits,TwophaseFileWrite) IO
+
+        set public(waits,VersionFileSync) IO
+        set public(waits,VersionFileWrite) IO
+
         set public(waits,WALBootstrapSync) IO
         set public(waits,WALBootstrapWrite) IO
         set public(waits,WALCopyRead) IO
@@ -2550,19 +2612,42 @@ namespace eval pgmet {
         set public(waits,WALSenderTimelineHistoryRead) IO
         set public(waits,WALSync) IO
         set public(waits,WALSyncMethodAssign) IO
-        set public(waits,WALWrite) IO
+
+        set public(waits,WalBootstrapSync) IO
+        set public(waits,WalBootstrapWrite) IO
+        set public(waits,WalCopyRead) IO
+        set public(waits,WalCopySync) IO
+        set public(waits,WalCopyWrite) IO
+        set public(waits,WalInitSync) IO
+        set public(waits,WalInitWrite) IO
+        set public(waits,WalRead) IO
+        set public(waits,WalsenderTimelineHistoryRead) IO
+        set public(waits,WalSync) IO
+        set public(waits,WalSyncMethodAssign) IO
+        set public(waits,WalWrite) IO
+        set public(waits,WalSummaryRead) IO
+        set public(waits,WalSummaryWrite) IO
+
         set public(waits,LogicalChangesRead) IO
         set public(waits,LogicalChangesWrite) IO
         set public(waits,LogicalSubxactRead) IO
         set public(waits,LogicalSubxactWrite) IO
 
+        #IPC
         set public(waits,AppendReady) IPC
+        set public(waits,ArchiveCleanupCommand) IPC
+        set public(waits,ArchiveCommand) IPC
         set public(waits,BackendTermination) IPC
         set public(waits,BackupWaitWalArchive) IPC
         set public(waits,BgWorkerShutdown) IPC
         set public(waits,BgWorkerStartup) IPC
+        set public(waits,BgworkerShutdown) IPC
+        set public(waits,BgworkerStartup) IPC
         set public(waits,BtreePage) IPC
         set public(waits,BufferIO) IPC
+        set public(waits,BufferIo) IPC
+        set public(waits,CheckpointDelayComplete) IPC
+        set public(waits,CheckpointDelayStart) IPC
         set public(waits,CheckpointDone) IPC
         set public(waits,CheckpointStart) IPC
         set public(waits,ExecuteGather) IPC
@@ -2577,34 +2662,45 @@ namespace eval pgmet {
         set public(waits,HashGrowBatchesDecide) IPC
         set public(waits,HashGrowBatchesElect) IPC
         set public(waits,HashGrowBatchesFinish) IPC
+        set public(waits,HashGrowBatchesReallocate) IPC
         set public(waits,HashGrowBatchesRepartition) IPC
         set public(waits,HashGrowBucketsAllocate) IPC
         set public(waits,HashGrowBucketsElect) IPC
+        set public(waits,HashGrowBucketsReallocate) IPC
         set public(waits,HashGrowBucketsReinsert) IPC
+        set public(waits,LogicalApplySendData) IPC
+        set public(waits,LogicalParallelApplyStateChange) IPC
         set public(waits,LogicalSyncData) IPC
         set public(waits,LogicalSyncStateChange) IPC
         set public(waits,MessageQueueInternal) IPC
         set public(waits,MessageQueuePutMessage) IPC
         set public(waits,MessageQueueReceive) IPC
         set public(waits,MessageQueueSend) IPC
+        set public(waits,MultixactCreation) IPC
         set public(waits,ParallelBitmapScan) IPC
         set public(waits,ParallelCreateIndexScan) IPC
         set public(waits,ParallelFinish) IPC
         set public(waits,ProcArrayGroupUpdate) IPC
+        set public(waits,ProcarrayGroupUpdate) IPC
         set public(waits,ProcSignalBarrier) IPC
         set public(waits,Promote) IPC
         set public(waits,RecoveryConflictSnapshot) IPC
         set public(waits,RecoveryConflictTablespace) IPC
+        set public(waits,RecoveryEndCommand) IPC
         set public(waits,RecoveryPause) IPC
         set public(waits,ReplicationOriginDrop) IPC
         set public(waits,ReplicationSlotDrop) IPC
+        set public(waits,RestoreCommand) IPC
         set public(waits,SafeSnapshot) IPC
         set public(waits,SyncRep) IPC
         set public(waits,WalReceiverExit) IPC
         set public(waits,WalReceiverWaitStart) IPC
+        set public(waits,WalSummaryReady) IPC
         set public(waits,XactGroupUpdate) IPC
 
+        #Lock
         set public(waits,advisory) Lock
+        set public(waits,applytransaction) Lock
         set public(waits,extend) Lock
         set public(waits,frozenid) Lock
         set public(waits,object) Lock
@@ -2617,6 +2713,7 @@ namespace eval pgmet {
         set public(waits,userlock) Lock
         set public(waits,virtualxid) Lock
 
+        #LWLock
         set public(waits,AddinShmemInit) LWLock
         set public(waits,async) LWLock
         set public(waits,AsyncCtlLock) LWLock
@@ -2681,64 +2778,110 @@ namespace eval pgmet {
         set public(waits,OldSnapshotTimeMap) LWLock
         set public(waits,ProcArray) LWLock
         set public(waits,SharedTidBitMap) LWLock
+        set public(waits,SharedTidBitmap) LWLock
+        set public(waits,WALBufMapping) LWLock
         set public(waits,WALInsert) LWLock
+        set public(waits,WALSummarizer) LWLock
+        set public(waits,WALWrite) LWLock
         set public(waits,XactBuffer) LWLock
         set public(waits,XactSLRU) LWLock
         set public(waits,XactTruncation) LWLock
         set public(waits,XidGen) LWLock
 
+        #Timeout
         set public(waits,BaseBackupThrottle) Timeout
+        set public(waits,CheckpointWriteDelay) Timeout
         set public(waits,PgSleep) Timeout
         set public(waits,RecoveryApplyDelay) Timeout
         set public(waits,RecoveryRetrieveRetryInterval) Timeout
+        set public(waits,RegisterSyncRequest) Timeout
+        set public(waits,SpinDelay) Timeout
         set public(waits,VacuumDelay) Timeout
+        set public(waits,VacuumTruncate) Timeout
+        set public(waits,WalSummarizerError) Timeout
     }
 
     proc set_pg_events {} {
         global public
 
         set public(events,CPU) "Waiting for CPU."
+
+        #Activity
         set public(events,ArchiverMain) "Waiting in main loop of archiver process."
         set public(events,AutoVacuumMain) "Waiting in main loop of autovacuum launcher process."
+        set public(events,AutovacuumMain) "Waiting in main loop of autovacuum launcher process."
         set public(events,BgWriterHibernate) "Waiting in background writer process, hibernating."
         set public(events,BgWriterMain) "Waiting in main loop of background writer process."
+        set public(events,BgwriterHibernate) "Waiting in background writer process, hibernating."
+        set public(events,BgwriterMain) "Waiting in main loop of background writer process."
         set public(events,CheckpointerMain) "Waiting in main loop of checkpointer process."
+        set public(events,CheckpointerShutdown) "Waiting for checkpointer process to be terminated."
+        set public(events,IoWorkerMain) "Waiting in main loop of IO Worker process."
         set public(events,LogicalApplyMain) "Waiting in main loop of logical replication apply process."
         set public(events,LogicalLauncherMain) "Waiting in main loop of logical replication launcher process."
+        set public(events,LogicalParallelApplyMain) "Waiting in main loop of logical replication parallel apply process."
         set public(events,PgStatMain) "Waiting in main loop of statistics collector process."
         set public(events,RecoveryWalAll) "Waiting for WAL from a stream at recovery."
         set public(events,RecoveryWalStream) "Waiting in main loop of startup process for WAL to arrive, during streaming recovery."
+        set public(events,ReplicationSlotsyncMain) "Waiting in main loop of slot sync worker."
+        set public(events,ReplicationSlotsyncShutdown) "Waiting for slot sync worker to shut down."
         set public(events,SysLoggerMain) "Waiting in main loop of syslogger process."
+        set public(events,SysloggerMain) "Waiting in main loop of syslogger process."
         set public(events,WalReceiverMain) "Waiting in main loop of WAL receiver process."
         set public(events,WalSenderMain) "Waiting in main loop of WAL sender process."
+        set public(events,WalSummarizerWal) "Waiting in WAL summarizer for more WAL to be generated."
         set public(events,WalWriterMain) "Waiting in main loop of WAL writer process."
 
+        #BufferPin
         set public(events,BufferPin) "Waiting to acquire an exclusive pin on a buffer."
 
+        #Client
         set public(events,ClientRead) "Waiting to read data from the client."
         set public(events,ClientWrite) "Waiting to write data to the client."
         set public(events,GSSOpenServer) "Waiting to read data from the client while establishing a GSSAPI session."
+        set public(events,GssOpenServer) "Waiting to read data from the client while establishing a GSSAPI session."
         set public(events,LibPQWalReceiverConnect) "Waiting in WAL receiver to establish connection to remote server."
         set public(events,LibPQWalReceiverReceive) "Waiting in WAL receiver to receive data from remote server."
+        set public(events,LibpqwalreceiverConnect) "Waiting in WAL receiver to establish connection to remote server."
+        set public(events,LibpqwalreceiverReceive) "Waiting in WAL receiver to receive data from remote server."
         set public(events,SSLOpenServer) "Waiting for SSL while attempting connection."
+        set public(events,SslOpenServer) "Waiting for SSL while attempting connection."
+        set public(events,WaitForStandbyConfirmation) "Waiting for WAL to be received and flushed by the physical standby."
         set public(events,WalReceiverWaitStart) "Waiting for startup process to send initial data for streaming replication."
         set public(events,WalSenderWaitForWAL) "Waiting for WAL to be flushed in WAL sender process."
+        set public(events,WalSenderWaitForWal) "Waiting for WAL to be flushed in WAL sender process."
         set public(events,WalSenderWriteData) "Waiting for any activity when processing replies from WAL receiver in WAL sender process."
 
+        #Extension
         set public(events,Extension) "Waiting in an extension."
 
+        #IO
+        set public(events,AioIoCompletion) "Waiting for another process to complete IO."
+        set public(events,AioIoUringExecution) "Waiting for IO execution via io_uring."
+        set public(events,AioIoUringSubmit) "Waiting for IO submission via io_uring."
+
         set public(events,BaseBackupRead) "Waiting for base backup to read from a file."
+        set public(events,BasebackupRead) "Waiting for base backup to read from a file."
+        set public(events,BasebackupSync) "Waiting for data written by a base backup to reach durable storage."
+        set public(events,BasebackupWrite) "Waiting for base backup to write to a file."
+
         set public(events,BufFileRead) "Waiting for a read from a buffered file."
         set public(events,BufFileWrite) "Waiting for a write to a buffered file."
         set public(events,BufFileTruncate) "Waiting for a buffered file to be truncated."
+        set public(events,BuffileRead) "Waiting for a read from a buffered file."
+        set public(events,BuffileWrite) "Waiting for a write to a buffered file."
+        set public(events,BuffileTruncate) "Waiting for a buffered file to be truncated."
+
         set public(events,ControlFileRead) "Waiting for a read from the pg_control file."
         set public(events,ControlFileSync) "Waiting for the pg_control file to reach durable storage."
         set public(events,ControlFileSyncUpdate) "Waiting for an update to the pg_control file to reach durable storage."
         set public(events,ControlFileWrite) "Waiting for a write to the pg_control file."
         set public(events,ControlFileWriteUpdate) "Waiting for a write to update the pg_control file."
+
+        set public(events,CopyFileCopy) "Waiting for a file copy operation."
         set public(events,CopyFileRead) "Waiting for a read during a file copy operation."
         set public(events,CopyFileWrite) "Waiting for a write during a file copy operation."
-        set public(events,DSMFillZeroWrite) "Waiting to fill a dynamic shared memory backing file with zeroes."
+
         set public(events,DataFileExtend) "Waiting for a relation data file to be extended."
         set public(events,DataFileFlush) "Waiting for a relation data file to reach durable storage."
         set public(events,DataFileImmediateSync) "Waiting for an immediate synchronization of a relation data file to durable storage."
@@ -2747,44 +2890,71 @@ namespace eval pgmet {
         set public(events,DataFileSync) "Waiting for changes to a relation data file to reach durable storage."
         set public(events,DataFileTruncate) "Waiting for a relation data file to be truncated."
         set public(events,DataFileWrite) "Waiting for a write to a relation data file."
+
+        set public(events,DsmAllocate) "Waiting for a dynamic shared memory segment to be allocated."
+        set public(events,DSMFillZeroWrite) "Waiting to fill a dynamic shared memory backing file with zeroes."
+        set public(events,DsmFillZeroWrite) "Waiting to fill a dynamic shared memory backing file with zeroes."
+
         set public(events,LockFileAddToDataDirRead) "Waiting for a read while adding a line to the data directory lock file."
         set public(events,LockFileAddToDataDirSync) "Waiting for data to reach durable storage while adding a line to the data directory lock file."
         set public(events,LockFileAddToDataDirWrite) "Waiting for a write while adding a line to the data directory lock file."
+        set public(events,LockFileReCheckDataDirRead) "Waiting for a read during recheck of the data directory lock file."
+        set public(events,LockFileAddtodatadirRead) "Waiting for a read while adding a line to the data directory lock file."
+        set public(events,LockFileAddtodatadirSync) "Waiting for data to reach durable storage while adding a line to the data directory lock file."
+        set public(events,LockFileAddtodatadirWrite) "Waiting for a write while adding a line to the data directory lock file."
+        set public(events,LockFileRecheckdatadirRead) "Waiting for a read during recheck of the data directory lock file."
+
         set public(events,LockFileCreateRead) "Waiting to read while creating the data directory lock file."
         set public(events,LockFileCreateSync) "Waiting for data to reach durable storage while creating the data directory lock file."
         set public(events,LockFileCreateWrite) "Waiting for a write while creating the data directory lock file."
-        set public(events,LockFileReCheckDataDirRead) "Waiting for a read during recheck of the data directory lock file."
+
         set public(events,LogicalRewriteCheckpointSync) "Waiting for logical rewrite mappings to reach durable storage during a checkpoint."
         set public(events,LogicalRewriteMappingSync) "Waiting for mapping data to reach durable storage during a logical rewrite."
         set public(events,LogicalRewriteMappingWrite) "Waiting for a write of mapping data during a logical rewrite."
         set public(events,LogicalRewriteSync) "Waiting for logical rewrite mappings to reach durable storage."
         set public(events,LogicalRewriteTruncate) "Waiting for truncate of mapping data during a logical rewrite."
         set public(events,LogicalRewriteWrite) "Waiting for a write of logical rewrite mappings."
+
         set public(events,RelationMapRead) "Waiting for a read of the relation map file."
         set public(events,RelationMapSync) "Waiting for the relation map file to reach durable storage."
         set public(events,RelationMapWrite) "Waiting for a write to the relation map file."
+        set public(events,RelationMapReplace) "Waiting for durable replacement of a relation map file."
+
         set public(events,ReorderBufferRead) "Waiting for a read during reorder buffer management."
         set public(events,ReorderBufferWrite) "Waiting for a write during reorder buffer management."
         set public(events,ReorderLogicalMappingRead) "Waiting for a read of a logical mapping during reorder buffer management."
+
         set public(events,ReplicationSlotRead) "Waiting for a read from a replication slot control file."
         set public(events,ReplicationSlotRestoreSync) "Waiting for a replication slot control file to reach durable storage while restoring it to memory."
         set public(events,ReplicationSlotSync) "Waiting for a replication slot control file to reach durable storage."
         set public(events,ReplicationSlotWrite) "Waiting for a write to a replication slot control file."
+
         set public(events,SLRUFlushSync) "Waiting for SLRU data to reach durable storage during a checkpoint or database shutdown."
         set public(events,SLRURead) "Waiting for a read of an SLRU page."
         set public(events,SLRUSync) "Waiting for SLRU data to reach durable storage following a page write."
         set public(events,SLRUWrite) "Waiting for a write of an SLRU page."
+        set public(events,SlruFlushSync) "Waiting for SLRU data to reach durable storage during a checkpoint or database shutdown."
+        set public(events,SlruRead) "Waiting for a read of an SLRU page."
+        set public(events,SlruSync) "Waiting for SLRU data to reach durable storage following a page write."
+        set public(events,SlruWrite) "Waiting for a write of an SLRU page."
+
         set public(events,SnapbuildRead) "Waiting for a read of a serialized historical catalog snapshot."
         set public(events,SnapbuildSync) "Waiting for a serialized historical catalog snapshot to reach durable storage."
         set public(events,SnapbuildWrite) "Waiting for a write of a serialized historical catalog snapshot."
+
         set public(events,TimelineHistoryFileSync) "Waiting for a timeline history file received via streaming replication to reach durable storage."
         set public(events,TimelineHistoryFileWrite) "Waiting for a write of a timeline history file received via streaming replication."
         set public(events,TimelineHistoryRead) "Waiting for a read of a timeline history file."
         set public(events,TimelineHistorySync) "Waiting for a newly created timeline history file to reach durable storage."
         set public(events,TimelineHistoryWrite) "Waiting for a write of a newly created timeline history file."
+
         set public(events,TwophaseFileRead) "Waiting for a read of a two phase state file."
         set public(events,TwophaseFileSync) "Waiting for a two phase state file to reach durable storage."
         set public(events,TwophaseFileWrite) "Waiting for a write of a two phase state file."
+
+        set public(events,VersionFileSync) "Waiting for the version file to reach durable storage while creating a database."
+        set public(events,VersionFileWrite) "Waiting for the version file to be written while creating a database."
+
         set public(events,WALBootstrapSync) "Waiting for WAL to reach durable storage during bootstrapping."
         set public(events,WALBootstrapWrite) "Waiting for a write of a WAL page during bootstrapping."
         set public(events,WALCopyRead) "Waiting for a read when creating a new WAL segment by copying an existing one."
@@ -2796,19 +2966,42 @@ namespace eval pgmet {
         set public(events,WALSenderTimelineHistoryRead) "Waiting for a read from a timeline history file during a walsender timeline command."
         set public(events,WALSync) "Waiting for a WAL file to reach durable storage."
         set public(events,WALSyncMethodAssign) "Waiting for data to reach durable storage while assigning a new WAL sync method."
-        set public(events,WALWrite) "Waiting for a write to a WAL file."
+
+        set public(events,WalBootstrapSync) "Waiting for WAL to reach durable storage during bootstrapping."
+        set public(events,WalBootstrapWrite) "Waiting for a write of a WAL page during bootstrapping."
+        set public(events,WalCopyRead) "Waiting for a read when creating a new WAL segment by copying an existing one."
+        set public(events,WalCopySync) "Waiting for a new WAL segment created by copying an existing one to reach durable storage."
+        set public(events,WalCopyWrite) "Waiting for a write when creating a new WAL segment by copying an existing one."
+        set public(events,WalInitSync) "Waiting for a newly initialized WAL file to reach durable storage."
+        set public(events,WalInitWrite) "Waiting for a write while initializing a new WAL file."
+        set public(events,WalRead) "Waiting for a read from a WAL file."
+        set public(events,WalsenderTimelineHistoryRead) "Waiting for a read from a timeline history file during a walsender timeline command."
+        set public(events,WalSync) "Waiting for a WAL file to reach durable storage."
+        set public(events,WalSyncMethodAssign) "Waiting for data to reach durable storage while assigning a new WAL sync method."
+        set public(events,WalWrite) "Waiting for a write to a WAL file."
+        set public(events,WalSummaryRead) "Waiting for a read from a WAL summary file."
+        set public(events,WalSummaryWrite) "Waiting for a write to a WAL summary file."
+
         set public(events,LogicalChangesRead) "Waiting for a read from a logical changes file."
         set public(events,LogicalChangesWrite) "Waiting for a write to a logical changes file."
-        set public(events,LogicalSubxactRead) "Waiting for a read from a logical subxact file."
-        set public(events,LogicalSubxactWrite) "Waiting for a write to a logical subxact file."
+        set public(events,LogicalSubxactRead) "Waiting for a read of a logical subxact file."
+        set public(events,LogicalSubxactWrite) "Waiting for a write of a logical subxact file."
 
+        #IPC
         set public(events,AppendReady) "Waiting for subplan nodes of an Append plan node to be ready."
+        set public(events,ArchiveCleanupCommand) "Waiting for archive_cleanup_command to complete."
+        set public(events,ArchiveCommand) "Waiting for archive_command to complete."
         set public(events,BackendTermination) "Waiting for the termination of another backend."
         set public(events,BackupWaitWalArchive) "Waiting for WAL files required for a backup to be successfully archived."
         set public(events,BgWorkerShutdown) "Waiting for background worker to shut down."
         set public(events,BgWorkerStartup) "Waiting for background worker to start up."
+        set public(events,BgworkerShutdown) "Waiting for background worker to shut down."
+        set public(events,BgworkerStartup) "Waiting for background worker to start up."
         set public(events,BtreePage) "Waiting for the page number needed to continue a parallel B-tree scan to become available."
         set public(events,BufferIO) "Waiting for buffer I/O to complete."
+        set public(events,BufferIo) "Waiting for buffer I/O to complete."
+        set public(events,CheckpointDelayComplete) "Waiting for a backend that blocks a checkpoint from completing."
+        set public(events,CheckpointDelayStart) "Waiting for a backend that blocks a checkpoint from starting."
         set public(events,CheckpointDone) "Waiting for a checkpoint to complete."
         set public(events,CheckpointStart) "Waiting for a checkpoint to start."
         set public(events,ExecuteGather) "Waiting for activity from a child process while executing a Gather plan node."
@@ -2823,34 +3016,45 @@ namespace eval pgmet {
         set public(events,HashGrowBatchesDecide) "Waiting to elect a Parallel Hash participant to decide on future batch growth."
         set public(events,HashGrowBatchesElect) "Waiting to elect a Parallel Hash participant to allocate more batches."
         set public(events,HashGrowBatchesFinish) "Waiting for an elected Parallel Hash participant to decide on future batch growth."
+        set public(events,HashGrowBatchesReallocate) "Waiting for an elected Parallel Hash participant to allocate more batches."
         set public(events,HashGrowBatchesRepartition) "Waiting for other Parallel Hash participants to finish repartitioning."
         set public(events,HashGrowBucketsAllocate) "Waiting for an elected Parallel Hash participant to finish allocating more buckets."
         set public(events,HashGrowBucketsElect) "Waiting to elect a Parallel Hash participant to allocate more buckets."
+        set public(events,HashGrowBucketsReallocate) "Waiting for an elected Parallel Hash participant to finish allocating more buckets."
         set public(events,HashGrowBucketsReinsert) "Waiting for other Parallel Hash participants to finish inserting tuples into new buckets."
+        set public(events,LogicalApplySendData) "Waiting for a logical replication leader apply process to send data to a parallel apply process."
+        set public(events,LogicalParallelApplyStateChange) "Waiting for a logical replication parallel apply process to change state."
         set public(events,LogicalSyncData) "Waiting for a logical replication remote server to send data for initial table synchronization."
         set public(events,LogicalSyncStateChange) "Waiting for a logical replication remote server to change state."
         set public(events,MessageQueueInternal) "Waiting for another process to be attached to a shared message queue."
         set public(events,MessageQueuePutMessage) "Waiting to write a protocol message to a shared message queue."
         set public(events,MessageQueueReceive) "Waiting to receive bytes from a shared message queue."
         set public(events,MessageQueueSend) "Waiting to send bytes to a shared message queue."
+        set public(events,MultixactCreation) "Waiting for a multixact creation to complete."
         set public(events,ParallelBitmapScan) "Waiting for parallel bitmap scan to become initialized."
         set public(events,ParallelCreateIndexScan) "Waiting for parallel CREATE INDEX workers to finish heap scan."
         set public(events,ParallelFinish) "Waiting for parallel workers to finish computing."
         set public(events,ProcArrayGroupUpdate) "Waiting for the group leader to clear the transaction ID at end of a parallel operation."
+        set public(events,ProcarrayGroupUpdate) "Waiting for the group leader to clear the transaction ID at transaction end."
         set public(events,ProcSignalBarrier) "Waiting for a barrier event to be processed by all backends."
         set public(events,Promote) "Waiting for standby promotion."
         set public(events,RecoveryConflictSnapshot) "Waiting for recovery conflict resolution for a vacuum cleanup."
         set public(events,RecoveryConflictTablespace) "Waiting for recovery conflict resolution for dropping a tablespace."
+        set public(events,RecoveryEndCommand) "Waiting for recovery_end_command to complete."
         set public(events,RecoveryPause) "Waiting for recovery to be resumed."
         set public(events,ReplicationOriginDrop) "Waiting for a replication origin to become inactive so it can be dropped."
         set public(events,ReplicationSlotDrop) "Waiting for a replication slot to become inactive so it can be dropped."
+        set public(events,RestoreCommand) "Waiting for restore_command to complete."
         set public(events,SafeSnapshot) "Waiting to obtain a valid snapshot for a READ ONLY DEFERRABLE transaction."
         set public(events,SyncRep) "Waiting for confirmation from a remote server during synchronous replication."
         set public(events,WalReceiverExit) "Waiting for the WAL receiver to exit."
         set public(events,WalReceiverWaitStart) "Waiting for startup process to send initial data for streaming replication."
+        set public(events,WalSummaryReady) "Waiting for a new WAL summary to be generated."
         set public(events,XactGroupUpdate) "Waiting for the group leader to update transaction status at end of a parallel operation."
 
+        #Lock
         set public(events,advisory) "Waiting to acquire an advisory user lock."
+        set public(events,applytransaction) "Waiting to acquire a lock on a remote transaction being applied by a logical replication subscriber."
         set public(events,extend) "Waiting to extend a relation."
         set public(events,frozenid) "Waiting to update pg_database.datfrozenxid and pg_database.datminmxid."
         set public(events,object) "Waiting to acquire a lock on a non-relation database object."
@@ -2863,6 +3067,7 @@ namespace eval pgmet {
         set public(events,userlock) "Waiting to acquire a user lock."
         set public(events,virtualxid) "Waiting to acquire a virtual transaction ID lock."
 
+        #LWLock
         set public(events,AddinShmemInit) "Waiting to manage an extension's space allocation in shared memory."
         set public(events,async) "Waiting for I/O on an async (notify) buffer."
         set public(events,AsyncCtlLock) "Waiting to read or update shared notification state."
@@ -2899,7 +3104,7 @@ namespace eval pgmet {
         set public(events,DynamicSharedMemoryControl) "Waiting to read or update dynamic shared memory allocation information."
         set public(events,DynamicSharedMemoryControlLock) $public(events,DynamicSharedMemoryControl)
         set public(events,LockFastPath) "Waiting to read or update a process' fast-path lock information."
-        set public(events,LockManager) "Waiting to read or update information about ¡°heavyweight¡± locks."
+        set public(events,LockManager) "Waiting to read or update information about heavyweight locks."
         set public(events,lock_manager) $public(events,LockManager)
         set public(events,LogicalRepWorker) "Waiting to read or update the state of logical replication workers."
         set public(events,LogicalRepWorkerLock) $public(events,LogicalRepWorker)
@@ -2908,10 +3113,10 @@ namespace eval pgmet {
         set public(events,MultiXactGen) "Waiting to read or update shared multixact state."
         set public(events,MultiXactGenLock) $public(events,MultiXactGen)
         set public(events,MultiXactMemberBuffer) "Waiting for I/O on a multixact member SLRU buffer."
-        set public(events,MultiXactMemberControlLock) "	Waiting to read or update multixact member mappings."
+        set public(events,MultiXactMemberControlLock) $public(events,MultiXactMemberBuffer)
         set public(events,MultiXactMemberSLRU) "Waiting to access the multixact member SLRU cache."
         set public(events,MultiXactOffsetBuffer) "Waiting for I/O on a multixact offset SLRU buffer."
-        set public(events,MultiXactOffsetControlLock) "	Waiting to read or update multixact offset mappings."
+        set public(events,MultiXactOffsetControlLock) $public(events,MultiXactOffsetBuffer)
         set public(events,MultiXactOffsetSLRU) "Waiting to access the multixact offset SLRU cache."
         set public(events,MultiXactTruncation) "Waiting to read or truncate multixact information."
         set public(events,MultiXactTruncationLock) $public(events,MultiXactTruncation)
@@ -2923,41 +3128,57 @@ namespace eval pgmet {
         set public(events,OidGen) "Waiting to allocate a new OID."
         set public(events,OidGenLock) $public(events,OidGen)
         set public(events,oldserxid) "Waiting to I/O on an oldserxid buffer."
-        set public(events,OldSerXidLock) "	Waiting to read or record conflicting serializable transactions."
+        set public(events,OldSerXidLock) "Waiting to read or record conflicting serializable transactions."
         set public(events,OldSnapshotTimeMap) "Waiting to read or update old snapshot control information."
-
-        set public(events,BaseBackupThrottle) "Waiting during base backup when throttling activity."
-        set public(events,PgSleep) "Waiting due to a call to pg_sleep or a sibling function."
-        set public(events,RecoveryApplyDelay) "Waiting to apply WAL during recovery because of a delay setting."
-        set public(events,RecoveryRetrieveRetryInterval) "Waiting during recovery when WAL data is not available from any source (pg_wal, archive or stream)."
-        set public(events,VacuumDelay) "Waiting in a cost-based vacuum delay point."
-
+        set public(events,ProcArray) "Waiting to access the shared per-process data structures (typically, to get a snapshot or report a session's transaction ID)."
+        set public(events,SharedTidBitMap) "Waiting to access a shared TID bitmap during a parallel bitmap index scan."
+        set public(events,SharedTidBitmap) "Waiting to access a shared TID bitmap during a parallel bitmap index scan."
+        set public(events,WALBufMapping) "Waiting to replace a page in WAL buffers."
         set public(events,WALInsert) "Waiting to insert WAL data into a memory buffer."
+        set public(events,WALSummarizer) "Waiting to read or update WAL summarization state."
+        set public(events,WALWrite) "Waiting for WAL buffers to be written to disk."
         set public(events,XactBuffer) "Waiting for I/O on a transaction status SLRU buffer."
         set public(events,XactSLRU) "Waiting to access the transaction status SLRU cache."
         set public(events,XactTruncation) "Waiting to execute pg_xact_status or update the oldest transaction ID available to it."
         set public(events,XidGen) "Waiting to allocate a new transaction ID."
-        set public(events,ProcArray) "Waiting to access the shared per-process data structures (typically, to get a snapshot or report a session's transaction ID)."
-        set public(events,SharedTidBitmap) "Waiting to access a shared TID bitmap during a parallel bitmap index scan."
+
+        #Timeout
+        set public(events,BaseBackupThrottle) "Waiting during base backup when throttling activity."
+        set public(events,CheckpointWriteDelay) "Waiting between writes while performing a checkpoint."
+        set public(events,PgSleep) "Waiting due to a call to pg_sleep or a sibling function."
+        set public(events,RecoveryApplyDelay) "Waiting to apply WAL during recovery because of a delay setting."
+        set public(events,RecoveryRetrieveRetryInterval) "Waiting during recovery when WAL data is not available from any source (pg_wal, archive or stream)."
+        set public(events,RegisterSyncRequest) "Waiting while sending synchronization requests to the checkpointer, because the request queue is full."
+        set public(events,SpinDelay) "Waiting while acquiring a contended spinlock."
+        set public(events,VacuumDelay) "Waiting in a cost-based vacuum delay point."
+        set public(events,VacuumTruncate) "Waiting to acquire an exclusive lock to truncate off any empty pages at the end of a table vacuumed."
+        set public(events,WalSummarizerError) "Waiting after a WAL summarizer error."
     }
 
     proc get_event_type { event } {
         global public
-        set cur_proc get_event_type
         set event_type "N/A"
-        if { [ catch {
-                set event_type $public(waits,$event)
-        } err] } { puts "$cur_proc, err:$err"; } 
+        if {[info exists public(waits,$event)]} {
+            return $public(waits,$event)
+        }
+        if {![info exists public(unknown_waits,$event)]} {
+            set public(unknown_waits,$event) 1
+            puts "get_event_type: unknown wait_event='$event'"
+        }
         return $event_type
     }
 
     proc get_event_desc { event } {
         global public
-        set cur_proc get_event_desc  
         set event_desc "N/A"
-        if { [ catch {
-                set event_desc $public(events,$event)
-        } err] } { puts "$cur_proc, err:$err"; }
+        if {[info exists public(events,$event)]} {
+            return $public(events,$event)
+        }
+        if {![info exists public(unknown_events,$event)]} {
+            set public(unknown_events,$event) 1
+            # reported by get_event_type
+            # puts "get_event_desc: unknown wait_event='$event'"
+        }
         return $event_desc
     }
 
