@@ -2715,7 +2715,9 @@ if {$rawmode} {
             }
 
             #Series data for existing bar chart
+            set P25_MS {}
             set P50_MS {}
+            set P75_MS {}
             set P95_MS {}
             set P99_MS {}
             set AVG_MS {}
