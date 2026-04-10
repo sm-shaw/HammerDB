@@ -102,7 +102,7 @@ namespace eval jobs {
         if [catch {hdbjobs eval {CREATE TABLE JOBMAIN(jobid TEXT primary key, db TEXT, bm TEXT, jobdict TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')),profile_id INTEGER NOT NULL DEFAULT 0)}} message ] {
           puts "Error creating JOBMAIN table in SQLite in-memory database : $message"
           return
-        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTIMING(jobid TEXT, vu INTEGER, procname TEXT, calls INTEGER, min_ms REAL, avg_ms REAL, max_ms REAL, total_ms REAL, p99_ms REAL, p95_ms REAL, p50_ms REAL, sd REAL, ratio_pct REAL, summary INTEGER, elapsed_ms REAL, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+        } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTIMING(jobid TEXT, vu INTEGER, procname TEXT, calls INTEGER, min_ms REAL, avg_ms REAL, max_ms REAL, total_ms REAL, p99_ms REAL, p95_ms REAL, p75_ms REAL, p50_ms REAL, p25_ms REAL, sd REAL, ratio_pct REAL, summary INTEGER, elapsed_ms REAL, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBTIMING table in SQLite in-memory database : $message"
         } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTCOUNT(jobid TEXT, counter INTEGER, metric TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
           puts "Error creating JOBTCOUNT table in SQLite in-memory database : $message"
@@ -144,7 +144,7 @@ namespace eval jobs {
             if [catch {hdbjobs eval {CREATE TABLE JOBMAIN(jobid TEXT primary key, db TEXT, bm TEXT, jobdict TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')),profile_id INTEGER NOT NULL DEFAULT 0)}} message ] {
               puts "Error creating JOBMAIN table in SQLite on-disk database : $message"
               return
-            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTIMING(jobid TEXT, vu INTEGER, procname TEXT, calls INTEGER, min_ms REAL, avg_ms REAL, max_ms REAL, total_ms REAL, p99_ms REAL, p95_ms REAL, p50_ms REAL, sd REAL, ratio_pct REAL, summary INTEGER, elapsed_ms REAL, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
+            } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTIMING(jobid TEXT, vu INTEGER, procname TEXT, calls INTEGER, min_ms REAL, avg_ms REAL, max_ms REAL, total_ms REAL, p99_ms REAL, p95_ms REAL, p75_ms REAL, p50_ms REAL, p25_ms REAL, sd REAL, ratio_pct REAL, summary INTEGER, elapsed_ms REAL, FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
               puts "Error creating JOBTIMING table in SQLite on-disk database : $message"
               return
             } elseif [ catch {hdbjobs eval {CREATE TABLE JOBTCOUNT(jobid TEXT, counter INTEGER, metric TEXT, timestamp DATETIME NOT NULL DEFAULT (datetime(CURRENT_TIMESTAMP, 'localtime')), FOREIGN KEY(jobid) REFERENCES JOBMAIN(jobid))}} message ] {
@@ -2429,15 +2429,15 @@ if {$rawmode} {
 
   proc getjobtiming { jobid } {
     set jobtiming [ dict create ]
-    hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and SUMMARY=1 ORDER BY RATIO_PCT DESC}  {
-      set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p50_ms $p50_ms sd $sd ratio_pct $ratio_pct"
+    hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p75_ms,p50_ms,p25_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and SUMMARY=1 ORDER BY RATIO_PCT DESC}  {
+    set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p75_ms $p75_ms p50_ms $p50_ms p25_ms $p25_ms sd $sd ratio_pct $ratio_pct"
       dict append jobtiming $procname $timing
     }
     if { [ dict size $jobtiming ] eq 0 } {
       set jobtiming [ list $jobid "Jobid has no timing data" ]
     }
     return $jobtiming
-  }
+ }
 
   proc getjobtcount { jobid } {
     set jobtcount [ dict create ]
@@ -2686,7 +2686,7 @@ if {$rawmode} {
           if { $tproch } {
             #CREATE TPROC-H timing chart
             foreach queryoutput $chartdata {
-              if { [ string match "query*" $queryoutput ] } { 
+              if { [ string match "query*" $queryoutput ] } {
                 set numbers [regexp -all -inline -- {\d?\.?\d+} $queryoutput]
                 if { [ string match "*completed*" $queryoutput ] } {
                   lassign $numbers querypos querytime
@@ -2695,40 +2695,88 @@ if {$rawmode} {
                 }
               }
             }
-            #Create chart showing timing for each Query 
+            #Create chart showing timing for each Query
             set bar [ticklecharts::chart new]
-            set ::ticklecharts::htmlstdout "True" ; 
+            set ::ticklecharts::htmlstdout "True"
             $bar SetOptions -title [ subst {text "$dbdescription TPROC-H Power Query Times $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
             $bar Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $bar Yaxis -name "Seconds" -position "left" -axisLabel {formatter {"{value}"}}
-            $bar Add "barSeries" -name "VU 1 Query Set" -data [list $barseries ] -itemStyle [ subst {color $color1 opacity 0.90} ]
+            $bar Add "barSeries" -name "VU 1 Query Set" -data [list $barseries] -itemStyle [ subst {color $color1 opacity 0.90} ]
             set html [ $bar toHTML -title "$jobid Query Times" ]
             hdbjobs eval {INSERT INTO JOBCHART(jobid,chart,html) VALUES($jobid,'timing',$html)}
             return $html
           } else {
-            #CREATE TPROC-C Timing chart
-            #Create Xaxis and extract p50,p95, p99, avg
-            foreach sp {NEWORD PAYMENT DELIVERY SLEV OSTAT} { 
-              append xaxisvals \"$sp\"\ 
-              set $sp\_rs [ dict filter [ dict get $chartdata $sp ] script {key value} { regexp {p50_ms|p95_ms|p99_ms|avg_ms} $key } ]
+            #CREATE TPROC-C Timing charts
+
+            #X axis
+            set xaxisvals {}
+            foreach sp {NEWORD PAYMENT DELIVERY SLEV OSTAT} {
+              lappend xaxisvals $sp
             }
-            #Create series for each timing for each stored proc
-            foreach rs {NEWORD_rs PAYMENT_rs DELIVERY_rs SLEV_rs OSTAT_rs} {
-              foreach ms {p50_ms p95_ms p99_ms avg_ms} {
-                append [ string toupper $ms ] \"[ dict get [ set $rs ] $ms ]\"\ 
-              }
+
+            #Series data for existing bar chart
+            set P50_MS {}
+            set P95_MS {}
+            set P99_MS {}
+            set AVG_MS {}
+
+            #Series data for new box plot
+            set boxdata {}
+
+            foreach sp {NEWORD PAYMENT DELIVERY SLEV OSTAT} {
+              set spdata [dict get $chartdata $sp]
+
+              lappend P25_MS [dict get $spdata p25_ms]
+              lappend P50_MS [dict get $spdata p50_ms]
+              lappend P75_MS [dict get $spdata p75_ms]
+              lappend P95_MS [dict get $spdata p95_ms]
+              lappend P99_MS [dict get $spdata p99_ms]
+              lappend AVG_MS [dict get $spdata avg_ms]
+
+              #Boxplot format: min, q1, median, q3, max
+            # Use p99 instead of max_ms as max only shows whiskers due to extended scale
+            # [dict get $spdata max_ms]
+              lappend boxdata [list \
+                [dict get $spdata min_ms] \
+                [dict get $spdata p25_ms] \
+                [dict get $spdata p50_ms] \
+                [dict get $spdata p75_ms] \
+                [dict get $spdata p99_ms] \
+              ]
             }
-            #Create chart showing timing for each stored proc
+
+            #original percentile/average chart
+            set boxdescription $dbdescription
             set bar [ticklecharts::chart new]
-            set ::ticklecharts::htmlstdout "True" ; 
+            set ::ticklecharts::htmlstdout "True"
             $bar SetOptions -title [ subst {text "$dbdescription TPROC-C Response Times $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "30%"}
             $bar Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $bar Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
-            $bar Add "barSeries" -name P50_MS -data [list "$P50_MS "]    
-            $bar Add "barSeries" -name P95_MS -data [list "$P95_MS "]    
-            $bar Add "barSeries" -name P99_MS -data [list "$P99_MS "]    
-            $bar Add "barSeries" -name AVG_MS -data [list "$AVG_MS "]    
-            set html [ $bar toHTML -title "$jobid Response Times" ]
+            #$bar Add "barSeries" -name P25_MS -data [list $P25_MS]
+            $bar Add "barSeries" -name P50_MS -data [list $P50_MS]
+            #$bar Add "barSeries" -name P75_MS -data [list $P75_MS]
+            $bar Add "barSeries" -name P95_MS -data [list $P95_MS]
+            $bar Add "barSeries" -name P99_MS -data [list $P99_MS]
+            $bar Add "barSeries" -name AVG_MS -data [list $AVG_MS]
+            set barhtml [ $bar toHTML -title "$jobid Response Times" ]
+
+            #boxplot chart
+            set dbdescription [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]
+            foreach colour {color1 color2} {set $colour [ dict get $chartcolors $dbdescription $colour ]}
+            set box [ticklecharts::chart new]
+            set ::ticklecharts::htmlstdout "True"
+            $box SetOptions -title [ subst {text "$boxdescription TPROC-C Box (P99 Max) $jobid $date"} ] -tooltip {show "True"} -legend {show "False"}
+            $box Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
+            $box Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
+            $box Add "boxPlotSeries" -name "Response Distribution" -data $boxdata -itemStyle [ subst {color $color1 opacity 0.70} ]
+            set boxhtml [ $box toHTML -title "$jobid Response Time Distribution" ]
+            regsub -all {(?is)^.*?<body[^>]*>} $boxhtml "" boxhtml
+            regsub -all {(?is)</body>\s*</html>\s*$} $boxhtml "" boxhtml
+            regsub -all {(?is)<p><img[^>]*logo\.png[^>]*></p>} $boxhtml "" boxhtml
+            regsub -all {(?is)^.*?(\bchart_[A-Za-z0-9]+\s*=\s*echarts\.init)} $boxhtml {\1} boxhtml
+            #Return both charts in one HTML payload
+            set html "$barhtml $boxhtml"
+            regsub -all {(?is)</script>\s*</body>\s*</html>\s*<br><br>} $html "" html
             hdbjobs eval {INSERT INTO JOBCHART(jobid,chart,html) VALUES($jobid,'timing',$html)}
             return $html
           }
@@ -3220,15 +3268,16 @@ proc getjob { query } {
             set jobtiming [dict create]
 
             # JOBTIMING for VU
-            hdbjobs eval {
-                SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct
+	    hdbjobs eval {
+                SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p75_ms,p50_ms,p25_ms,sd,ratio_pct
                 FROM JOBTIMING
                 WHERE JOBID=$jobid AND VU=$vuid AND SUMMARY=0
                 ORDER BY RATIO_PCT DESC
             } {
-                set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p50_ms $p50_ms sd $sd ratio_pct $ratio_pct"
+                set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p75_ms $p75_ms p50_ms $p50_ms p25_ms $p25_ms sd $sd ratio_pct $ratio_pct"
                 dict append jobtiming $procname $timing
             }
+
 
             if {[dict size $jobtiming] != 0} {
                 set huddleobj [huddle compile {dict * dict} $jobtiming]
