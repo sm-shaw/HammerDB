@@ -174,7 +174,7 @@ namespace eval tpcccommon {
       async_time [ expr $as_thkt * 1000 ]
     }
   }
-  #Find a Valid XML Connect Pool Config Directory,don't look in zipped fs as user needs to edit
+  #Find a Valid Cluster Connect Pool Config Directory,don't look in zipped fs as user needs to edit
   proc find_cpool_dir {} {
   if [ catch {set ISConfigDir [ file join  {*}[ lrange [ file split [ file normalize [ file dirname [ info script ] ]]] 0 end-2 ] config connectpool ]} message ] { set ISConfigDir "" }
   set PWConfigDir [ file join [ pwd ] config connectpool ]
@@ -187,19 +187,19 @@ namespace eval tpcccommon {
   }
   return "FNF"
   }
-  #XML Connect Data
+  #Cluster Connect Data
   proc get_connect_xml { prefix } {
     if [catch {package require xml} ] { error "Failed to load xml package in tpcccommon module" } 
     set cpooldir [ find_cpool_dir ]
     if { $cpooldir eq "FNF" } {
-      error "Connect Pool specified but cannot find XML connectpool directory or connect pool XML files"
+      error "Cluster Connect Pool specified but cannot find connectpool directory or XML files"
 	} else {
     set connect "$cpooldir/$prefix\cpool.xml"
     if { [ file exists $connect ] } { 
       set cpool [ ::XML::To_Dict_Ml $connect ] 
       return $cpool
     } else {
-      error "Connect Pool specified but file $connect does not exist" 
+      error "Cluster Connect Pool specified but file $connect does not exist" 
      }
    }
  }

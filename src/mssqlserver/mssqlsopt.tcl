@@ -678,7 +678,7 @@ proc configmssqlstpcc {option} {
         }
         set Name $Parent.c1.e26
         set Prompt $Parent.c1.p26
-        ttk::label $Prompt -text "XML Connect Pool :"
+        ttk::label $Prompt -text "Cluster Connect Pool :"
         ttk::checkbutton $Name -text "" -variable mssqls_connect_pool -onvalue "true" -offvalue "false"
         grid $Prompt -column 0 -row 37 -sticky e
         grid $Name -column 1 -row 37 -sticky ew
