@@ -1595,6 +1595,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     return $lda
 }
 
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
+
 proc CreateUserDatabase { lda host port sslmode db tspace superuser superuser_password user password } {
     set stmnt_count 1
     puts "CREATING DATABASE $db under OWNER $user"
@@ -2562,6 +2612,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     }
     return $lda
 }
+
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
 #NEW ORDER
 proc neword { lda no_w_id w_id_input RAISEERROR ora_compatible pg_storedprocs } {
     #2.4.1.2 select district id randomly from home warehouse where d_w_id = d_id
@@ -2760,10 +2860,11 @@ if { $lda eq "Failed" } {
     if { $ora_compatible eq "true" } {
         set result [ pg_exec $lda "exec dbms_output.disable" ]
         pg_result $result -clear
-    } elseif { $pg_storedprocs eq "true" } {
-        ;
     } else {
-        fn_prep_statement $lda
+        set pg_storedprocs [detect_pg_tpcc_routine_mode $lda $pg_storedprocs]
+        if { $pg_storedprocs ne "true" } {
+            fn_prep_statement $lda
+        }
     }
 }
 pg_select $lda "select max(w_id) from warehouse" w_id_input_arr {
@@ -2871,6 +2972,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     }
     return $lda
 }
+
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
 
 proc CheckDBVersion { lda1 } {
            if {[catch {pg_select $lda1 "select current_setting('server_version')" version_arr {
@@ -3212,10 +3363,11 @@ switch $myposition {
             if { $ora_compatible eq "true" } {
                 set result [ pg_exec $lda "exec dbms_output.disable" ]
                 pg_result $result -clear
-            } elseif { $pg_storedprocs eq "true" } {
-                ;
             } else {
-                fn_prep_statement $lda
+                set pg_storedprocs [detect_pg_tpcc_routine_mode $lda $pg_storedprocs]
+                if { $pg_storedprocs ne "true" } {
+                    fn_prep_statement $lda
+                }
             }
         }
         pg_select $lda "select max(w_id) from warehouse" w_id_input_arr {
@@ -3310,6 +3462,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     }
     return $lda
 }
+
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
 
 proc CheckDBVersion { lda1 } {
            if {[catch {pg_select $lda1 "select current_setting('server_version')" version_arr {
@@ -3673,10 +3875,11 @@ switch $myposition {
             if { $ora_compatible eq "true" } {
                 set result [ pg_exec $lda "exec dbms_output.disable" ]
                 pg_result $result -clear
-            } elseif { $pg_storedprocs eq "true" } {
-                ; 
             } else {
-                fn_prep_statement $lda $clientname
+                set pg_storedprocs [detect_pg_tpcc_routine_mode $lda $pg_storedprocs]
+                if { $pg_storedprocs ne "true" } {
+                    fn_prep_statement $lda $clientname
+                }
             }
             pg_select $lda "select max(w_id) from warehouse" w_id_input_arr {
                 set w_id_input $w_id_input_arr(max)
@@ -3782,6 +3985,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     return $lda
 }
 
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
+
 proc drop_schema { host port sslmode user superuser superuser_password default_dbase dbase } {
     set suconnect [ ConnectToPostgres $host $port $sslmode $superuser $superuser_password $default_dbase ]
     if { $suconnect eq "Failed" } {
@@ -3851,6 +4104,56 @@ proc ConnectToPostgres { host port sslmode user password dbname } {
     return $lda
 }
 
+
+proc detect_pg_tpcc_routine_mode { lda requested_pg_storedprocs } {
+    set fn_count 0
+    set proc_count 0
+
+    set requested_pg_storedprocs [expr {$requested_pg_storedprocs eq "true" ? "true" : "false"}]
+
+    if {[catch {
+        pg_select $lda {
+            SELECT p.prokind, count(*) AS cnt
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname IN ('neword','payment','delivery','ostat','slev')
+            GROUP BY p.prokind
+        } r {
+            set cnt [expr {$r(cnt) + 0}]
+            switch -- $r(prokind) {
+                f { set fn_count $cnt }
+                p { set proc_count $cnt }
+            }
+        }
+    } message]} {
+        puts "PostgreSQL TPROC-C: routine detection failed ($message), keeping pg_storedprocs=$requested_pg_storedprocs"
+        return $requested_pg_storedprocs
+    }
+
+    if {$fn_count == 5 && $proc_count == 0} {
+        if {$requested_pg_storedprocs eq "true"} {
+            puts "PostgreSQL TPROC-C: stored procedures requested, but functions found. Auto-switching pg_storedprocs to false."
+        }
+        return false
+    }
+
+    if {$proc_count == 5 && $fn_count == 0} {
+        if {$requested_pg_storedprocs eq "false"} {
+            puts "PostgreSQL TPROC-C: functions requested, but stored procedures found. Auto-switching pg_storedprocs to true."
+        }
+        return true
+    }
+
+    if {$fn_count == 5 && $proc_count == 5} {
+        return $requested_pg_storedprocs
+    }
+
+    puts "PostgreSQL TPROC-C: incomplete routine set detected (functions=$fn_count procedures=$proc_count), keeping pg_storedprocs=$requested_pg_storedprocs"
+    return $requested_pg_storedprocs
+}
+
+
 proc check_tpcc { host port sslmode user superuser superuser_password default_dbase dbase count_ware } {
     puts "Checking $dbase TPROC-C schema"
     set tables [ dict create warehouse $count_ware customer [ expr {$count_ware * 30000} ] district [ expr {$count_ware * 10} ] history [ expr {$count_ware * 30000} ] item 100000 new_order [ expr {$count_ware * 9000 * 0.90} ] order_line [ expr {$count_ware * 300000 * 0.99} ] orders [ expr {$count_ware * 30000} ] stock [ expr {$count_ware * 100000} ] ]
@@ -3906,13 +4209,13 @@ proc check_tpcc { host port sslmode user superuser superuser_password default_db
         }
         }
 	    #Check 6 Stored Procedures Exist
-	puts "Check procedures"
+	puts "Check routines"
         foreach sp $sps {
 	     pg_select $existing_db "SELECT EXISTS ( SELECT * FROM pg_catalog.pg_proc JOIN pg_namespace ON pg_catalog.pg_proc.pronamespace = pg_namespace.oid WHERE proname = '$sp' AND pg_namespace.nspname = 'public')" exists_arr {
             set torf $exists_arr(exists)
 	}
 	        if { $torf == "f" } {
-	error "TPROC-C Schema check failed $dbase schema is missing stored procedure $sp"
+	error "TPROC-C Schema check failed $dbase schema is missing routine $sp"
         } 
     }
             #Create temporary sample table
