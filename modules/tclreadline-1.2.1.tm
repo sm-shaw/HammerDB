@@ -113,11 +113,16 @@ proc TclReadLine::clear {} {
 
 proc TclReadLine::clearline {} {
     variable CMDLINE_CURSOR
+    set prompt_len 9
     if {[string match windows $::tcl_platform(platform)]} { 
-        set handle [twapi::get_standard_handle stdout]
-        lassign [ split [ join [ lreplace [ twapi::get_console_screen_buffer_info $handle -cursorpos ] 0 0 ] ] ] col row
-        #col always 9 as length of hammerdb> prompt
-        twapi::fill_console $handle -numlines 1 -position "9,$row"
+        set handle [twapi::get_console_handle stdout]
+        lassign [split [join [lreplace [twapi::get_console_screen_buffer_info $handle -cursorpos] 0 0]]] col row
+        try {
+            set attrs [twapi::get_console_screen_buffer_info $handle -textattr]
+            twapi::fill_console $handle -numlines 1 -position "$prompt_len,$row" {*}[lindex $attrs end]
+        } finally {
+            twapi::close_handle $handle
+        }
     } else {
         print "[ESC]\[2K\r" nowait
     }
@@ -126,9 +131,14 @@ proc TclReadLine::clearline {} {
 proc TclReadLine::pyclearline {} {
     variable CMDLINE_CURSOR
     if {[string match windows $::tcl_platform(platform)]} { 
-        set handle [twapi::get_standard_handle stdout]
-        lassign [ split [ join [ lreplace [ twapi::get_console_screen_buffer_info $handle -cursorpos ] 0 0 ] ] ] col row
-        twapi::fill_console $handle -numlines 1 -position "0,$row"
+        set handle [twapi::get_console_handle stdout]
+        lassign [split [join [lreplace [twapi::get_console_screen_buffer_info $handle -cursorpos] 0 0]]] col row
+        try {
+            set attrs [twapi::get_console_screen_buffer_info $handle -textattr]
+            twapi::fill_console $handle -numlines 1 -position "0,$row" {*}[lindex $attrs end]
+        } finally {
+            twapi::close_handle $handle
+        }
     } else {
         print "[ESC]\[2K\r" nowait
     }
