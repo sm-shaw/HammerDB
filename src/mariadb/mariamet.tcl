@@ -2005,6 +2005,10 @@ namespace eval mariamet {
                                 INDEX idx_wait_event_type (wait_event_type),
                                 INDEX idx_digest (digest)
                             ) ENGINE=InnoDB"
+                            #Enable required performance_schema consumers for ASH data collection
+                            catch { maria::exec $handle "UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME IN ('events_waits_current', 'events_statements_current')" }
+                            catch { maria::exec $handle "UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME LIKE 'wait/%'" }
+                            catch { maria::exec $handle "UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME LIKE 'statement/%'" }
                             #Create sampling event if not exists
                             maria::exec $handle "CREATE EVENT IF NOT EXISTS hammerdb_ash.ash_sampler
                                 ON SCHEDULE EVERY 1 SECOND
@@ -2023,8 +2027,10 @@ namespace eval mariamet {
                                   COALESCE(w.EVENT_NAME, CASE WHEN t.PROCESSLIST_STATE IS NOT NULL AND t.PROCESSLIST_STATE != '' THEN 'CPU' ELSE 'idle' END),
                                   COALESCE(w.EVENT_NAME, CASE WHEN t.PROCESSLIST_STATE IS NOT NULL AND t.PROCESSLIST_STATE != '' THEN 'CPU' ELSE 'idle/waiting' END),
                                   LEFT(s.SQL_TEXT, 4096),
-                                  s.DIGEST_TEXT,
-                                  s.DIGEST
+                                  COALESCE(s.DIGEST_TEXT, LEFT(s.SQL_TEXT, 4096)),
+                                  CASE WHEN s.DIGEST IS NOT NULL THEN s.DIGEST
+                                       WHEN s.SQL_TEXT IS NOT NULL THEN SHA2(LEFT(s.SQL_TEXT, 4096), 256)
+                                       ELSE NULL END
                                 FROM performance_schema.threads t
                                 LEFT JOIN performance_schema.events_waits_current w
                                   ON t.THREAD_ID = w.THREAD_ID AND w.EVENT_NAME != 'idle'
@@ -2637,7 +2643,11 @@ namespace eval mariamet {
 
         set public(sql,ash_sqlplan) "EXPLAIN \$public(ash,sqltxt);"
 
-        set public(sql,ash_sqlstats) "SELECT COUNT_STAR as calls,
+        set public(sql,ash_sqlstats) "SELECT calls, total_exec_time,
+      rows_affected, rows_sent, rows_examined, tmp_tables,
+      tmp_disk_tables, select_scan, select_full_join, sort_rows,
+      no_index_used FROM (
+      SELECT COUNT_STAR as calls,
       SUM_TIMER_WAIT/1000000000 as total_exec_time,
       SUM_ROWS_AFFECTED as rows_affected,
       SUM_ROWS_SENT as rows_sent,
@@ -2648,7 +2658,14 @@ namespace eval mariamet {
       SUM_SELECT_FULL_JOIN as select_full_join,
       SUM_SORT_ROWS as sort_rows,
       SUM_NO_INDEX_USED as no_index_used
-    FROM performance_schema.events_statements_summary_by_digest WHERE \$public(ash,sqlid) ORDER BY COUNT_STAR DESC LIMIT 1;"
+    FROM performance_schema.events_statements_summary_by_digest WHERE \$public(ash,sqlid)
+    UNION ALL
+      SELECT COUNT(*) as calls, 0 as total_exec_time,
+      0 as rows_affected, 0 as rows_sent, 0 as rows_examined,
+      0 as tmp_tables, 0 as tmp_disk_tables, 0 as select_scan,
+      0 as select_full_join, 0 as sort_rows, 0 as no_index_used
+    FROM hammerdb_ash.active_session_history WHERE \$public(ash,sqlid) AND sql_text IS NOT NULL
+    ) combined ORDER BY calls DESC LIMIT 1;"
 
         set public(sql,ash_eventsqls) "SELECT count(*) as total, sql_text, wait_event, command
     FROM hammerdb_ash.active_session_history WHERE \$public(ash,eventid) AND
