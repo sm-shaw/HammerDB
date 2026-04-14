@@ -116,6 +116,56 @@ tsv::unset allclicktimings
        }
    }
 
+   proc clamp_xt_reservoir {value} {
+       if {![string is entier -strict $value]} {
+           return 10000
+       }
+       if {$value == 0} {
+           return 0
+       }
+       if {$value < 10000} {
+           return 10000
+       }
+       if {$value > 1000000} {
+           return 1000000
+       }
+       return $value
+   }
+
+   proc reservoir_sample_add {varName countVarName limit value} {
+       upvar 1 $varName sampleList $countVarName sampleCount
+
+       incr sampleCount
+       if {$limit == 0} {
+           lappend sampleList $value
+           return
+       }
+       if {$sampleCount <= $limit} {
+           lappend sampleList $value
+       } else {
+           set j [expr {int(rand() * $sampleCount) + 1}]
+           if {$j <= $limit} {
+               set idx [expr {$j - 1}]
+               set sampleList [lreplace $sampleList $idx $idx $value]
+           }
+       }
+   }
+
+   proc xtsummary_reservoir_add {dictVar sproc value reservoir} {
+       upvar 1 $dictVar summarydict
+
+       if {![dict exists $summarydict $sproc reservoir_count]} {
+           dict set summarydict $sproc reservoir_count 0
+       }
+       if {![dict exists $summarydict $sproc clickslist]} {
+           dict set summarydict $sproc clickslist {}
+       }
+       set sampleList [dict get $summarydict $sproc clickslist]
+       set sampleCount [dict get $summarydict $sproc reservoir_count]
+       reservoir_sample_add sampleList sampleCount $reservoir $value
+       dict set summarydict $sproc clickslist $sampleList
+       dict set summarydict $sproc reservoir_count $sampleCount
+   }
 
     proc xttimeprofiler {args} {
         global ProfilerArray
@@ -178,16 +228,48 @@ tsv::unset allclicktimings
                     }
                 }
                 
-                # Intialize the delta clicks array if needed...
-                if { ![info exists ProfilerArray($fun,0)] } {
-                    set cai 1
-                } else {
-                    set cai [expr $ProfilerArray($fun,0) + 1]
+                # Initialise exact counters and sampled storage if needed...
+                if { ![info exists ProfilerArray($fun,totalcount)] } {
+                    set ProfilerArray($fun,totalcount) 0
+                    set ProfilerArray($fun,totalsum) 0.0
+                    set ProfilerArray($fun,samplecount) 0
+                    set ProfilerArray($fun,min) $deltaclicks
+                    set ProfilerArray($fun,max) $deltaclicks
                 }
-                
-                # Add another "delta clicks" reading...
-                set ProfilerArray($fun,0) $cai
-                set ProfilerArray($fun,$cai) $deltaclicks
+
+                incr ProfilerArray($fun,totalcount)
+                set ProfilerArray($fun,totalsum) [expr {$ProfilerArray($fun,totalsum) + double($deltaclicks)}]
+
+                if { $deltaclicks < $ProfilerArray($fun,min) } {
+                    set ProfilerArray($fun,min) $deltaclicks
+                }
+                if { $deltaclicks > $ProfilerArray($fun,max) } {
+                    set ProfilerArray($fun,max) $deltaclicks
+                }
+
+                if {![info exists ::xt_reservoir]} {
+                    set ::xt_reservoir 10000
+                }
+                set xt_reservoir [ clamp_xt_reservoir $::xt_reservoir ]
+
+                if {$xt_reservoir == 0} {
+                    set cai [expr {$ProfilerArray($fun,samplecount) + 1}]
+                    set ProfilerArray($fun,$cai) $deltaclicks
+                    set ProfilerArray($fun,samplecount) $cai
+                    set ProfilerArray($fun,0) $cai
+                } elseif {$ProfilerArray($fun,totalcount) <= $xt_reservoir} {
+                    set cai $ProfilerArray($fun,totalcount)
+                    set ProfilerArray($fun,$cai) $deltaclicks
+                    set ProfilerArray($fun,samplecount) $cai
+                    set ProfilerArray($fun,0) $cai
+                } else {
+                    set j [expr {int(rand() * $ProfilerArray($fun,totalcount)) + 1}]
+                    if {$j <= $xt_reservoir} {
+                        set ProfilerArray($fun,$j) $deltaclicks
+                    }
+                    set ProfilerArray($fun,samplecount) $xt_reservoir
+                    set ProfilerArray($fun,0) $xt_reservoir
+                }
             }
         }
     }
@@ -294,21 +376,33 @@ proc sigma {val1 val2 args} {
 }
 
 proc percentile {pvalues percent} {
-proc is_whole { float } {
-  return [expr abs($float - int($float)) > 0 ? 0 : 1]
-}
-set k [ expr [ llength $pvalues ] * $percent ]
-if { [ is_whole $k ] } {
-set kint [ expr int($k) ]
-set pctile [ expr ([lindex $pvalues [ expr $kint - 1 ]] + [lindex $pvalues $kint ]) / 2.0 ]
-if { [ is_whole $pctile ] } {
-set pctile [ expr int($pctile) ]
-                }
-        } else {
-set k [ expr round($k) ]
-set pctile [ lindex $pvalues [ expr $k - 1 ]]
-        }
-return $pctile
+    set n [llength $pvalues]
+    if {$n == 0} {
+        return 0
+    }
+    if {$n == 1} {
+        return [lindex $pvalues 0]
+    }
+    # clamp bounds (Excel behaviour)
+    if {$percent <= 0} {
+        return [lindex $pvalues 0]
+    }
+    if {$percent >= 1} {
+        return [lindex $pvalues end]
+    }
+    # Excel PERCENTILE.INC formula
+    # r = 1 + (n - 1) * p
+    set r [expr {1.0 + ($n - 1) * $percent}]
+    set lo [expr {int(floor($r))}]
+    set hi [expr {int(ceil($r))}]
+    # convert to 0-based index
+    set xlo [lindex $pvalues [expr {$lo - 1}]]
+    set xhi [lindex $pvalues [expr {$hi - 1}]]
+    if {$lo == $hi} {
+        return $xlo
+    }
+    set frac [expr {$r - $lo}]
+    return [expr {$xlo + $frac * ($xhi - $xlo)}]
 }
 
 proc xtreport { myposition } {
@@ -342,6 +436,7 @@ break
 set xtunique_log_name 0
 set xtgather_timeout 10
 set xtjob_storage 1
+set xt_reservoir 10000
 global sqlitedb_dir
 set dirname [ find_config_dir ]
 if { $dirname eq "FNF" } {
@@ -367,6 +462,7 @@ if { [ is-dict $sqlitegeneric ] } {
     set xtunique_log_name [ dict get $sqlitegeneric timeprofile xt_unique_log_name ]
     set xtgather_timeout [ dict get $sqlitegeneric timeprofile xt_gather_timeout ]
     set xtjob_storage [ dict get $sqlitegeneric timeprofile xt_job_storage ]
+    set xt_reservoir [ dict get $sqlitegeneric timeprofile xt_reservoir ]
 } else {
 set 2key 0
 if {[catch {set gendict [ ::XML::To_Dict $dirname/generic.xml ]} message ]} { ; } else {
@@ -375,17 +471,22 @@ dict for {key2 value2} $value {
 if { $key2 eq "xt_unique_log_name" } {
 set xtunique_log_name $value2
 incr 2key
-if { $2key eq 2 } { break }
+if { $2key eq 4 } { break }
       }
 if { $key2 eq "xt_gather_timeout" } {
 set xtgather_timeout $value2
 incr 2key
-if { $2key eq 2 } { break }
+if { $2key eq 4 } { break }
         }
 if { $key2 eq "xt_job_storage" } {
 set xtjob_storage $value2
 incr 2key
-if { $2key eq 2 } { break }
+if { $2key eq 4 } { break }
+        }
+if { $key2 eq "xt_reservoir" } {
+set xt_reservoir $value2
+incr 2key
+if { $2key eq 4 } { break }
         }
      }
   }
@@ -395,6 +496,9 @@ if { $2key eq 2 } { break }
 if { [ tsv::exists commandline sqldb ] eq 0 } {
 set xtjob_storage 0
 }
+#Check reservoir sampling size
+set xt_reservoir [ clamp_xt_reservoir $xt_reservoir ]
+set ::xt_reservoir $xt_reservoir
 
 if { [ string is entier $xtgather_timeout ] } { 
 set xtto [expr {$xtgather_timeout * 60}]
@@ -511,6 +615,7 @@ unset -nocomplain jobid
 set jobid [ hdb eval {select jobid from JOBMAIN order by datetime(timestamp) DESC LIMIT 1} ]
 	}
 }
+set sumtimings {}
 set vustoreport [ dict keys $monitortimings ]
 for { set vutri 0 } { $vutri < [llength $vustoreport] } { incr vutri } {
 	set vutr [ lindex $vustoreport $vutri ]
@@ -529,15 +634,14 @@ set sprocorder [ lreplace $sprocorder [ expr $so + 1 ] [ expr $so + 1 ] ]
 if { $xtjob_storage eq 1 } {
 	foreach sproc $sprocorder {
 #DEBUG insert into JOBTIMINGS TABLE
-#puts [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min,avg,max,total,p99,p95,p50,sd,ratio,summary,elapsed) VALUES($jobid,$vutr,[format "%s" [ string toupper $sproc]],[format "%d" [dict get $monitortimings $vutr $sproc calls]],[format "%.3f" [dict get $monitortimings $vutr $sproc min]],[format "%.3f" [dict get $monitortimings $vutr $sproc avgms]],[format "%.3f" [dict get $monitortimings $vutr $sproc max]],[format "%.3f" [dict get $monitortimings $vutr $sproc totalms]],[format "%.3f" [dict get $monitortimings $vutr $sproc p99]],[format "%.3f" [dict get $monitortimings $vutr $sproc p95]],[format "%.3f" [dict get $monitortimings $vutr $sproc p50]],[format "%.3f" [dict get $monitortimings $vutr $sproc sd]],[format "%.3f" [dict get $monitortimings $vutr $sproc ratio] 37],0,[dict get $monitortimings $vutr [lindex $sprocorder 1] elapsed])} ]
+#puts [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min,avg,max,total,p99,p95,p75,p50,p25,sd,ratio,summary,elapsed) VALUES($jobid,$vutr,[format "%s" [ string toupper $sproc]],[format "%d" [dict get $monitortimings $vutr $sproc calls]],[format "%.3f" [dict get $monitortimings $vutr $sproc min]],[format "%.3f" [dict get $monitortimings $vutr $sproc avgms]],[format "%.3f" [dict get $monitortimings $vutr $sproc max]],[format "%.3f" [dict get $monitortimings $vutr $sproc totalms]],[format "%.3f" [dict get $monitortimings $vutr $sproc p99]],[format "%.3f" [dict get $monitortimings $vutr $sproc p95]],[format "%.3f" [dict get $monitortimings $vutr $sproc p75]],[format "%.3f" [dict get $monitortimings $vutr $sproc p50]],[format "%.3f" [dict get $monitortimings $vutr $sproc p25]],[format "%.3f" [dict get $monitortimings $vutr $sproc sd]],[format "%.3f" [dict get $monitortimings $vutr $sproc ratio] 37],0,[dict get $monitortimings $vutr [lindex $sprocorder 1] elapsed])} ]
 #Insert XTprof timing data into JobTiming table for each Virtual User
-hdb eval [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct,summary,elapsed_ms) VALUES('$jobid',$vutr,'[format "%s" [ string toupper $sproc]]',[format "%d" [dict get $monitortimings $vutr $sproc calls]],[format "%.3f" [dict get $monitortimings $vutr $sproc min]],[format "%.3f" [dict get $monitortimings $vutr $sproc avgms]],[format "%.3f" [dict get $monitortimings $vutr $sproc max]],[format "%.3f" [dict get $monitortimings $vutr $sproc totalms]],[format "%.3f" [dict get $monitortimings $vutr $sproc p99]],[format "%.3f" [dict get $monitortimings $vutr $sproc p95]],[format "%.3f" [dict get $monitortimings $vutr $sproc p50]],[format "%.3f" [dict get $monitortimings $vutr $sproc sd]],[format "%.3f" [dict get $monitortimings $vutr $sproc ratio] 37],0,[dict get $monitortimings $vutr [lindex $sprocorder 1] elapsed])} ]
+hdb eval [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p75_ms,p50_ms,p25_ms,sd,ratio_pct,summary,elapsed_ms) VALUES('$jobid',$vutr,'[format "%s" [ string toupper $sproc]]',[format "%d" [dict get $monitortimings $vutr $sproc calls]],[format "%.3f" [dict get $monitortimings $vutr $sproc min]],[format "%.3f" [dict get $monitortimings $vutr $sproc avgms]],[format "%.3f" [dict get $monitortimings $vutr $sproc max]],[format "%.3f" [dict get $monitortimings $vutr $sproc totalms]],[format "%.3f" [dict get $monitortimings $vutr $sproc p99]],[format "%.3f" [dict get $monitortimings $vutr $sproc p95]],[format "%.3f" [dict get $monitortimings $vutr $sproc p75]],[format "%.3f" [dict get $monitortimings $vutr $sproc p50]],[format "%.3f" [dict get $monitortimings $vutr $sproc p25]],[format "%.3f" [dict get $monitortimings $vutr $sproc sd]],[format "%.3f" [dict get $monitortimings $vutr $sproc ratio] 37],0,[dict get $monitortimings $vutr [lindex $sprocorder 1] elapsed])} ]
 #Add the timings to a list of timings for the same stored proc for all virtual users
 #At this point [dict get $monitortimings $vutr $sproc clickslist] will return all unsorted data points for vuser $vutr for stored proc $sproc
 #To record all individual data points for a virtual user write the output of this command to a file
 #Precede with {*} to expand the list into individual space separated values
 #The msperclick per user is in [ dict get $clicktimings $vutr ] clicks need to be multiplied by this value for timings
- 	    lappend $sproc-clickslist {*}[dict get $monitortimings $vutr $sproc clickslist]
 		}
 	} 
             puts $fd "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
@@ -551,16 +655,34 @@ hdb eval [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min_ms,avg_ms,ma
             puts -nonewline $fd [format "TOTAL: %.3fms\n" [dict get $monitortimings $vutr $sproc totalms]]
             puts -nonewline $fd [format "P99: %.3fms\t" [dict get $monitortimings $vutr $sproc p99]]
             puts -nonewline $fd [format "P95: %.3fms\t" [dict get $monitortimings $vutr $sproc p95]]
+            puts -nonewline $fd [format "P75: %.3fms\t" [dict get $monitortimings $vutr $sproc p75]]
             puts -nonewline $fd [format "P50: %.3fms\t" [dict get $monitortimings $vutr $sproc p50]]
-            puts -nonewline $fd [format "SD: %.3f\t" [dict get $monitortimings $vutr $sproc sd]]
+            puts -nonewline $fd [format "P25: %.3fms\t" [dict get $monitortimings $vutr $sproc p25]]
+            puts -nonewline $fd [format "SD: %.3fms\t" [dict get $monitortimings $vutr $sproc sd]]
             puts $fd [format "RATIO: %.3f%c" [dict get $monitortimings $vutr $sproc ratio] 37]
 #Add the timings to a list of timings for the same stored proc for all virtual users
 #At this point [dict get $monitortimings $vutr $sproc clickslist] will return all unsorted data points for vuser $vutr for stored proc $sproc
 #To record all individual data points for a virtual user write the output of this command to a file
 #Precede with {*} to expand the list into individual space separated values
 #The msperclick per user is in [ dict get $clicktimings $vutr ] clicks need to be multiplied by this value for timings
- 	    lappend $sproc-clickslist {*}[dict get $monitortimings $vutr $sproc clickslist]
-		}
+            if {![dict exists $sumtimings $sproc calls]} {
+                dict set sumtimings $sproc calls 0
+                dict set sumtimings $sproc totalclicks 0.0
+                dict set sumtimings $sproc minclicks [dict get $monitortimings $vutr $sproc minclicks]
+                dict set sumtimings $sproc maxclicks [dict get $monitortimings $vutr $sproc maxclicks]
+            }
+            dict set sumtimings $sproc calls [expr {[dict get $sumtimings $sproc calls] + [dict get $monitortimings $vutr $sproc calls]}]
+            dict set sumtimings $sproc totalclicks [expr {[dict get $sumtimings $sproc totalclicks] + [dict get $monitortimings $vutr $sproc totalclicks]}]
+            if {[dict get $monitortimings $vutr $sproc minclicks] < [dict get $sumtimings $sproc minclicks]} {
+                dict set sumtimings $sproc minclicks [dict get $monitortimings $vutr $sproc minclicks]
+            }
+            if {[dict get $monitortimings $vutr $sproc maxclicks] > [dict get $sumtimings $sproc maxclicks]} {
+                dict set sumtimings $sproc maxclicks [dict get $monitortimings $vutr $sproc maxclicks]
+            }
+            foreach sampleclick [dict get $monitortimings $vutr $sproc clickslist] {
+                xtsummary_reservoir_add sumtimings $sproc $sampleclick $xt_reservoir
+            }
+     }
 }
 #Calculate Summary for All Virtual Users
 #use median values for milliseconds per click, end clicks and end ms
@@ -568,27 +690,35 @@ set medianmsperclick [ median [ dict values $clicktimings ]]
 set medianendclicks [ median [ dict values $endclicks ]]
 set medianendms [ median [ dict values $endms ]]
 foreach sproc $lev2uniquekeys {
-#$sproc-clickslist is the summary gathered from all virtual users
-if { [ llength [ set $sproc-clickslist ]] > 2 } {
-	    set sd [ sigma {*}[ set $sproc-clickslist ]]
-	} else { set sd 0 }
-           set sortedclicks [lsort -integer [ set $sproc-clickslist ]]
-	   set calls [ llength $sortedclicks ]
-	   set min [ lindex $sortedclicks 0 ]
-           set max [ lindex $sortedclicks [ expr {$calls -1} ]]
-           set ctotal [+ {*}$sortedclicks]
-           dict set sumtimings $sproc calls $calls
-	   set cavg [expr {$ctotal / $calls}]
+           if {![dict exists $sumtimings $sproc calls]} {
+               continue
+           }
+           set sampleclicks [dict get $sumtimings $sproc clickslist]
+           if { [ llength $sampleclicks ] > 2 } {
+               set sd [expr {[sigma {*}$sampleclicks] * $medianmsperclick}]
+           } else {
+               set sd 0
+           }
+           set sortedclicks [lsort -integer $sampleclicks]
+           set calls [dict get $sumtimings $sproc calls]
+           set ctotal [dict get $sumtimings $sproc totalclicks]
+           if {$calls > 0} {
+               set cavg [expr {$ctotal / $calls}]
+           } else {
+               set cavg 0
+           }
            dict set sumtimings $sproc sd $sd
            dict set sumtimings $sproc elapsed $medianendms
-           dict set sumtimings $sproc avgms [expr $cavg * $medianmsperclick]
-           dict set sumtimings $sproc totalms [expr $ctotal * $medianmsperclick]
-           dict set sumtimings $sproc ratio [expr {(double($ctotal / $medianendclicks) * 100.0)/[llength $vustoreport] / 2}]
-           dict set sumtimings $sproc max [expr $max * $medianmsperclick]
-           dict set sumtimings $sproc min [expr $min * $medianmsperclick]
+           dict set sumtimings $sproc avgms [expr {$cavg * $medianmsperclick}]
+           dict set sumtimings $sproc totalms [expr {$ctotal * $medianmsperclick}]
+           dict set sumtimings $sproc ratio [expr {(double($ctotal / $medianendclicks) * 100.0)/[llength $vustoreport]}]
+           dict set sumtimings $sproc max [expr {[dict get $sumtimings $sproc maxclicks] * $medianmsperclick}]
+           dict set sumtimings $sproc min [expr {[dict get $sumtimings $sproc minclicks] * $medianmsperclick}]
            dict set sumtimings $sproc p99 [ expr [ percentile $sortedclicks 0.99 ] * $medianmsperclick]
            dict set sumtimings $sproc p95 [ expr [ percentile $sortedclicks 0.95 ] * $medianmsperclick]
+           dict set sumtimings $sproc p75 [ expr [ percentile $sortedclicks 0.75 ] * $medianmsperclick]
            dict set sumtimings $sproc p50 [ expr [ percentile $sortedclicks 0.50 ] * $medianmsperclick]
+           dict set sumtimings $sproc p25 [ expr [ percentile $sortedclicks 0.25 ] * $medianmsperclick]
 }
 #Recalculate the ratio for all virtual users
 unset -nocomplain sprocratio
@@ -604,7 +734,7 @@ set sprocorder [ lreplace $sprocorder [ expr $so + 1 ] [ expr $so + 1 ] ]
 if { $xtjob_storage eq 1 } {
 foreach sproc $sprocorder {
 #Insert summary timings into JOBTIMING table, summary identified by summary column eq 1
-hdb eval [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p50_ms,sd,ratio_pct,summary,elapsed_ms) VALUES('$jobid',[llength $vustoreport],'[format "%s" [ string toupper $sproc]]',[format "%d" [dict get $sumtimings $sproc calls]],[format "%.3f" [dict get $sumtimings $sproc min]],[format "%.3f" [dict get $sumtimings $sproc avgms]],[format "%.3f" [dict get $sumtimings $sproc max]],[format "%.3f" [dict get $sumtimings $sproc totalms]],[format "%.3f" [dict get $sumtimings $sproc p99]],[format "%.3f" [dict get $sumtimings $sproc p95]],[format "%.3f" [dict get $sumtimings $sproc p50]],[format "%.3f" [dict get $sumtimings $sproc sd]],[format "%.3f" [dict get $sumtimings $sproc ratio] 37],1,$medianendms)} ]
+hdb eval [ subst {INSERT INTO JOBTIMING(jobid,vu,procname,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p75_ms,p50_ms,p25_ms,sd,ratio_pct,summary,elapsed_ms) VALUES('$jobid',[llength $vustoreport],'[format "%s" [ string toupper $sproc]]',[format "%d" [dict get $sumtimings $sproc calls]],[format "%.3f" [dict get $sumtimings $sproc min]],[format "%.3f" [dict get $sumtimings $sproc avgms]],[format "%.3f" [dict get $sumtimings $sproc max]],[format "%.3f" [dict get $sumtimings $sproc totalms]],[format "%.3f" [dict get $sumtimings $sproc p99]],[format "%.3f" [dict get $sumtimings $sproc p95]],[format "%.3f" [dict get $sumtimings $sproc p75]],[format "%.3f" [dict get $sumtimings $sproc p50]],[format "%.3f" [dict get $sumtimings $sproc p25]],[format "%.3f" [dict get $sumtimings $sproc sd]],[format "%.3f" [dict get $sumtimings $sproc ratio] 37],1,$medianendms)} ]
 		}
 	} 
         puts $fd "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
@@ -618,8 +748,10 @@ foreach sproc $sprocorder {
             puts -nonewline $fd [format "TOTAL: %.3fms\n" [dict get $sumtimings $sproc totalms]]
             puts -nonewline $fd [format "P99: %.3fms\t" [dict get $sumtimings $sproc p99]]
             puts -nonewline $fd [format "P95: %.3fms\t" [dict get $sumtimings $sproc p95]]
+            puts -nonewline $fd [format "P75: %.3fms\t" [dict get $sumtimings $sproc p75]]
             puts -nonewline $fd [format "P50: %.3fms\t" [dict get $sumtimings $sproc p50]]
-            puts -nonewline $fd [format "SD: %.3f\t" [dict get $sumtimings $sproc sd]]
+            puts -nonewline $fd [format "P25: %.3fms\t" [dict get $sumtimings $sproc p25]]
+            puts -nonewline $fd [format "SD: %.3fms\t" [dict get $sumtimings $sproc sd]]
             puts $fd [format "RATIO: %.3f%c" [dict get $sumtimings $sproc ratio] 37]
 	}
         puts $fd "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
@@ -637,50 +769,48 @@ proc xttimeprofdump {myposition} {
         set EndClicks [expr {double([clock clicks]) - $ProfilerArray(ElapsedClicks)}]
         set Endms [expr {double([clock milliseconds]) - $ProfilerArray(Elapsedms)}]
         set msPerClick [ format %.16f [expr {$Endms / $EndClicks}]]
-	if { $msPerClick eq 0 } {
-        set msPerClick [ expr {$Endms / $EndClicks} ]
-	}
+        if {![string is double -strict $msPerClick] || $msPerClick == 0.0} {
+        set msPerClick [expr {$Endms / $EndClicks}]
+        }
 
         # Visit each function and generate the statistics for it...
         for { set fi 0 ; set PerfList "" } { $fi < $ProfilerArray(funcount) } { incr fi } {
             set fun $ProfilerArray($fi)
-            if { ![info exists ProfilerArray($fun,0)] } {
+            if { ![info exists ProfilerArray($fun,totalcount)] } {
                 continue
             }
-            for { set max -1.0 ; set min -1.0 ; set ctotal 0.0 ; set cai 1 } { $cai <= $ProfilerArray($fun,0) } { incr cai } {
-                set clicks $ProfilerArray($fun,$cai)
-                set ctotal [expr {$ctotal + double($clicks)}]
-                if { $max < 0 || $max < $clicks } {
-                    set max $clicks
-                }
-                if { $min < 0 || $clicks < $min } {
-                    set min $clicks
-                }
-	    lappend $fun-clickslist $clicks
+            unset -nocomplain $fun-clickslist
+            for { set cai 1 } { $cai <= $ProfilerArray($fun,samplecount) } { incr cai } {
+                lappend $fun-clickslist $ProfilerArray($fun,$cai)
             }
-	    ############################################################
-	    #Add unsorted timings to clickslist
-	    dict set vutimings $fun clickslist [ set $fun-clickslist ]
+            ############################################################
+            #Add sampled timings to clickslist
+            dict set vutimings $fun clickslist [ set $fun-clickslist ]
             if { [ llength [ set $fun-clickslist ]] > 2 } {
-	    dict set vutimings $fun sd [ sigma {*}[dict get $vutimings $fun clickslist] ]
-	    } else { 
-	    dict set vutimings $fun sd 0
-	    }
-	    #Sort the clickslist to calculate percentiles
-	    set $fun-clickslist [lsort -integer [ set $fun-clickslist ]]
-	    dict set vutimings $fun calls [ llength [ set $fun-clickslist ]]
-            set cavg [expr {$ctotal / double($ProfilerArray($fun,0))}]
-	    dict set vutimings $fun cavg $cavg
-	    dict set vutimings $fun elapsed $Endms
-	    dict set vutimings $fun avgms [expr $cavg * $msPerClick]
-	    dict set vutimings $fun totalms [expr $ctotal * $msPerClick]
-	    dict set vutimings $fun ratio [expr {double($ctotal / $EndClicks) * 100.0}]
-	    dict set vutimings $fun max [expr $max * $msPerClick]
-	    dict set vutimings $fun min [expr $min * $msPerClick]
-	    dict set vutimings $fun p99 [ expr [ percentile [ set $fun-clickslist ] 0.99 ] * $msPerClick]
-	    dict set vutimings $fun p95 [ expr [ percentile [ set $fun-clickslist ] 0.95 ] * $msPerClick]
-	    dict set vutimings $fun p50 [ expr [ percentile [ set $fun-clickslist ] 0.50 ] * $msPerClick]
-	    lappend funlist $fun
+            dict set vutimings $fun sd [expr {[sigma {*}[dict get $vutimings $fun clickslist]] * $msPerClick}]
+            } else {
+            dict set vutimings $fun sd 0
+            }
+            #Sort the sampled clickslist to calculate percentiles
+            set $fun-clickslist [lsort -integer [ set $fun-clickslist ]]
+            dict set vutimings $fun calls $ProfilerArray($fun,totalcount)
+            dict set vutimings $fun totalclicks $ProfilerArray($fun,totalsum)
+            dict set vutimings $fun minclicks $ProfilerArray($fun,min)
+            dict set vutimings $fun maxclicks $ProfilerArray($fun,max)
+            set cavg [expr {$ProfilerArray($fun,totalsum) / double($ProfilerArray($fun,totalcount))}]
+            dict set vutimings $fun cavg $cavg
+            dict set vutimings $fun elapsed $Endms
+            dict set vutimings $fun avgms [expr $cavg * $msPerClick]
+            dict set vutimings $fun totalms [expr {$ProfilerArray($fun,totalsum) * $msPerClick}]
+            dict set vutimings $fun ratio [expr {double($ProfilerArray($fun,totalsum) / $EndClicks) * 100.0}]
+            dict set vutimings $fun max [expr {$ProfilerArray($fun,max) * $msPerClick}]
+            dict set vutimings $fun min [expr {$ProfilerArray($fun,min) * $msPerClick}]
+            dict set vutimings $fun p99 [ expr [ percentile [ set $fun-clickslist ] 0.99 ] * $msPerClick]
+            dict set vutimings $fun p95 [ expr [ percentile [ set $fun-clickslist ] 0.95 ] * $msPerClick]
+            dict set vutimings $fun p75 [ expr [ percentile [ set $fun-clickslist ] 0.75 ] * $msPerClick]
+            dict set vutimings $fun p50 [ expr [ percentile [ set $fun-clickslist ] 0.50 ] * $msPerClick]
+            dict set vutimings $fun p25 [ expr [ percentile [ set $fun-clickslist ] 0.25 ] * $msPerClick]
+            lappend funlist $fun
         }
         # Sort the profile data by Ratio...
 	#set the thread shared keyed list allvutimings for the virtual user so the monitor virtual user can report the timings
