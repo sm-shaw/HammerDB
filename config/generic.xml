@@ -75,5 +75,6 @@
            <xt_unique_log_name>0</xt_unique_log_name>
            <xt_gather_timeout>60</xt_gather_timeout>
            <xt_job_storage>1</xt_job_storage>
+           <xt_reservoir>10000</xt_reservoir>
     </timeprofile>
 </hammerdb>
