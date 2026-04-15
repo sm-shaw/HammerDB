@@ -858,14 +858,11 @@ namespace eval mariamet {
                         set public(ash,where) "CEILING(UNIX_TIMESTAMP(ash_time)) > $public(ash,sample_id)"
                     }
 
-                    # Valid Group (if group is like IDLE skip )
-                    #
-
-                    #if {  [ info exists public(waits,"$idx")  ]  } {
-                        #  set idx $public(waits,"$idx")
-                    #} else {
-                        #  set idx "Other"
-                    #}
+                    # Valid Group (if group is not recognized, fall back to Other)
+                    # Missing wait groups can cause ash_fetch to fail and blank display
+                    if { ![info exists public(ash,$idx)] } {
+                        set idx "Other"
+                    }
 
                     if { 1 == 1 } {
                         #
@@ -1055,7 +1052,15 @@ namespace eval mariamet {
                 set public(ash,sesdelta)  [ expr [set public(ash,endcnt) ] - [ set public(ash,begcnt) ] ]
                 #puts "call $cur_proc, begday:$begday, begsec:$begsec, endday:$endday, endsec:$endsec, public(ash,beg):$public(ash,beg), public(ash,end):$public(ash,end), sesdelta:$public(ash,sesdelta)"
                 mon_execute ash_sqldetails
-        } err] } { puts "call $cur_proc, err:$err"; }
+        } err] } {
+            catch {
+                $public(ash,sqltbl) delete 0 end
+                $public(ash,evttbl) delete 0 end
+                $public(ash,sestbl) delete 0 end
+                $public(ash,output) delete 0.0 end
+                $public(ash,stattbl) delete 0 end
+            }
+        }
     }
 
     proc ash_sqldetails_fetch { args } {
@@ -1090,11 +1095,13 @@ namespace eval mariamet {
                         set CmdType   [lindex $row 10]
                         set File_IO   [lindex $row 11]
                         set Table_IO  [lindex $row 12]
+                        set Other     [expr {$Total - $Mutex - $RWLock - $Cond - $SXLock - $File_IO - $Table_IO - $Network - $Lock - $Idle - $CPU}]
+                        if { $Other < 0 } { set Other 0 }
 
                         set sum [ expr $sum + $Total ]
                         set public(sqltbl,maxActivity) $sum
                         set sqlid $QueryID
-                        $public(ash,sqltbl) insert end [concat \"$QueryID\"  $Total $Total \"$CmdType\" $Mutex $RWLock $Cond $SXLock $File_IO $Table_IO $Network $Lock $Idle $CPU ]
+                        $public(ash,sqltbl) insert end [concat \"$QueryID\"  $Total $Total \"$CmdType\" $Other $Mutex $RWLock $Cond $SXLock $File_IO $Table_IO $Network $Lock $Idle $CPU ]
                     }
                 }
                 set rowCount [$public(ash,sqltbl) size]
@@ -1138,10 +1145,12 @@ namespace eval mariamet {
                         set user      [lindex $row 11]
                         set File_IO   [lindex $row 12]
                         set Table_IO  [lindex $row 13]
+                        set Other     [expr {$Total - $Mutex - $RWLock - $Cond - $SXLock - $File_IO - $Table_IO - $Network - $Lock - $Idle - $CPU}]
+                        if { $Other < 0 } { set Other 0 }
 
                         if { $user == "" || $user == "{}"} { set user "mariadb" }
 
-                        $public(ash,sestbl) insert end [concat \"$user $host\" $Total $Total $PID $Mutex $RWLock $Cond $SXLock $File_IO $Table_IO $Network $Lock $Idle $CPU $CPU]
+                        $public(ash,sestbl) insert end [concat \"$user $host\" $Total $Total $PID $Other $Mutex $RWLock $Cond $SXLock $File_IO $Table_IO $Network $Lock $Idle $CPU $CPU]
                     }
                 }
                 set rowCount [$public(ash,sestbl) size]
@@ -1166,6 +1175,9 @@ namespace eval mariamet {
         if { $t > 5 } { ; }
         mon_execute ash_sqlevents
         mon_execute ash_sqlsessions
+        if { [info exists public(ash,sqldetails)] && $public(ash,sqldetails) eq "stats" } {
+            mon_execute ash_sqlstats
+        }
     }
 
     proc ashrpt_fetch { args } {
@@ -1307,11 +1319,35 @@ namespace eval mariamet {
                         #set backend_type    [lindex $row 1]
                         set wait_event      [lindex $row 1]
                         set wait_event_type [lindex $row 2]
+                        # Classify raw wait_event_type to display group
+                        if { [string match "wait/synch/mutex*" $wait_event_type] } {
+                            set group "Mutex"
+                        } elseif { [string match "wait/synch/rwlock*" $wait_event_type] } {
+                            set group "RWLock"
+                        } elseif { [string match "wait/synch/cond*" $wait_event_type] } {
+                            set group "Cond"
+                        } elseif { [string match "wait/synch/sxlock*" $wait_event_type] } {
+                            set group "SXLock"
+                        } elseif { [string match "wait/io/file*" $wait_event_type] } {
+                            set group "File_IO"
+                        } elseif { [string match "wait/io/table*" $wait_event_type] } {
+                            set group "Table_IO"
+                        } elseif { [string match "wait/io/socket*" $wait_event_type] } {
+                            set group "Network"
+                        } elseif { [string match "wait/lock*" $wait_event_type] } {
+                            set group "Lock"
+                        } elseif { [string match "idle*" $wait_event_type] } {
+                            set group "Idle"
+                        } elseif { $wait_event_type eq "CPU" } {
+                            set group "CPU"
+                        } else {
+                            set group "Other"
+                        }
                         set total [ expr $total + $activity ]
                         if { $public(tbl,maxActivity) == 0 } {
                             set public(tbl,maxActivity) $activity
                         }
-                        $public(ash,evttbl) insert end [list $wait_event $activity $activity $wait_event_type]
+                        $public(ash,evttbl) insert end [list $wait_event $activity $activity $group]
                     }
                 }
                 set rowCount [$public(ash,evttbl) size]
@@ -1480,6 +1516,7 @@ namespace eval mariamet {
         if { [ catch {
                 set i 0
                 foreach color {
+                    { #808080 grey }
                     { #F06EAA Pink }
                     { #9F9371 light_brown }
                     { #C02800 red }
@@ -1501,6 +1538,7 @@ namespace eval mariamet {
                 #  Wait Groups to Display Setup
                 #
                 set public(ash,groups) {
+                    Other
                     Mutex
                     RWLock
                     Cond
@@ -2028,9 +2066,7 @@ namespace eval mariamet {
                                   COALESCE(w.EVENT_NAME, CASE WHEN t.PROCESSLIST_STATE IS NOT NULL AND t.PROCESSLIST_STATE != '' THEN 'CPU' ELSE 'idle/waiting' END),
                                   LEFT(s.SQL_TEXT, 4096),
                                   COALESCE(s.DIGEST_TEXT, LEFT(s.SQL_TEXT, 4096)),
-                                  CASE WHEN s.DIGEST IS NOT NULL THEN s.DIGEST
-                                       WHEN s.SQL_TEXT IS NOT NULL THEN SHA2(LEFT(s.SQL_TEXT, 4096), 256)
-                                       ELSE NULL END
+                                  s.DIGEST
                                 FROM performance_schema.threads t
                                 LEFT JOIN performance_schema.events_waits_current w
                                   ON t.THREAD_ID = w.THREAD_ID AND w.EVENT_NAME != 'idle'
@@ -2504,6 +2540,7 @@ namespace eval mariamet {
         set public(waits,Network) wait_event_type
         set public(waits,Lock) wait_event_type
         set public(waits,Idle) wait_event_type
+        set public(waits,Other) wait_event_type
     }
 
     proc set_maria_events {} {
@@ -2629,7 +2666,7 @@ namespace eval mariamet {
           WHEN wait_event_type LIKE 'wait/lock%' THEN 'Lock'
           WHEN wait_event_type LIKE 'idle%' THEN 'Idle'
           WHEN wait_event_type = 'CPU' THEN 'CPU'
-          ELSE 'CPU'
+          ELSE 'Other'
         END as wait_event_type, wait_event,
         CEILING(UNIX_TIMESTAMP(MAX(ash_time) OVER()) - UNIX_TIMESTAMP(MIN(ash_time) OVER())) as samples,
         CEILING(UNIX_TIMESTAMP(ash_time)) as sample_id, \$public(ash,bucket_secs) as bucket
@@ -2658,7 +2695,10 @@ namespace eval mariamet {
       SUM_SELECT_FULL_JOIN as select_full_join,
       SUM_SORT_ROWS as sort_rows,
       SUM_NO_INDEX_USED as no_index_used
-    FROM performance_schema.events_statements_summary_by_digest WHERE \$public(ash,sqlid)
+    FROM performance_schema.events_statements_summary_by_digest WHERE DIGEST IN (
+      SELECT DISTINCT digest FROM hammerdb_ash.active_session_history WHERE \$public(ash,sqlid) AND digest IS NOT NULL)
+    OR DIGEST_TEXT IN (
+      SELECT DISTINCT digest_text FROM hammerdb_ash.active_session_history WHERE \$public(ash,sqlid) AND digest_text IS NOT NULL)
     UNION ALL
       SELECT COUNT(*) as calls, 0 as total_exec_time,
       0 as rows_affected, 0 as rows_sent, 0 as rows_examined,
@@ -2709,13 +2749,15 @@ namespace eval mariamet {
         SUM(CASE WHEN wait_event_type = 'CPU' THEN 1 ELSE 0 END) as CPU,
         command as CmdType
         FROM hammerdb_ash.active_session_history
-        WHERE ash_time >= FROM_UNIXTIME(\$public(ash,beg)) AND
+        WHERE digest IS NOT NULL AND
+        ash_time >= FROM_UNIXTIME(\$public(ash,beg)) AND
         ash_time <= FROM_UNIXTIME(\$public(ash,end))
         GROUP BY digest, command ORDER BY total DESC;"
 
-                    set public(sql,sqlovertimeload) "SELECT wait_event_type,
+                    set public(sql,sqlovertimeload) "SELECT last_id,
+        TO_DAYS(last_time) as last_day, cnt,
         TIME_TO_SEC(TIME(last_time)) as last_secs,
-        cnt, last_id, TO_DAYS(last_time) as last_day
+        wait_event_type
         FROM (
         SELECT wait_event_type,
         MAX(ash_time) as last_time,
@@ -2727,7 +2769,19 @@ namespace eval mariamet {
         ash_time,
         CEILING(UNIX_TIMESTAMP(ash_time)) as sample_id,
         FLOOR(TIME_TO_SEC(TIME(ash_time))/\$public(ashsql,bucket_secs)) as modsecs,
-        wait_event_type
+        CASE
+          WHEN wait_event_type LIKE 'wait/synch/mutex%' THEN 'Mutex'
+          WHEN wait_event_type LIKE 'wait/synch/rwlock%' THEN 'RWLock'
+          WHEN wait_event_type LIKE 'wait/synch/cond%' THEN 'Cond'
+          WHEN wait_event_type LIKE 'wait/synch/sxlock%' THEN 'SXLock'
+          WHEN wait_event_type LIKE 'wait/io/file%' THEN 'File_IO'
+          WHEN wait_event_type LIKE 'wait/io/table%' THEN 'Table_IO'
+          WHEN wait_event_type LIKE 'wait/io/socket%' THEN 'Network'
+          WHEN wait_event_type LIKE 'wait/lock%' THEN 'Lock'
+          WHEN wait_event_type LIKE 'idle%' THEN 'Idle'
+          WHEN wait_event_type = 'CPU' THEN 'CPU'
+          ELSE 'Other'
+        END as wait_event_type
         FROM hammerdb_ash.active_session_history
         WHERE ash_time > FROM_UNIXTIME(\$public(ash,starttime)) AND \$public(ashsql,sqlovertimeid)
         ) ash
