@@ -1450,7 +1450,7 @@ proc run_next_pending_job {} {
     stopwatcher
 
     if {[catch {
-        hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING' WHERE ci_id = $ci_id }
+        hdbjobs eval { UPDATE JOBCI SET status = 'BUILDING', timestamp = datetime(CURRENT_TIMESTAMP, 'localtime') WHERE ci_id = $ci_id }
     } err]} {
         putsci "Error updating status to BUILDING: $err"
         startwatcher

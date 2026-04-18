@@ -1437,6 +1437,13 @@ proc mariadb_profile {cidict refname} {
     if {![_profile_run_once $ham_root $runner_abs $bad_tag $bad_pid $uaw]} {
         return "PROFILE FAILED"
     }
+
+    set stop_st [mariadb_run_sql $cidict $bad_tag shutdown]
+    putsci $stop_st
+    if {$stop_st ne "SHUTDOWN SUCCEEDED"} {
+        putsci "COMPARE FAILED: shutdown failed after profile"
+        return "COMPARE FAILED"
+    }
 }
 
 proc mariadb_compare {cidict refname} {

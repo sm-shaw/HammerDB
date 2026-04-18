@@ -1497,7 +1497,7 @@ proc wapp-page-jobs {} {
             wapp-subst "<p><i>Showing first %html($max) bytes of %html($total).</i></p>\n"
             set s [string range $s 0 [expr {$max-1}]]
         }
-        wapp-subst "<pre style=\"white-space:pre-wrap; overflow-wrap:anywhere;\">%html($s)</pre>\n"
+	wapp-unsafe "<pre style=\"white-space:pre-wrap; overflow-wrap:anywhere;\">$s</pre>\n"
     }
 
     proc __job_exists {jobid} {
