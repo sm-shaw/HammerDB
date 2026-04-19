@@ -1646,12 +1646,13 @@ proc wapp-page-jobs {} {
             set ::profile_dbdesc [dict create]
         }
         wapp-subst {<h3 class="title">TPROC-C Performance Profiles</h3>}
-        wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Pick exactly two profiles, then click <b>Compare Profiles</b>.</p>}
+        wapp-subst {<p style="margin:0 0 6px 0; opacity:0.75;">Select one <b>Base</b> profile and one <b>New</b> profile, click <b>Compare Profiles</b> to compare.</p>}
         wapp-subst {<form method="GET" action="%html([wapp-param BASE_URL]/jobs)">}
         wapp-subst {<input type="hidden" name="cmd" value="profilediff">}
-        wapp-subst {<div style="max-width:800px;">}
-        wapp-subst {<table>\n}
-        wapp-subst {<tr><th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th><th>Pick</th></tr>\n}
+        wapp-subst {<div style="display:inline-block; max-width:100%;">}
+        wapp-subst {<div style="overflow-x:auto;">}
+        wapp-subst {<table style="width:100%; font-size:0.92em;">\n}
+        wapp-subst {<tr><th>Profile ID</th><th>Jobs</th><th>Database</th><th>Max Job</th><th>Max NOPM</th><th>Max TPM</th><th>Max AVU</th><th>Base</th><th>New</th></tr>\n}
 
         set profileids [lreverse [join [hdbjobs eval {select distinct(profile_id) from jobmain where profile_id > 0 order by profile_id asc}]]]
         foreach profileid $profileids {
@@ -1687,19 +1688,19 @@ proc wapp-page-jobs {} {
                 }
             }
             if {$maxdb ne ""} {
-                    dict set ::profile_dbdesc $profileid $maxdb
-                }
+                dict set ::profile_dbdesc $profileid $maxdb
+            }
             set maxurl "$B/jobs?jobid=$maxjob&index"
-            wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td>%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td><input type="checkbox" name="diff_%html($profileid)" value="1"></td></tr>\n}
+            wapp-subst {<tr><td><a href='%html($url)'>%html(Profile $profileid)</a></td><td>%html($jobcount)</td><td style="white-space:nowrap;">%html($maxdb)</td><td><a href='%html($maxurl)'>%html($maxjob)</a></td><td>%html($maxnopm)</td><td>%html($maxtpm)</td><td>%html($maxavu)</td><td style="text-align:center;"><input type="radio" name="base_pid" value="%html($profileid)"></td><td style="text-align:center;"><input type="radio" name="new_pid" value="%html($profileid)"></td></tr>\n}
         }
 
         if {$profcount eq 0} {
-            wapp-subst {<tr><td colspan="8">No performance profiles found in database file %html([getdatabasefile])</td></tr>\n}
+            wapp-subst {<tr><td colspan="9">No performance profiles found in database file %html([getdatabasefile])</td></tr>\n}
         }
         wapp-subst {</table>\n}
+        wapp-subst {</div>}
         wapp-subst {<div style="margin-top:6px; text-align:right;"><button type="submit" style="padding:4px 10px;">Compare Profiles</button></div>}
         wapp-subst {</div></form>\n}
-
 
         # TPROC-H
         wapp-subst {<h3 class="title">TPROC-H</h3>}
@@ -1786,25 +1787,27 @@ proc wapp-page-jobs {} {
     }
 
     if {[dict exists $paramdict cmd] && [dict get $paramdict cmd] eq "profilediff"} {
-        set difflist {}
-        foreach k [dict keys $paramdict] {
-            if {[string match "diff_*" $k]} {
-                set pid [string range $k 5 end]
-                if {[string is integer -strict $pid]} { lappend difflist $pid }
-            }
-        }
-        if {[llength $difflist] != 2} {
+        if {![dict exists $paramdict base_pid] || ![dict exists $paramdict new_pid]} {
             common-header
-            wapp-subst {<p style="color:#b00; font-weight:600;">Please select exactly 2 profiles to compare.</p>}
+            wapp-subst {<p style="color:#b00; font-weight:600;">Please select one Base profile and one New profile to compare.</p>}
             common-footer
             return
         }
-        set difflist [lsort -integer $difflist]
-        lassign $difflist a b
-        # first relative to second
-        set chart [jobs $b getchart diff:$a]
-        # reverse order
-        #set chart [jobs $a getchart diff:$b]
+        set base_pid [dict get $paramdict base_pid]
+        set new_pid [dict get $paramdict new_pid]
+        if {![string is integer -strict $base_pid] || ![string is integer -strict $new_pid]} {
+            common-header
+            wapp-subst {<p style="color:#b00; font-weight:600;">Invalid profile selection.</p>}
+            common-footer
+            return
+        }
+        if {$base_pid == $new_pid} {
+            common-header
+            wapp-subst {<p style="color:#b00; font-weight:600;">Base and New profiles must be different.</p>}
+            common-footer
+            return
+        }
+        set chart [jobs $base_pid getchart diff:$new_pid]
         wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
         wapp-subst {<link href="%url(/style.css)" rel="stylesheet">}
         set d ""
@@ -1896,6 +1899,11 @@ proc wapp-page-jobs {} {
         return
     }
 
+       proc strip_jobid_ts {chart} {
+       regsub {[0-9A-F]+ [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}} $chart {} chart
+       return $chart
+    }
+
     if {[dict exists $paramdict jobid] && [dict exists $paramdict summary]} {
         set jobid [dict get $paramdict jobid]
         summary-header $jobid
@@ -1918,21 +1926,21 @@ proc wapp-page-jobs {} {
             wapp-subst {</table>\n}
 
             wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
-            foreach l [split [getchart $jobid 1 "result"] \n] { wapp-subst {%unsafe($l)\n} }
+            foreach l [split [strip_jobid_ts [getchart $jobid 1 "result"]] \n] { wapp-subst {%unsafe($l)\n} }
 
             set jobtcount [getjobtcount $jobid]
             if {![llength $jobtcount] eq 2 || ![string match [lindex $jobtcount 1] "Jobid has no transaction counter data"]} {
-                foreach l [split [getchart $jobid 1 "tcount"] \n] { wapp-subst {%unsafe($l)\n} }
+                foreach l [split [strip_jobid_ts [getchart $jobid 1 "tcount"]] \n] { wapp-subst {%unsafe($l)\n} }
             }
 
             set jobtiming [getjobtiming $jobid]
             if {![llength $jobtiming] eq 2 || ![string match [lindex $jobtiming 1] "Jobid has no timing data"]} {
-                foreach l [split [getchart $jobid 1 "timing"] \n] { wapp-subst {%unsafe($l)\n} }
+                foreach l [split [strip_jobid_ts [getchart $jobid 1 "timing"]] \n] { wapp-subst {%unsafe($l)\n} }
             }
 
             set jobmetrics [getjobmetrics $jobid]
             if {![llength $jobmetrics] eq 2 || ![string match [lindex $jobmetrics 1] "Jobid has no metric data"]} {
-                foreach l [split [getchart $jobid 1 "metrics"] \n] { wapp-subst {%unsafe($l)\n} }
+                foreach l [split [strip_jobid_ts [getchart $jobid 1 "metrics"]] \n] { wapp-subst {%unsafe($l)\n} }
             }
         } else {
             if {[llength $jobresult] eq 2 && [string match [lindex $jobresult 1] "Jobid has no test result"]} { return }
@@ -2747,11 +2755,22 @@ if {$rawmode} {
               ]
             }
 
-            #original percentile/average chart
+            #boxplot chart
+            set dbdescription [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]
             set boxdescription $dbdescription
+            foreach colour {color1 color2} {set $colour [ dict get $chartcolors $dbdescription $colour ]}
+            set box [ticklecharts::chart new]
+            set ::ticklecharts::htmlstdout "True"
+            $box SetOptions -title [ subst {text "$boxdescription TPROC-C Box Plot $jobid $date"} ] -tooltip {show "True"} -legend {show "False"}
+            $box Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
+            $box Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
+            $box Add "boxPlotSeries" -name "Response Distribution" -data $boxdata -itemStyle [ subst {color $color1 opacity 0.70} ]
+            set boxhtml [ $box toHTML -title "$jobid Response Time Distribution" ]
+
+            #original percentile/average chart
             set bar [ticklecharts::chart new]
             set ::ticklecharts::htmlstdout "True"
-            $bar SetOptions -title [ subst {text "$dbdescription TPROC-C Response Times $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "30%"}
+            $bar SetOptions -title [ subst {text "$dbdescription TPROC-C Latency Summary"} ] -tooltip {show "True"} -legend {bottom "5%" left "30%"}
             $bar Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $bar Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
             #$bar Add "barSeries" -name P25_MS -data [list $P25_MS]
@@ -2762,22 +2781,12 @@ if {$rawmode} {
             $bar Add "barSeries" -name AVG_MS -data [list $AVG_MS]
             set barhtml [ $bar toHTML -title "$jobid Response Times" ]
 
-            #boxplot chart
-            set dbdescription [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]
-            foreach colour {color1 color2} {set $colour [ dict get $chartcolors $dbdescription $colour ]}
-            set box [ticklecharts::chart new]
-            set ::ticklecharts::htmlstdout "True"
-            $box SetOptions -title [ subst {text "$boxdescription TPROC-C Box (P99 Max) $jobid $date"} ] -tooltip {show "True"} -legend {show "False"}
-            $box Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
-            $box Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
-            $box Add "boxPlotSeries" -name "Response Distribution" -data $boxdata -itemStyle [ subst {color $color1 opacity 0.70} ]
-            set boxhtml [ $box toHTML -title "$jobid Response Time Distribution" ]
-            regsub -all {(?is)^.*?<body[^>]*>} $boxhtml "" boxhtml
-            regsub -all {(?is)</body>\s*</html>\s*$} $boxhtml "" boxhtml
-            regsub -all {(?is)<p><img[^>]*logo\.png[^>]*></p>} $boxhtml "" boxhtml
-            regsub -all {(?is)^.*?(\bchart_[A-Za-z0-9]+\s*=\s*echarts\.init)} $boxhtml {\1} boxhtml
+            regsub -all {(?is)^.*?<body[^>]*>} $barhtml "" barhtml
+            regsub -all {(?is)</body>\s*</html>\s*$} $barhtml "" barhtml
+            regsub -all {(?is)<p><img[^>]*logo\.png[^>]*></p>} $barhtml "" barhtml
+            regsub -all {(?is)^.*?(\bchart_[A-Za-z0-9]+\s*=\s*echarts\.init)} $barhtml {\1} barhtml
             #Return both charts in one HTML payload
-            set html "$barhtml $boxhtml"
+            set html "$boxhtml $barhtml"
             regsub -all {(?is)</script>\s*</body>\s*</html>\s*<br><br>} $html "" html
             hdbjobs eval {INSERT INTO JOBCHART(jobid,chart,html) VALUES($jobid,'timing',$html)}
             return $html
@@ -2889,7 +2898,7 @@ if {$rawmode} {
           set showIrqSeries "False"
           # Use 'irqJS' to toggle the visibility of the IRQ series in the chart.
           set irqJS [ticklecharts::jsfunc new [subst {{'$irqSeriesName': [string tolower $showIrqSeries]}}]]
-          $line SetOptions -title [ subst {text "$dbdescription $jobid"} ] \
+          $line SetOptions -title [ subst {text "$dbdescription $jobid $date"} ] \
                            -tooltip {show "True"} \
                            -legend [list bottom "5%" left "40%" selected $irqJS]
           $line Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
@@ -2966,15 +2975,16 @@ if {$rawmode} {
                  return
              }
 
-             # first profile id is the base/reference profile from jobid
+             # base/reference profile from jobid
              set base_pid $jobid
-             # second profile id is the compared profile from diff:PROFILEID
-             set comp_pid [lindex $parts 1]
-             # retain legacy names for existing code below
-             set profileid1 $base_pid
-             set profileid2 $comp_pid
+             # new/compared profile from diff:PROFILEID
+             set new_pid [lindex $parts 1]
 
-             # --- get profile1 series (same as 'profile' block logic) ---
+             # retain local names used by the comparison logic
+             set profileid1 $base_pid
+             set profileid2 $new_pid
+
+             # --- get base profile series ---
              set lineseries1_1 [list]
              set lineseries2_1 [list]
              set xaxisvals1    [list]
@@ -3000,7 +3010,8 @@ if {$rawmode} {
                  set html "Error: Not enough data for performance profile chart type"
                  return
              }
-             # --- get profile2 series ---
+
+             # --- get new profile series ---
              set lineseries1_2 [list]
              set lineseries2_2 [list]
              set xaxisvals2    [list]
@@ -3027,96 +3038,87 @@ if {$rawmode} {
                  return
              }
 
-              # ---- align Active VU sets (intersection) ----
-              
-              # Build maps for profile1
-              set map_nopm1 [dict create]
-              set map_tpm1  [dict create]
-              for {set i 0} {$i < [llength $xaxisvals1]} {incr i} {
-                  dict set map_nopm1 [lindex $xaxisvals1 $i] [lindex $lineseries1_1 $i]
-                  dict set map_tpm1  [lindex $xaxisvals1 $i] [lindex $lineseries2_1 $i]
-              }
-              
-              # Build maps for profile2
-              set map_nopm2 [dict create]
-              set map_tpm2  [dict create]
-              for {set i 0} {$i < [llength $xaxisvals2]} {incr i} {
-                  dict set map_nopm2 [lindex $xaxisvals2 $i] [lindex $lineseries1_2 $i]
-                  dict set map_tpm2  [lindex $xaxisvals2 $i] [lindex $lineseries2_2 $i]
-              }
-              
-              # Intersection in profile1 order
-              set xaxisvals [list]
-              set lineseries1_1_f [list]; set lineseries2_1_f [list]
-              set lineseries1_2_f [list]; set lineseries2_2_f [list]
-              
-              foreach av $xaxisvals1 {
-                  if {[dict exists $map_nopm2 $av]} {
-                      lappend xaxisvals $av
-                      lappend lineseries1_1_f [dict get $map_nopm1 $av]
-                      lappend lineseries2_1_f [dict get $map_tpm1  $av]
-                      lappend lineseries1_2_f [dict get $map_nopm2 $av]
-                      lappend lineseries2_2_f [dict get $map_tpm2  $av]
-                  }
-              }
-              
-              # Replace originals with filtered series
-              set lineseries1_1 $lineseries1_1_f
-              set lineseries2_1 $lineseries2_1_f
-              set lineseries1_2 $lineseries1_2_f
-              set lineseries2_2 $lineseries2_2_f
-              
-              if {[llength $xaxisvals] < 2} {
-                  set html "Error: Not enough overlapping Active VU points to compare"
-                  return
-              }
+             # ---- align Active VU sets (intersection) ----
+             set map_nopm1 [dict create]
+             set map_tpm1  [dict create]
+             for {set i 0} {$i < [llength $xaxisvals1]} {incr i} {
+                 dict set map_nopm1 [lindex $xaxisvals1 $i] [lindex $lineseries1_1 $i]
+                 dict set map_tpm1  [lindex $xaxisvals1 $i] [lindex $lineseries2_1 $i]
+             }
 
-             # use dbdescription from profile1 (should match profile2)
+             set map_nopm2 [dict create]
+             set map_tpm2  [dict create]
+             for {set i 0} {$i < [llength $xaxisvals2]} {incr i} {
+                 dict set map_nopm2 [lindex $xaxisvals2 $i] [lindex $lineseries1_2 $i]
+                 dict set map_tpm2  [lindex $xaxisvals2 $i] [lindex $lineseries2_2 $i]
+             }
+
+             set xaxisvals [list]
+             set lineseries1_1_f [list]; set lineseries2_1_f [list]
+             set lineseries1_2_f [list]; set lineseries2_2_f [list]
+
+             foreach av $xaxisvals1 {
+                 if {[dict exists $map_nopm2 $av]} {
+                     lappend xaxisvals $av
+                     lappend lineseries1_1_f [dict get $map_nopm1 $av]
+                     lappend lineseries2_1_f [dict get $map_tpm1  $av]
+                     lappend lineseries1_2_f [dict get $map_nopm2 $av]
+                     lappend lineseries2_2_f [dict get $map_tpm2  $av]
+                 }
+             }
+
+             set lineseries1_1 $lineseries1_1_f
+             set lineseries2_1 $lineseries2_1_f
+             set lineseries1_2 $lineseries1_2_f
+             set lineseries2_2 $lineseries2_2_f
+
+             if {[llength $xaxisvals] < 2} {
+                 set html "Error: Not enough overlapping Active VU points to compare"
+                 return
+             }
+
              set dbdescription $dbdescription1
-
-             # colours based on DB
              foreach colour {color1 color2} {set $colour [dict get $chartcolors $dbdescription $colour]}
 
-             # --- Build combined diff chart ---
              set line [ticklecharts::chart new]
              set ::ticklecharts::htmlstdout "True"
 
-        set pdesc1 ""
-        set pdesc2 ""
-        catch {upvar #0 profile_dbdesc profile_dbdesc}
+             set pdesc1 ""
+             set pdesc2 ""
+             catch {upvar #0 profile_dbdesc profile_dbdesc}
 
-        if {[info exists profile_dbdesc]} {
-            if {[dict exists $profile_dbdesc $profileid1]} {
-                set pdesc1 [dict get $profile_dbdesc $profileid1]
-            }
-            if {[dict exists $profile_dbdesc $profileid2]} {
-                set pdesc2 [dict get $profile_dbdesc $profileid2]
-            }
-        }
+             if {[info exists profile_dbdesc]} {
+                 if {[dict exists $profile_dbdesc $profileid1]} {
+                     set pdesc1 [dict get $profile_dbdesc $profileid1]
+                 }
+                 if {[dict exists $profile_dbdesc $profileid2]} {
+                     set pdesc2 [dict get $profile_dbdesc $profileid2]
+                 }
+             }
 
-        $line SetOptions \
-            -title  [subst {text "Performance Profile Compare $comp_pid $pdesc2 relative to $base_pid $pdesc1"}] \
-            -tooltip {show "True"} \
-            -legend  {bottom "5%" left "40%"}
+             $line SetOptions \
+                 -title  [subst {text "Performance Profile Compare New $new_pid $pdesc2 relative to Base $base_pid $pdesc1"}] \
+                 -tooltip {show "True"} \
+                 -legend  {bottom "5%" left "36%"}
 
              $line Xaxis -name "Active VU" -data [list $xaxisvals] -axisLabel [list show "True"]
              $line Yaxis -name "Transactions" -position "left" -axisLabel {formatter {"{value}"}}
 
-             # profile1: solid
-             $line Add "lineSeries" -name "NOPM $profileid1" -data [list $lineseries1_1] \
+             # Base: solid
+             $line Add "lineSeries" -name "NOPM Base $profileid1" -data [list $lineseries1_1] \
                  -itemStyle [subst {color $color1 opacity 0.90}]
-             $line Add "lineSeries" -name "TPM $profileid1" -data [list $lineseries2_1] \
+             $line Add "lineSeries" -name "TPM Base $profileid1" -data [list $lineseries2_1] \
                  -itemStyle [subst {color $color2 opacity 0.90}]
 
-             # profile2: dashed
-             $line Add "lineSeries" -name "NOPM $profileid2" -data [list $lineseries1_2] \
+             # New: dashed
+             $line Add "lineSeries" -name "NOPM New $profileid2" -data [list $lineseries1_2] \
                  -itemStyle [subst {color $color1 opacity 0.60}] \
                  -lineStyle {type "dashed"}
-             $line Add "lineSeries" -name "TPM $profileid2" -data [list $lineseries2_2] \
+             $line Add "lineSeries" -name "TPM New $profileid2" -data [list $lineseries2_2] \
                  -itemStyle [subst {color $color2 opacity 0.60}] \
                  -lineStyle {type "dashed"}
 
-             # --- Numeric summary using jobs_profile_diff (comp relative to base) ---
+             # --- Numeric summary using jobs_profile_diff (new relative to base) ---
              set ratio [jobs_profile_diff $profileid1 $profileid2 true]
              set summary ""
              if {$ratio ne ""} {
@@ -3125,14 +3127,14 @@ if {$rawmode} {
                  if {[info exists r]} {
 
                      # threshold (ratio) from cidict, default 0.025
-		     upvar #0 cidict cidict
+                     upvar #0 cidict cidict
                      if {![info exists cidict]} {
-                     set cidict [ SQLite2Dict "ci" ]
-			}
+                         set cidict [ SQLite2Dict "ci" ]
+                     }
                      set threshold_value 0.025
-                         if {[dict exists $cidict common diff_threshold]} {
-                             set threshold_value [dict get $cidict common diff_threshold]
-                         } 
+                     if {[dict exists $cidict common diff_threshold]} {
+                         set threshold_value [dict get $cidict common diff_threshold]
+                     }
                      if {![string is double -strict $threshold_value] || $threshold_value < 0.0} {
                          set threshold_value 0.025
                      }
@@ -3143,23 +3145,20 @@ if {$rawmode} {
                          set status "PASS"
                      }
 
-                     # ratio with sign (no %)
                      set delta [format "%+.2f" $r]
-                     set summary "Compare summary: $comp_pid relative to $base_pid: Δ = $delta $status (threshold $threshold_value)"
+                     set summary "Compare summary: New $new_pid relative to Base $base_pid: Δ = $delta $status (threshold $threshold_value)"
                  } else {
-                     set summary "Compare summary: $comp_pid relative to $base_pid: $cleanRatio"
+                     set summary "Compare summary: New $new_pid relative to Base $base_pid: $cleanRatio"
                  }
              }
-             set html [$line toHTML -title "Performance Profile Compare $comp_pid to $base_pid"]
+             set html [$line toHTML -title "Performance Profile Compare New $new_pid to Base $base_pid"]
 
              # Neutralise the green "success" wrapper emitted by toHTML (first <div ...>)
              if {[regexp {^<div([^>]*)>} $html -> attrs]} {
                  if {[regexp {style="([^"]*)"} $attrs -> st]} {
-                     # prepend overrides to existing style
                      set newst "background-color: transparent !important; border-left: 0 !important; $st"
                      set newattrs [regsub {style="[^"]*"} $attrs "style=\"$newst\""]
                  } else {
-                     # add a style attribute if none exists
                      set newattrs "$attrs style=\"background-color: transparent !important; border-left: 0 !important;\""
                  }
                  regsub {^<div[^>]*>} $html "<div$newattrs>" html
@@ -3175,6 +3174,7 @@ if {$rawmode} {
              }
              return $html
        }
+
 
       default {
         set html "Error: chart type should be metrics, profile, result, tcount, timing, diff:pid1:pid2"
