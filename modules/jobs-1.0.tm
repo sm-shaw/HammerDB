@@ -1899,10 +1899,11 @@ proc wapp-page-jobs {} {
         return
     }
 
-       proc strip_jobid_ts {chart} {
-       regsub {[0-9A-F]+ [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}} $chart {} chart
-       return $chart
+    proc strip_jobid_ts {chart} {
+        regsub {[ ]+[0-9A-F]{16,}} $chart {} chart
+        return $chart
     }
+
 
     if {[dict exists $paramdict jobid] && [dict exists $paramdict summary]} {
         set jobid [dict get $paramdict jobid]
@@ -1916,14 +1917,31 @@ proc wapp-page-jobs {} {
             if {[llength $jobresult] eq 2 && [string match [lindex $jobresult 1] "Jobid has no test result"]} { return }
             lassign [getnopmtpm $jobresult] jobid tstamp activevu nopm tpm dbdescription
             set avu [regexp -all -inline -- {[0-9]*\.?[0-9]+} $activevu]
+            set dbversion [get_dbversion $jobid]
+            set jobsystem [getjobsystem $jobid]
 
             wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
             wapp-trim {<div class='hammerdb' data-title='Jobs Summary'>}
 
             wapp-subst {<table style="font-size: 150%;">\n}
-            wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>NOPM</th><th>TPM</th><th>Active VU</th>\n}
-            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($nopm)</td><td>%html($tpm)</td><td>%html($avu)</td></tr>\n}
+            wapp-subst {<th>HDB</th><th>Database</th><th>Release</th><th>Benchmark</th><th>NOPM</th><th>TPM</th><th>Active VU</th>\n}
+            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($dbversion)</td><td>%html($bm)</td><td>%html($nopm)</td><td>%html($tpm)</td><td>%html($avu)</td></tr>\n}
             wapp-subst {</table>\n}
+
+            if {![llength $jobsystem] eq 2 || ![string match [lindex $jobsystem 1] "Jobid has no system data"]} {
+                wapp-subst {<h3 class="title">System</h3>\n}
+                wapp-subst {<table>\n}
+                foreach field {hostname cpumodel cpucount system_vendor system_type os_name memory nic storage cloud_instance other_software extra} {
+                    if {[dict exists $jobsystem $field]} {
+                        set label [string map {_ { }} $field]
+                        set value [dict get $jobsystem $field]
+                        if {$value ne ""} {
+                            wapp-subst {<tr><th>%html($label)</th><td>%html($value)</td></tr>\n}
+                        }
+                    }
+                }
+                wapp-subst {</table>\n}
+            }
 
             wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
             foreach l [split [strip_jobid_ts [getchart $jobid 1 "result"]] \n] { wapp-subst {%unsafe($l)\n} }
@@ -1955,13 +1973,31 @@ proc wapp-page-jobs {} {
             regsub -all "query set" $queryset "qset" queryset
             regsub -all "seconds" $queryset "secs" queryset
 
+            set dbversion [get_dbversion $jobid]
+            set jobsystem [getjobsystem $jobid]
+
             wapp-subst {<h3 class="title">Job %html($jobid) %html($bm) Summary %html($tstamp)</h3>}
             wapp-trim {<div class='hammerdb' data-title='Jobs Summary'>}
 
             wapp-subst {<table style="font-size: 150%;">\n}
-            wapp-subst {<th>HDB Version</th><th>Database</th><th>Benchmark</th><th>Geomean</th><th>Query Time</th>\n}
-            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($bm)</td><td>%html($geo)</td><td>%html($queryset)</td></tr>\n}
+            wapp-subst {<th>HDB</th><th>Database</th><th>Release</th><th>Benchmark</th><th>Geomean</th><th>Query Time</th>\n}
+            wapp-subst {<tr><td>%html($hdb_version)</td><td>%html($db)</td><td>%html($dbversion)</td><td>%html($bm)</td><td>%html($geo)</td><td>%html($queryset)</td></tr>\n}
             wapp-subst {</table>\n}
+
+            if {![llength $jobsystem] eq 2 || ![string match [lindex $jobsystem 1] "Jobid has no system data"]} {
+                wapp-subst {<h3 class="title">System</h3>\n}
+                wapp-subst {<table>\n}
+                foreach field {hostname cpumodel cpucount system_vendor system_type os_name memory nic storage cloud_instance other_software extra} {
+                    if {[dict exists $jobsystem $field]} {
+                        set label [string map {_ { }} $field]
+                        set value [dict get $jobsystem $field]
+                        if {$value ne ""} {
+                            wapp-subst {<tr><th>%html($label)</th><td>%html($value)</td></tr>\n}
+                        }
+                    }
+                }
+                wapp-subst {</table>\n}
+            }
 
             wapp-content-security-policy { default-src 'self'; style-src 'self' 'unsafe-inline' *; img-src * data:; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; }
             foreach l [split [getchart $jobid 1 "result"] \n] { wapp-subst {%unsafe($l)\n} }
@@ -2059,14 +2095,17 @@ if {$rawmode} {
             set v [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=0}]]
         }
        system {
+       set js [getjobsystem $jobid]
        set v "No system data available"
-       hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+       if {![dict exists $js message]} {
            set lines {}
-           foreach col $row(*) {
-               if {$col eq "*"} continue
-               set val $row($col)
-               if {$val eq ""} continue
-               lappend lines "$col: $val"
+           foreach field {jobid hostname cpumodel cpucount system_vendor system_type os_name memory nic storage cloud_instance other_software extra} {
+               if {[dict exists $js $field]} {
+                   set val [dict get $js $field]
+                   if {$val ne ""} {
+                       lappend lines "$field: $val"
+                   }
+               }
            }
            if {[llength $lines] > 0} {
                set v [join $lines "\n"]
@@ -2252,15 +2291,18 @@ if {$rawmode} {
                         set v [string trim $v]
                     __pre_block $v
                 }
-		            system {
+                system {
+                    set js [getjobsystem $jobid]
                     set v "No system data available"
-                    hdbjobs eval {SELECT * FROM JOBSYSTEM WHERE JOBID=$jobid} row {
+                    if {![dict exists $js message]} {
                         set lines {}
-                        foreach col $row(*) {
-                            if {$col eq "*"} continue
-                            set val $row($col)
-                            if {$val eq ""} continue
-                            lappend lines "$col: $val"
+                        foreach field {jobid hostname cpumodel cpucount system_vendor system_type os_name memory nic storage cloud_instance other_software extra} {
+                            if {[dict exists $js $field]} {
+                                set val [dict get $js $field]
+                                if {$val ne ""} {
+                                    lappend lines "$field: $val"
+                                }
+                            }
                         }
                         if {[llength $lines] > 0} {
                             set v [join $lines "\n"]
@@ -2472,6 +2514,43 @@ if {$rawmode} {
     return $jobmetric
   }
 
+   proc get_dbversion { jobid } {
+   set dbversion ""
+   set output1 [join [hdbjobs eval {SELECT OUTPUT FROM JOBOUTPUT WHERE JOBID=$jobid AND VU=1}]]
+   if {[string match "*DBVersion*" $output1]} {
+      set matcheddbversion [regexp {(DBVersion:)(\d.+?)\s} $output1 match header version]
+      if {$matcheddbversion} { set dbversion $version }
+   }
+   return $dbversion
+  }
+
+  proc filter_storage_display { os_name storage_text } {
+   if {$storage_text eq ""} {
+      return ""
+   }
+
+   if {![regexp -nocase {linux|ubuntu|debian|rhel|red hat|centos|suse} $os_name]} {
+      return $storage_text
+   }
+
+   set out {}
+   foreach dev [split $storage_text ";"] {
+      set dev [string trim $dev]
+      if {$dev eq ""} continue
+
+      # Remove loop devices explicitly
+      if {[string match {loop*} $dev]} continue
+
+      # Remove tiny / useless devices
+      if {[string first "(0 GB)" $dev] != -1} continue
+      if {[string first "(1 GB)" $dev] != -1} continue
+
+      lappend out $dev
+   }
+
+   return [join $out "; "]
+  }
+
    proc getjobsystem { jobid } {
    set jobsystem [dict create]
 
@@ -2480,12 +2559,20 @@ if {$rawmode} {
          if {$col eq "*"} continue
          set val $row($col)
          if {$val eq ""} continue
-         dict append jobsystem $col $val
+         dict set jobsystem $col $val
       }
    }
 
    if {[dict size $jobsystem] == 0} {
       return [dict create jobid $jobid message "Jobid has no system data"]
+   }
+
+   if {[dict exists $jobsystem storage]} {
+      set os_name ""
+      if {[dict exists $jobsystem os_name]} {
+         set os_name [dict get $jobsystem os_name]
+      }
+      dict set jobsystem storage [filter_storage_display $os_name [dict get $jobsystem storage]]
    }
 
    return $jobsystem
@@ -2627,7 +2714,7 @@ if {$rawmode} {
             }
             set bar [ticklecharts::chart new]
             set ::ticklecharts::htmlstdout "True" ; 
-            $bar SetOptions -title [ subst {text "$dbdescription TPROC-H Result $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
+            $bar SetOptions -title [ subst {text "$dbdescription TPROC-H Result $jobid"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
             $bar Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $bar Yaxis -name "Seconds" -position "left" -axisLabel {formatter {"{value}"}}
             $bar Add "barSeries" -name GEOMEAN -data [list "$geomeantime "] -itemStyle [ subst {color $color1 opacity 0.90} ]
@@ -2645,7 +2732,7 @@ if {$rawmode} {
             if { $dbdescription eq "MSSQLServer" } { set dbdescription "SQL Server" }
             set bar [ticklecharts::chart new]
             set ::ticklecharts::htmlstdout "True" ; 
-            $bar SetOptions -title [ subst {text "$dbdescription TPROC-C Result $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
+            $bar SetOptions -title [ subst {text "$dbdescription TPROC-C Result $jobid"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
             $bar Xaxis -data [list [ subst {"$dbdescription $vus"}]] -axisLabel [list show "True"]
             $bar Yaxis -name "Transactions" -position "left" -axisLabel {formatter {"{value}"}}
             $bar Add "barSeries" -name NOPM -data [list "$nopm "] -itemStyle [ subst {color $color1 opacity 0.90} ]
@@ -2706,7 +2793,7 @@ if {$rawmode} {
             #Create chart showing timing for each Query
             set bar [ticklecharts::chart new]
             set ::ticklecharts::htmlstdout "True"
-            $bar SetOptions -title [ subst {text "$dbdescription TPROC-H Power Query Times $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
+            $bar SetOptions -title [ subst {text "$dbdescription TPROC-H Power Query Times $jobid"} ] -tooltip {show "True"} -legend {bottom "5%" left "45%"}
             $bar Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $bar Yaxis -name "Seconds" -position "left" -axisLabel {formatter {"{value}"}}
             $bar Add "barSeries" -name "VU 1 Query Set" -data [list $barseries] -itemStyle [ subst {color $color1 opacity 0.90} ]
@@ -2761,7 +2848,7 @@ if {$rawmode} {
             foreach colour {color1 color2} {set $colour [ dict get $chartcolors $dbdescription $colour ]}
             set box [ticklecharts::chart new]
             set ::ticklecharts::htmlstdout "True"
-            $box SetOptions -title [ subst {text "$boxdescription TPROC-C Box Plot $jobid $date"} ] -tooltip {show "True"} -legend {show "False"}
+            $box SetOptions -title [ subst {text "$boxdescription TPROC-C Box Plot $jobid"} ] -tooltip {show "True"} -legend {show "False"}
             $box Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
             $box Yaxis -name "Milliseconds" -position "left" -axisLabel {formatter {"{value}"}}
             $box Add "boxPlotSeries" -name "Response Distribution" -data $boxdata -itemStyle [ subst {color $color1 opacity 0.70} ]
@@ -2832,7 +2919,7 @@ if {$rawmode} {
           }
           set line [ticklecharts::chart new]
           set ::ticklecharts::htmlstdout "True" ; 
-          $line SetOptions -title [ subst {text "$dbdescription $workload Count $jobid $date"} ] -tooltip {show "True"} -legend {bottom "5%" left "40%"}
+          $line SetOptions -title [ subst {text "$dbdescription $workload Count $jobid"} ] -tooltip {show "True"} -legend {bottom "5%" left "40%"}
           $line Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
           $line Yaxis -name "$axisname" -position "left" -axisLabel {formatter {"{value}"}}
           $line Add "lineSeries" -name [ join $header ] -data [ list $lineseries ] -itemStyle [ subst {color $color1 opacity 0.90} ]
@@ -2862,8 +2949,9 @@ if {$rawmode} {
             set html [ join [ hdbjobs eval {SELECT html FROM JOBCHART WHERE JOBID=$jobid AND CHART="metrics"} ]]
             return $html
           }
+          set dbdescription [ join [ hdbjobs eval {SELECT db FROM JOBMAIN WHERE JOBID=$jobid} ]]
           hdbjobs eval {SELECT cpucount,cpumodel from JOBSYSTEM WHERE JOBID=$jobid} {
-	  set dbdescription "$cpucount $cpumodel"
+	  set cpudescription "$cpucount x $cpumodel"
 		}
 	if {[ dict size $chartdata ] <= 1} {
           putscli "Chart for jobid $jobid not available, Jobid has insufficient metrics data"
@@ -2898,7 +2986,7 @@ if {$rawmode} {
           set showIrqSeries "False"
           # Use 'irqJS' to toggle the visibility of the IRQ series in the chart.
           set irqJS [ticklecharts::jsfunc new [subst {{'$irqSeriesName': [string tolower $showIrqSeries]}}]]
-          $line SetOptions -title [ subst {text "$dbdescription $jobid $date"} ] \
+          $line SetOptions -title [ subst {text "$dbdescription Metrics $jobid $cpudescription"} ] \
                            -tooltip {show "True"} \
                            -legend [list bottom "5%" left "40%" selected $irqJS]
           $line Xaxis -data [list $xaxisvals] -axisLabel [list show "True"]
