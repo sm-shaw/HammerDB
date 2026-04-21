@@ -351,10 +351,13 @@ namespace eval mysqlmet {
                     }
                 }
 
-                set public(ash,starttime) [expr ($day - 719528) * 86400 + $secs]
+                # Derive absolute bounds from sample_id (CEILING(UNIX_TIMESTAMP(ash_time))) so the
+                # comparison is timezone-independent. The "- 1" cushion keeps the first bucket
+                # inclusive when FROM_UNIXTIME is applied to this value later.
+                set public(ash,starttime) [expr {$sample_id - $public(ash,loadhours) * 3600 - 1}]
                 set public(ash,startday) "${day}"
                 # ash,time used just below in cursor where clause in variable ash,where
-                set public(ash,time) [expr ($day - 719528) * 86400 + $secs]
+                set public(ash,time) [expr {$sample_id - $public(ash,loadhours) * 3600 - 1}]
                 set public(ash,day)  "$day"
                 set public(ash,secs) "$secs"
                 set public(ash,sample_id) "$sample_id"
@@ -362,7 +365,7 @@ namespace eval mysqlmet {
         } err] } { puts "call $cur_proc, err:$err"; }
         unlock public(thread_actv) $cur_proc
         set public(ash,bucket_secs)
-        set public(ash,where) "ash_time > FROM_UNIXTIME(($public(ash,day) - 719528) * 86400 + $public(ash,secs))"
+        set public(ash,where) "ash_time > FROM_UNIXTIME($public(ash,time))"
         mon_execute ash
         set public(ash,bucket_secs) $public(sleep,fast)
         set public(cursor,ash) fast
@@ -1045,8 +1048,12 @@ namespace eval mysqlmet {
                 set begsec [ expr [ set ash_sec($beg)] - 0 ]
                 set endday [ set ash_day($end)]
                 set endsec [ expr [ set ash_sec($end)] + 0 ]
-                set public(ash,beg) [ expr ($begday - 719528) * 86400 + $begsec ]
-                set public(ash,end) [ expr ($endday - 719528) * 86400 + $endsec ]
+                # Use sample_id-derived bounds (true Unix timestamps) so FROM_UNIXTIME in the
+                # drill-down queries compares correctly regardless of session time_zone.
+                # sample_id is CEILING(UNIX_TIMESTAMP(ash_time)), so subtract 1 on the lower
+                # bound to keep the first selected bucket inclusive.
+                set public(ash,beg) [ expr {$public(ash,begid) - 1} ]
+                set public(ash,end) $public(ash,endid)
                 set public(ash,begcnt) [ format "%06.0f%05.0f" $begday $begsec ]
                 set public(ash,endcnt) [ format "%06.0f%05.0f" $endday $endsec ]
                 set public(ash,sesdelta)  [ expr [set public(ash,endcnt) ] - [ set public(ash,begcnt) ] ]
