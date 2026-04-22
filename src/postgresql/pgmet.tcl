@@ -2019,22 +2019,27 @@ namespace eval pgmet {
 
                 # Check if pgsentinel is installed
                 if { $db_type == "default" } {
+                    set pgsentinel_found 0
                     if { [ catch {
-                            pg_select $handle "select count(*) from pg_class where relname = 'pg_active_session_history';" arr { 
-                                set cnt [ expr $arr(count) ]
-                                if { $cnt == 0 } { 
-                                    pg_disconnect $handle
-                                    thread::send $parent "::callback_err \"Extension pgsentinel is not found\""
-                                    just_disconnect $parent
-                                    return
+                            pg_select $handle "select count(*) from pg_class where relname = 'pg_active_session_history';" arr {
+                                set cnt [expr {$arr(count)}]
+                                if { $cnt > 0 } {
+                                    set pgsentinel_found 1
                                 }
                             }
-                        } err ] } { 
+                        } err ] } {
+                        catch { pg_disconnect $handle }
                         thread::send -async $parent "::callback_err \"$err\""
-                        thread::send -async $parent "::callback_mesg \"pg_disconnect $handle\""
+                        just_disconnect $parent
+                        return
+                    }
+                    if { !$pgsentinel_found } {
+                        catch { pg_disconnect $handle }
+                        thread::send -async $parent "::callback_err \"PostgreSQL Metrics requires the pg_stat_statements and pgsentinel extensions (CREATE EXTENSION pg_stat_statements; CREATE EXTENSION pgsentinel;)\""
+                        just_disconnect $parent
+                        return
                     }
                 }
-
                 thread::send -async $parent "::callback_connect $db_type $handle"
             }
 
