@@ -1177,6 +1177,13 @@ namespace eval mariamet {
         } else {
             set public(ash,sqlid) " digest = \'$sqlid\' "
         }
+        # Clear any stale content (e.g. event info from wait_analysis) synchronously so the
+        # panel never appears "blank" if the async query callback is skipped or returns
+        # NULL sql_text.
+        catch {
+            $public(ash,output) delete 0.0 end
+            $public(ash,output) insert insert "-- Loading SQL text ... --\n"
+        }
         mon_execute ash_sqltxt
         regsub {\..*} $public(version) "" t
         if { $t > 5 } { ; }
@@ -1208,11 +1215,17 @@ namespace eval mariamet {
         set cur_proc ash_sqltxt_fetch
         if { [ catch {
                 $public(ash,output) delete 0.0 end
+                set inserted 0
                 foreach row [ lindex $args 1 ] {
                     if { [ lindex $row 0 ] != "" } {
                         $public(ash,output) insert insert [lindex $row 0]
                         set public(ash,sqltxt) [lindex $row 0]
+                        incr inserted
                     }
+                }
+                if { $inserted == 0 } {
+                    $public(ash,output) insert insert "-- No SQL text recorded for this digest --"
+                    set public(ash,sqltxt) ""
                 }
         } err] } { puts "call $cur_proc, err:$err"; }
         unlock public(thread_actv) $cur_proc
