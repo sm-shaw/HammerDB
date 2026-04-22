@@ -285,6 +285,8 @@ proc metrics {} {
     }
     if { $rdbms eq "Oracle" } {
         namespace forget pgmet::*
+        namespace forget mysqlmet::*
+        namespace forget mariamet::*
         namespace import oramet::*
         if { $cpu_only } { 
 		genmetrics 
@@ -293,11 +295,33 @@ proc metrics {} {
 	}
     } elseif { $rdbms eq "PostgreSQL" } {
         namespace forget oramet::*
+        namespace forget mysqlmet::*
+        namespace forget mariamet::*
         namespace import pgmet::*
         if { $cpu_only } { 
 		genmetrics 
 	} else { 
 		pgmetrics 
+	}
+    } elseif { $rdbms eq "MySQL" } {
+        namespace forget oramet::*
+        namespace forget pgmet::*
+        namespace forget mariamet::*
+        namespace import mysqlmet::*
+        if { $cpu_only } {
+		genmetrics
+	} else {
+		mysqlmetrics
+	}
+    } elseif { $rdbms eq "MariaDB" } {
+        namespace forget oramet::*
+        namespace forget pgmet::*
+        namespace forget mysqlmet::*
+        namespace import mariamet::*
+        if { $cpu_only } {
+		genmetrics
+	} else {
+		mariametrics
 	}
     } else {
         genmetrics
@@ -365,9 +389,13 @@ proc ed_kill_metrics {args} {
     if {  [ info exists cpu_only ] } { ; } else { set cpu_only "false" }
     if { $cpu_only eq "false" } {
     if { $rdbms == "Oracle" } {
-        post_kill_dbmon_cleanup 
+        catch { post_kill_dbmon_cleanup }
     } elseif { $rdbms == "PostgreSQL" } {
-        pg_post_kill_dbmon_cleanup 
+        catch { pg_post_kill_dbmon_cleanup }
+    } elseif { $rdbms == "MySQL" } {
+        catch { mysql_post_kill_dbmon_cleanup }
+    } elseif { $rdbms == "MariaDB" } {
+        catch { maria_post_kill_dbmon_cleanup }
     }
     }
     ed_status_message -show "... Stopping Metrics ..."
