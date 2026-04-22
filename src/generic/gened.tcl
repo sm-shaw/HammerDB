@@ -3078,7 +3078,7 @@ proc dgopts {} {
     set Prompt $Parent.f1.p4
     ttk::label $Prompt -text "Virtual Users to Generate Data :"
     set Name $Parent.f1.e4
-    ttk::spinbox $Name -from 1 -to 1024 -textvariable gen_num_vu
+    ttk::spinbox $Name -from 1 -to 100000 -textvariable gen_num_vu
     bind .dgopt.f1.e4 <Any-ButtonRelease> {
         if { $bm eq "TPC-C" } {
             if {$gen_num_vu > $gen_count_ware} {
@@ -3666,9 +3666,9 @@ proc verify_warehouse { count_ware maximum } {
     return $count_ware
 }
 
-proc verify_build_threads { num_vu count_ware maximum } {
-    if { ![string is integer -strict $num_vu] || $num_vu < 1 || $num_vu > $maximum } {
-        tk_messageBox -message "The number of virtual users must be a positive integer less than or equal to $maximum"
+proc verify_build_threads { num_vu count_ware } {
+    if { ![string is integer -strict $num_vu] || $num_vu < 1 } {
+        tk_messageBox -message "The number of virtual users must be a positive integer"
         set num_vu 1
     }
     if { $num_vu > $count_ware } { set num_vu $count_ware }

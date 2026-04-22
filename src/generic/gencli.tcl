@@ -1206,8 +1206,8 @@ proc buildschema {} {
         set vukey [ lsearch [ join [ set $dictname ]] *num_vu ]
         set vuname [ lsearch -inline [ join [ set $dictname ]] *num_vu ]
         set buildvu [ lindex [ join [ set $dictname ]] [ expr $vukey + 1]]
-        if { ![string is integer -strict $buildvu ] || $buildvu < 1 || $buildvu > 1024 } {
-            puts "Error: Number of virtual users to build schema must be an integer less than 1024"
+        if { ![string is integer -strict $buildvu ] || $buildvu < 1 } {
+            puts "Error: Number of virtual users to build schema must be a positive integer"
             return
         }
         if { $buildvu > $buildcw } {
@@ -1241,8 +1241,8 @@ proc buildschema {} {
         set vukey [ lsearch [ join [ set $dictname ]] *num_tpch_threads ]
         set vuname [ lsearch -inline [ join [ set $dictname ]] *num_tpch_threads ]
         set buildvu [ lindex [ join [ set $dictname ]] [ expr $vukey + 1]]
-        if { ![string is integer -strict $buildvu ] || $buildvu < 1 || $buildvu > 1024 } {
-            puts "Error: Number of virtual users to build schema must be an integer less than 1024"
+        if { ![string is integer -strict $buildvu ] || $buildvu < 1 } {
+            puts "Error: Number of virtual users to build schema must be a positive integer"
             return
         }
         set validvalues {1 10 30 100 300 1000 3000 10000 30000 100000}

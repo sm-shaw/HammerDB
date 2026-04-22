@@ -629,7 +629,7 @@ proc configmysqltpcc {option} {
         set Prompt $Parent.f1.p9
         ttk::label $Prompt -text "Virtual Users to Build Schema :"
         set Name $Parent.f1.e9
-        ttk::spinbox $Name -from 1 -to 512 -textvariable mysql_num_vu
+        ttk::spinbox $Name -from 1 -to 100000 -textvariable mysql_num_vu
         bind .tpc.f1.e9 <<Any-Button-Any-Key>> {
             if {$mysql_num_vu > $mysql_count_ware} {
                 set mysql_num_vu $mysql_count_ware
@@ -898,7 +898,7 @@ proc configmysqltpcc {option} {
         "default" {
             ttk::button $Name -command {
                 set mysql_count_ware [ verify_warehouse $mysql_count_ware 100000 ]
-                set mysql_num_vu [ verify_build_threads $mysql_num_vu $mysql_count_ware 1024 ]
+                set mysql_num_vu [ verify_build_threads $mysql_num_vu $mysql_count_ware ]
                 copyfieldstoconfig configmysql [ subst $myfields ] tpcc
                 Dict2SQLite "mysql" $configmysql
                 unset myfields
@@ -1334,7 +1334,7 @@ proc configmysqltpch {option} {
         }
         "default" {
             ttk::button $Name -command {
-                set mysql_num_tpch_threads [ verify_build_threads $mysql_num_tpch_threads 512 512 ]
+                set mysql_num_tpch_threads [ verify_build_threads $mysql_num_tpch_threads 512 ]
                 copyfieldstoconfig configmysql [ subst $myfields ] tpch
                 Dict2SQLite "mysql" $configmysql
                 unset myfields

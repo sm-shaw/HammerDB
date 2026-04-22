@@ -376,7 +376,7 @@ proc configpgtpcc {option} {
         set Prompt $Parent.f1.p11
         ttk::label $Prompt -text "Virtual Users to Build Schema :"
         set Name $Parent.f1.e11
-        ttk::spinbox $Name -from 1 -to 512 -textvariable pg_num_vu
+        ttk::spinbox $Name -from 1 -to 100000 -textvariable pg_num_vu
         bind .tpc.f1.e11 <<Any-Button-Any-Key>> {
             if {$pg_num_vu > $pg_count_ware} {
                 set pg_num_vu $pg_count_ware
@@ -629,7 +629,7 @@ proc configpgtpcc {option} {
         "default" {
             ttk::button $Name -command {
                 set pg_count_ware [ verify_warehouse $pg_count_ware 100000 ]
-                set pg_num_vu [ verify_build_threads $pg_num_vu $pg_count_ware 1024 ]
+                set pg_num_vu [ verify_build_threads $pg_num_vu $pg_count_ware ]
                 copyfieldstoconfig configpostgresql [ subst $pgfields ] tpcc
                 Dict2SQLite "postgresql" $configpostgresql
                 unset pgfields
@@ -940,7 +940,7 @@ proc configpgtpch {option} {
         }
         "default" {
             ttk::button $Name -command {
-                set pg_num_tpch_threads [ verify_build_threads $pg_num_tpch_threads 512 512 ]
+                set pg_num_tpch_threads [ verify_build_threads $pg_num_tpch_threads 512 ]
                 copyfieldstoconfig configpostgresql [ subst $pgfields ] tpch
                 Dict2SQLite "postgresql" $configpostgresql
                 unset pgfields
