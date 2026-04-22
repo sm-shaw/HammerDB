@@ -2032,15 +2032,24 @@ namespace eval mysqlmet {
                 }
 
                 if { $db_type == "default" } {
+                    set ps_enabled 0
                     if { [ catch {
                             #Verify performance_schema is enabled
                             set ps_check [ mysql::sel $handle "SELECT @@performance_schema" -flatlist ]
-                            if { [lindex $ps_check 0] != 1 } {
-                                mysql::close $handle
-                                thread::send $parent "::callback_err \"performance_schema is not enabled on this MySQL instance\""
-                                just_disconnect $parent
-                                return
-                            }
+                            if { [lindex $ps_check 0] == 1 } { set ps_enabled 1 }
+                        } err ] } {
+                        catch { mysql::close $handle }
+                        thread::send -async $parent "::callback_err \"$err\""
+                        just_disconnect $parent
+                        return
+                    }
+                    if { !$ps_enabled } {
+                        catch { mysql::close $handle }
+                        thread::send -async $parent "::callback_err \"performance_schema is not enabled on this MySQL instance. Enable with performance_schema=ON in my.cnf and restart the server.\""
+                        just_disconnect $parent
+                        return
+                    }
+                    if { [ catch {
                             #Create ASH sampling schema and table if not exists
                             mysql::exec $handle "CREATE DATABASE IF NOT EXISTS hammerdb_ash"
                             mysql::exec $handle "CREATE TABLE IF NOT EXISTS hammerdb_ash.active_session_history (
@@ -2066,9 +2075,10 @@ namespace eval mysqlmet {
                             catch { mysql::exec $handle "UPDATE performance_schema.setup_consumers SET ENABLED='YES' WHERE NAME IN ('events_waits_current', 'events_statements_current')" }
                             catch { mysql::exec $handle "UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME LIKE 'wait/%'" }
                             catch { mysql::exec $handle "UPDATE performance_schema.setup_instruments SET ENABLED='YES', TIMED='YES' WHERE NAME LIKE 'statement/%'" }
-                            #Create sampling event if not exists
+                            #Drop and recreate sampling event so schedule/filter changes apply when upgrading an existing hammerdb_ash
+                            catch { mysql::exec $handle "DROP EVENT IF EXISTS hammerdb_ash.ash_sampler" }
                             mysql::exec $handle "CREATE EVENT IF NOT EXISTS hammerdb_ash.ash_sampler
-                                ON SCHEDULE EVERY 1 SECOND
+                                ON SCHEDULE EVERY 5 SECOND
                                 DO
                                 INSERT INTO hammerdb_ash.active_session_history
                                 (thread_id, processlist_id, user, host, db, command, state,
@@ -2094,11 +2104,15 @@ namespace eval mysqlmet {
                                 WHERE t.TYPE = 'FOREGROUND'
                                   AND t.PROCESSLIST_COMMAND != 'Sleep'
                                   AND t.PROCESSLIST_COMMAND != 'Daemon'
-                                  AND t.PROCESSLIST_ID IS NOT NULL"
+                                  AND t.PROCESSLIST_ID IS NOT NULL
+                                  AND (s.SQL_TEXT IS NULL OR s.SQL_TEXT NOT LIKE '%hammerdb_ash%')"
                             #Enable event scheduler
                             catch { mysql::exec $handle "SET GLOBAL event_scheduler = ON" }
                         } err ] } {
+                        catch { mysql::close $handle }
                         thread::send -async $parent "::callback_err \"$err\""
+                        just_disconnect $parent
+                        return
                     }
                 }
 
