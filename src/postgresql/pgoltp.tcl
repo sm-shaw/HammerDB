@@ -125,13 +125,16 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
             FROM item WHERE i_id = no_ol_i_id;
             SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10
             INTO no_s_quantity, no_s_data, no_s_dist_01, no_s_dist_02, no_s_dist_03, no_s_dist_04, no_s_dist_05, no_s_dist_06, no_s_dist_07, no_s_dist_08, no_s_dist_09, no_s_dist_10 FROM stock WHERE s_i_id = no_ol_i_id AND s_w_id = no_ol_supply_w_id;
-            IF ( no_s_quantity > no_ol_quantity )
+            IF ( no_s_quantity >= ( no_ol_quantity + 10 ) )
             THEN
             no_s_quantity := ( no_s_quantity - no_ol_quantity );
             ELSE
             no_s_quantity := ( no_s_quantity - no_ol_quantity + 91 );
             END IF;
-            UPDATE stock SET s_quantity = no_s_quantity
+            UPDATE stock SET s_quantity = no_s_quantity,
+            s_ytd = s_ytd + no_ol_quantity,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN no_ol_supply_w_id != no_w_id THEN 1 ELSE 0 END
             WHERE s_i_id = no_ol_i_id
             AND s_w_id = no_ol_supply_w_id;
 
@@ -217,7 +220,7 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
             FROM order_line
             WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id
             AND ol_w_id = d_w_id;
-            UPDATE customer SET c_balance = c_balance + d_ol_total
+            UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
             WHERE c_id = d_c_id AND c_d_id = d_d_id AND
             c_w_id = d_w_id;
             DBMS_OUTPUT.PUT_LINE('D: ' || d_d_id || 'O: ' || d_no_o_id || 'time ' || tstamp);
@@ -330,11 +333,11 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
             TO_CHAR(p_c_w_id) || ' ' || TO_CHAR(p_d_id) || ' ' || TO_CHAR(p_w_id) || ' ' || TO_CHAR(p_h_amount,'9999.99') || TO_CHAR(tstamp) || h_data);
             p_c_new_data := substr(CONCAT(p_c_new_data,p_c_data),1,500-(LENGTH(p_c_new_data)));
             UPDATE customer
-            SET c_balance = p_c_balance, c_data = p_c_new_data
+            SET c_balance = p_c_balance, c_data = p_c_new_data, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
             WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
             c_id = p_c_id;
             ELSE
-            UPDATE customer SET c_balance = p_c_balance
+            UPDATE customer SET c_balance = p_c_balance, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
             WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
             c_id = p_c_id;
             END IF;
@@ -548,7 +551,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -563,7 +569,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -578,7 +587,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -593,7 +605,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -608,7 +623,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -623,7 +641,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -638,7 +659,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -653,7 +677,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -668,7 +695,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -683,7 +713,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -887,6 +920,8 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 UPDATE customer
                 SET c_balance = p_c_balance - p_h_amount,
+                c_ytd_payment = c_ytd_payment + p_h_amount,
+                c_payment_cnt = c_payment_cnt + 1,
                 c_data = substr ((p_c_id || ' ' ||
                 p_c_d_id || ' ' ||
                 p_c_w_id || ' ' ||
@@ -899,7 +934,9 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 RETURNING c_balance, c_data INTO p_c_balance, p_c_data;
                 ELSE
                 UPDATE customer
-                SET c_balance = p_c_balance - p_h_amount
+                SET c_balance = p_c_balance - p_h_amount,
+                c_ytd_payment = c_ytd_payment + p_h_amount,
+                c_payment_cnt = c_payment_cnt + 1
                 WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND c_id = p_c_id
                 RETURNING c_balance, c_data INTO p_c_balance, p_c_data;
                 END IF;
@@ -1085,7 +1122,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1100,7 +1140,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1115,7 +1158,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1130,7 +1176,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1145,7 +1194,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1160,7 +1212,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1175,7 +1230,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1190,7 +1248,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1205,7 +1266,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1220,7 +1284,10 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 WITH stock_update AS (
                 UPDATE stock
-                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity
+                SET s_quantity = ( CASE WHEN s_quantity < (item_stock.quantity + 10) THEN s_quantity + 91 ELSE s_quantity END) - item_stock.quantity,
+                s_ytd = s_ytd + item_stock.quantity,
+                s_order_cnt = s_order_cnt + 1,
+                s_remote_cnt = s_remote_cnt + CASE WHEN (item_stock.supply_wid <> no_w_id) THEN 1 ELSE 0 END
                 FROM UNNEST(item_id_array, supply_wid_array, quantity_array, price_array)
                 AS item_stock (item_id, supply_wid, quantity, price)
                 WHERE stock.s_i_id = item_stock.item_id
@@ -1434,6 +1501,8 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 THEN
                 UPDATE customer
                 SET c_balance = p_c_balance - p_h_amount,
+                c_ytd_payment = c_ytd_payment + p_h_amount,
+                c_payment_cnt = c_payment_cnt + 1,
                 c_data = substr ((p_c_id || '' '' ||
                 p_c_d_id || '' '' ||
                 p_c_w_id || '' '' ||
@@ -1444,7 +1513,9 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 RETURNING c_balance, c_data INTO p_c_balance, p_c_new_data;
                 ELSE
                 UPDATE customer
-                SET c_balance = p_c_balance - p_h_amount
+                SET c_balance = p_c_balance - p_h_amount,
+                c_ytd_payment = c_ytd_payment + p_h_amount,
+                c_payment_cnt = c_payment_cnt + 1
                 WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND c_id = p_c_id
                 RETURNING c_balance, '' '' INTO p_c_balance, p_c_new_data;
                 END IF;
