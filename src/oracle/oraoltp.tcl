@@ -127,13 +127,16 @@ proc CreateStoredProcs { lda timesten num_part } {
             FROM item WHERE i_id = no_ol_i_id;
             SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10
             INTO no_s_quantity, no_s_data, no_s_dist_01, no_s_dist_02, no_s_dist_03, no_s_dist_04, no_s_dist_05, no_s_dist_06, no_s_dist_07, no_s_dist_08, no_s_dist_09, no_s_dist_10 FROM stock WHERE s_i_id = no_ol_i_id AND s_w_id = no_ol_supply_w_id;
-            IF ( no_s_quantity > no_ol_quantity )
+            IF ( no_s_quantity >= ( no_ol_quantity + 10 ) )
             THEN
             no_s_quantity := ( no_s_quantity - no_ol_quantity );
             ELSE
             no_s_quantity := ( no_s_quantity - no_ol_quantity + 91 );
             END IF;
-            UPDATE stock SET s_quantity = no_s_quantity
+            UPDATE stock SET s_quantity = no_s_quantity,
+            s_ytd = s_ytd + no_ol_quantity,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN no_ol_supply_w_id != no_w_id THEN 1 ELSE 0 END
             WHERE s_i_id = no_ol_i_id
             AND s_w_id = no_ol_supply_w_id;
 
@@ -423,7 +426,7 @@ proc CreateStoredProcs { lda timesten num_part } {
                 FROM order_line
                 WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id
                 AND ol_w_id = d_w_id;
-                UPDATE customer SET c_balance = c_balance + d_ol_total
+                UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
                 WHERE c_id = d_c_id AND c_d_id = d_d_id AND
                 c_w_id = d_w_id;
                 COMMIT;
@@ -471,7 +474,7 @@ proc CreateStoredProcs { lda timesten num_part } {
                 FROM order_line
                 WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id
                 AND ol_w_id = d_w_id;
-                UPDATE customer SET c_balance = c_balance + d_ol_total
+                UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
                 WHERE c_id = d_c_id AND c_d_id = d_d_id AND
                 c_w_id = d_w_id;
                 COMMIT;
@@ -540,9 +543,8 @@ proc CreateStoredProcs { lda timesten num_part } {
 
             FORALL c IN 1.. ordcnt
             UPDATE customer
-            SET c_balance = c_balance + sums(c)
-            -- Added this in for the refactor but it's not in the original (although it should be) so I've removed it, to be true to the original
-            --, c_delivery_cnt = c_delivery_cnt + 1
+            SET c_balance = c_balance + sums(c),
+            c_delivery_cnt = c_delivery_cnt + 1
             WHERE c_w_id = d_w_id
             AND c_d_id = dist_id_array(c)
             AND c_id = order_c_id(c);
@@ -624,9 +626,9 @@ proc CreateStoredProcs { lda timesten num_part } {
         cust_rowid := row_id ((c_num + 1) / 2);
 
         UPDATE customer
-        SET c_balance = c_balance - p_h_amount
-        --c_ytd_payment = c_ytd_payment + hist_amount,
-        --c_payment_cnt = c_payment_cnt + 1
+        SET c_balance = c_balance - p_h_amount,
+        c_ytd_payment = c_ytd_payment + p_h_amount,
+        c_payment_cnt = c_payment_cnt + 1
         WHERE rowid = cust_rowid
         RETURNING c_id, c_first, c_middle, c_last, c_street_1, c_street_2,
         c_city, c_state, c_zip, c_phone,
@@ -638,9 +640,9 @@ proc CreateStoredProcs { lda timesten num_part } {
         p_c_discount, p_c_balance;
         ELSE
         UPDATE customer
-        SET c_balance = c_balance - p_h_amount
-        --c_ytd_payment = c_ytd_payment + hist_amount,
-        --c_payment_cnt = c_payment_cnt + 1
+        SET c_balance = c_balance - p_h_amount,
+        c_ytd_payment = c_ytd_payment + p_h_amount,
+        c_payment_cnt = c_payment_cnt + 1
         WHERE c_id = p_c_id AND c_d_id = p_c_d_id AND c_w_id = p_c_w_id
         RETURNING rowid, c_first, c_middle, c_last, c_street_1, c_street_2,
         c_city, c_state, c_zip, c_phone,
