@@ -109,10 +109,13 @@ proc CreateStoredProcs { db_handle } {
         SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10 
         INTO no_s_quantity, no_s_data, no_s_dist_01, no_s_dist_02, no_s_dist_03, no_s_dist_04, no_s_dist_05, no_s_dist_06, no_s_dist_07, no_s_dist_08, no_s_dist_09, no_s_dist_10
         FROM NEW TABLE (UPDATE STOCK
-        SET s_quantity = CASE WHEN ( s_quantity > no_ol_quantity )
+        SET s_quantity = CASE WHEN ( s_quantity >= ( no_ol_quantity + 10 ) )
         THEN ( s_quantity - no_ol_quantity )
         ELSE ( s_quantity - no_ol_quantity + 91 )
-        END
+        END,
+        s_ytd = s_ytd + no_ol_quantity,
+        s_order_cnt = s_order_cnt + 1,
+        s_remote_cnt = s_remote_cnt + CASE WHEN ( no_ol_supply_w_id <> no_w_id ) THEN 1 ELSE 0 END
         WHERE s_i_id = no_ol_i_id AND s_w_id = no_ol_supply_w_id
         ) AS US;
         SET no_ol_amount = (  no_ol_quantity * no_i_price * ( 1 + no_w_tax + no_d_tax ) * ( 1 - no_c_discount ) );
@@ -242,11 +245,11 @@ proc CreateStoredProcs { db_handle } {
         SET p_c_new_data = (TO_CHAR(p_c_id) || ' ' || TO_CHAR(p_c_d_id) || ' ' || TO_CHAR(p_c_w_id) || ' ' || TO_CHAR(p_d_id) || ' ' || TO_CHAR(p_w_id) || ' ' || VARCHAR_FORMAT(p_h_amount,'9999.99') || VARCHAR_FORMAT(timestamp,'YYYYMMDDHH24MISS') || h_data);
         SET p_c_new_data = SUBSTR(CONCAT(p_c_new_data,p_c_data),1,500-(LENGTH(p_c_new_data)));
         UPDATE customer
-        SET c_balance = p_c_balance, c_data = p_c_new_data
+        SET c_balance = p_c_balance, c_data = p_c_new_data, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         ELSE
-        UPDATE customer SET c_balance = p_c_balance
+        UPDATE customer SET c_balance = p_c_balance, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         END IF;
@@ -284,7 +287,7 @@ proc CreateStoredProcs { db_handle } {
         SET ol_delivery_d = tstamp
         WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id AND
         ol_w_id = d_w_id);
-        UPDATE customer SET c_balance = c_balance + d_ol_total
+        UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
         WHERE c_id = d_c_id AND c_d_id = d_d_id AND
         c_w_id = d_w_id;
         set deliv_data[loop_counter] = d_no_o_id;

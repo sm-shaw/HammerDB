@@ -124,13 +124,16 @@ proc CreateStoredProcs { maria_handler } {
         SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10
         INTO no_s_quantity, no_s_data, no_s_dist_01, no_s_dist_02, no_s_dist_03, no_s_dist_04, no_s_dist_05, no_s_dist_06, no_s_dist_07, no_s_dist_08, no_s_dist_09, no_s_dist_10
         FROM stock WHERE s_i_id = no_ol_i_id AND s_w_id = no_ol_supply_w_id;
-        IF ( no_s_quantity > no_ol_quantity )
+        IF ( no_s_quantity >= ( no_ol_quantity + 10 ) )
         THEN
         SET no_s_quantity = ( no_s_quantity - no_ol_quantity );
         ELSE
         SET no_s_quantity = ( no_s_quantity - no_ol_quantity + 91 );
         END IF;
-        UPDATE stock SET s_quantity = no_s_quantity
+        UPDATE stock SET s_quantity = no_s_quantity,
+        s_ytd = s_ytd + no_ol_quantity,
+        s_order_cnt = s_order_cnt + 1,
+        s_remote_cnt = s_remote_cnt + IF(no_ol_supply_w_id != no_w_id,1,0)
         WHERE s_i_id = no_ol_i_id
         AND s_w_id = no_ol_supply_w_id;
         SET no_ol_amount = (  no_ol_quantity * no_i_price * ( 1 + no_w_tax + no_d_tax ) * ( 1 - no_c_discount ) );
@@ -200,7 +203,7 @@ proc CreateStoredProcs { maria_handler } {
         FROM order_line
         WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id
         AND ol_w_id = d_w_id;
-        UPDATE customer SET c_balance = c_balance + d_ol_total
+        UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
         WHERE c_id = d_c_id AND c_d_id = d_d_id AND
         c_w_id = d_w_id;
         SET deliv_data = CONCAT(d_d_id,' ',d_no_o_id,' ',timestamp);
@@ -314,11 +317,11 @@ proc CreateStoredProcs { maria_handler } {
         SET p_c_new_data = CONCAT(CAST(p_c_id AS CHAR),' ',CAST(p_c_d_id AS CHAR),' ',CAST(p_c_w_id AS CHAR),' ',CAST(p_d_id AS CHAR),' ',CAST(p_w_id AS CHAR),' ',CAST(FORMAT(p_h_amount,2) AS CHAR),CAST(timestamp AS CHAR),h_data);
         SET p_c_new_data = SUBSTR(CONCAT(p_c_new_data,p_c_data),1,500-(LENGTH(p_c_new_data)));
         UPDATE customer
-        SET c_balance = p_c_balance, c_data = p_c_new_data
+        SET c_balance = p_c_balance, c_data = p_c_new_data, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         ELSE
-        UPDATE customer SET c_balance = p_c_balance
+        UPDATE customer SET c_balance = p_c_balance, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         END IF;
@@ -1480,12 +1483,12 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
       set quantity_data_dist [ maria::sel $maria_handler "SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10 FROM stock WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id" -flatlist ]
       set no_i_price [ lindex $price_name_data 0 ]
       set no_s_quantity [ lindex $quantity_data_dist 0 ]
-      if { $no_s_quantity > $no_ol_quantity } {
+      if { $no_s_quantity >= ($no_ol_quantity + 10) } {
         set no_s_quantity [ expr {$no_s_quantity - $no_ol_quantity} ]
       } else {
         set no_s_quantity [ expr {$no_s_quantity - $no_ol_quantity + 91} ]
       }
-      mariaexec $maria_handler "UPDATE stock SET s_quantity = $no_s_quantity WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id"
+      mariaexec $maria_handler "UPDATE stock SET s_quantity = $no_s_quantity, s_ytd = s_ytd + $no_ol_quantity, s_order_cnt = s_order_cnt + 1, s_remote_cnt = s_remote_cnt + IF($no_ol_supply_w_id != $no_w_id,1,0) WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id"
       set no_ol_amount [ expr {($no_ol_quantity * $no_i_price * ( 1 + $no_w_tax + $no_d_tax ) * ( 1 - $no_c_discount ))} ]
       switch $no_d_id {
         1 { set no_ol_dist_info [ lindex $quantity_data_dist 2 ] }
@@ -1571,9 +1574,9 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
       set h_data [ concat $p_w_name $p_d_name ]
       set p_c_new_data [ concat p_c_id $p_c_id p_c_d_id $p_c_d_id p_c_w_id $p_c_w_id p_d_id $p_d_id p_w_id $p_w_id p_h_amount [ format %4.2f $p_h_amount ] h_date $h_date h_data $h_data ]
       set p_c_new_data [ string range [ concat $p_c_new_data $c_data ] 1 [ expr 500 - [ string length $p_c_new_data ] ] ]
-      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_data = '$p_c_new_data' WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
+      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_data = '$p_c_new_data', c_ytd_payment = c_ytd_payment + $p_h_amount, c_payment_cnt = c_payment_cnt + 1 WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
     } else {
-      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
+      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_ytd_payment = c_ytd_payment + $p_h_amount, c_payment_cnt = c_payment_cnt + 1 WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
       set c_data ""
     }
     set h_data [ concat $p_w_name $p_d_name ]
@@ -1639,7 +1642,7 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
 	mariaexec $maria_handler "UPDATE orders SET o_carrier_id = $carrier_id WHERE o_id = $no_o_id AND o_d_id = $d_d_id AND o_w_id = $w_id"
 	mariaexec $maria_handler "UPDATE order_line SET ol_delivery_d = str_to_date($date,'%Y%m%d%H%i%s') WHERE ol_o_id = $no_o_id AND ol_d_id = $d_d_id AND ol_w_id = $w_id"
    	set d_ol_total [ list [ maria::sel $maria_handler "SELECT SUM(ol_amount) FROM order_line WHERE ol_o_id = $no_o_id AND ol_d_id = $d_d_id AND ol_w_id = $w_id" -list ]]
-	mariaexec $maria_handler "UPDATE customer SET c_balance = c_balance + $d_ol_total WHERE c_id = $o_c_id AND c_d_id = $d_d_id AND c_w_id = $w_id"
+	mariaexec $maria_handler "UPDATE customer SET c_balance = c_balance + $d_ol_total, c_delivery_cnt = c_delivery_cnt + 1 WHERE c_id = $o_c_id AND c_d_id = $d_d_id AND c_w_id = $w_id"
 	incr loop_counter
        	}
 	maria::commit $maria_handler
