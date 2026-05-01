@@ -503,7 +503,7 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 stock_dist_array	CHAR(24)[];
                 s_quantity_array	SMALLINT[];
                 price_array			NUMERIC(5,2)[];
-                amount_array		NUMERIC(5,2)[];
+                amount_array		NUMERIC(6,2)[];
                 BEGIN
                 no_o_all_local := 1;
                 SELECT c_discount, c_last, c_credit, w_tax
@@ -1074,7 +1074,7 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 stock_dist_array	CHAR(24)[];
                 s_quantity_array	SMALLINT[];
                 price_array			NUMERIC(5,2)[];
-                amount_array		NUMERIC(5,2)[];
+                amount_array		NUMERIC(6,2)[];
                 BEGIN
                 no_o_all_local := 1;
                 SELECT c_discount, c_last, c_credit, w_tax
