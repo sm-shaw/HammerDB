@@ -168,6 +168,24 @@ proc CreateStoredProcs { maria_handler } {
         COMMIT;
         END 
     }
+    set update_returning_min_version "13.0.1"
+    set maria_version [ lindex [ split [ list [ maria::sel $maria_handler "select version()" -list ] ] - ] 0 ]
+    # UPDATE RETURNING is available from MariaDB 13.0.1 set variable to enable.
+    set enable_update_returning false
+    if { $enable_update_returning && [ package vcompare $maria_version $update_returning_min_version ] >= 0 } {
+        puts "Using MariaDB UPDATE RETURNING for version $maria_version"
+        set sql(1) [ string map [ list {        SELECT d_next_o_id, d_tax INTO no_d_next_o_id, no_d_tax
+        FROM district
+        WHERE d_id = no_d_id AND d_w_id = no_w_id FOR UPDATE;
+        UPDATE district SET d_next_o_id = d_next_o_id + 1 WHERE d_id = no_d_id AND d_w_id = no_w_id;
+        SET o_id = no_d_next_o_id;} {        UPDATE district
+        SET d_next_o_id = d_next_o_id + 1
+        WHERE d_id = no_d_id AND d_w_id = no_w_id
+        RETURNING OLD_VALUE(d_next_o_id), d_tax INTO no_d_next_o_id, no_d_tax;
+        SET o_id = no_d_next_o_id;} ] $sql(1) ]
+    } else {
+        puts "Using MariaDB SELECT FOR UPDATE for version $maria_version"
+    }
     set sql(2) { 
         CREATE PROCEDURE `DELIVERY`(
         d_w_id      INTEGER,
