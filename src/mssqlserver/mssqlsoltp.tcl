@@ -135,7 +135,7 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity >= (@no_ol_quantity + 10))
+	    s_quantity = s_quantity - @no_ol_quantity + CASE WHEN ((s_quantity - @no_ol_quantity) >= 10)
             THEN 0 ELSE 91 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
@@ -688,7 +688,7 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity >= (@no_ol_quantity + 10))
+	    s_quantity = s_quantity - @no_ol_quantity + CASE WHEN ((s_quantity - @no_ol_quantity) >= 10)
             THEN 0 ELSE 91 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
