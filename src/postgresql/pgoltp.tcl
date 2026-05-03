@@ -816,7 +816,8 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 INTO d_id_array, c_id_array, sum_amounts;
 
                 UPDATE customer
-                SET c_balance = COALESCE(c_balance,0) + ids_and_sums.sum_amounts
+                SET c_balance = COALESCE(c_balance,0) + ids_and_sums.sum_amounts,
+		c_delivery_cnt = c_delivery_cnt + 1
                 FROM UNNEST(d_id_array, c_id_array, sum_amounts) AS ids_and_sums(d_id, c_id, sum_amounts)
                 WHERE customer.c_id = ids_and_sums.c_id
                 AND c_d_id = ids_and_sums.d_id
@@ -1387,7 +1388,8 @@ proc CreateStoredProcs { lda ora_compatible citus_compatible pg_storedprocs } {
                 INTO d_id_array, c_id_array, sum_amounts;
 
                 UPDATE customer
-                SET c_balance = COALESCE(c_balance,0) + ids_and_sums.sum_amounts
+                SET c_balance = COALESCE(c_balance,0) + ids_and_sums.sum_amounts,
+		c_delivery_cnt = c_delivery_cnt + 1
                 FROM UNNEST(d_id_array, c_id_array, sum_amounts) AS ids_and_sums(d_id, c_id, sum_amounts)
                 WHERE customer.c_id = ids_and_sums.c_id
                 AND c_d_id = ids_and_sums.d_id
