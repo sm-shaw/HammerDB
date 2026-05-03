@@ -272,11 +272,13 @@ proc CreateStoredProcs { lda timesten num_part } {
             INSERT INTO ORDERS (o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local) VALUES (no_d_next_o_id, no_d_id, no_w_id, no_c_id, timestamp, no_o_ol_cnt, no_o_all_local);
             INSERT INTO NEW_ORDER (no_o_id, no_d_id, no_w_id) VALUES (no_d_next_o_id, no_d_id, no_w_id);
 
-            -- The HammerDB implementation doesn't do the check for ORIGINAL (which should be done against i_data and s_data)
             IF no_d_id = 1 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -284,7 +286,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 2 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -292,7 +297,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 3 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -300,7 +308,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 4 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -308,7 +319,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 5 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -316,7 +330,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 6 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -324,7 +341,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 7 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -332,7 +352,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 8 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -340,7 +363,10 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 9 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
@@ -348,14 +374,16 @@ proc CreateStoredProcs { lda timesten num_part } {
             ELSIF no_d_id = 10 THEN
             FORALL i IN 1 .. no_o_ol_cnt
             UPDATE stock_item
-            SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i)
+	    SET s_quantity = (CASE WHEN s_quantity < ( o_quantity_array(i) + 10 ) THEN s_quantity + 91 ELSE s_quantity END) - o_quantity_array(i),
+            s_ytd = s_ytd + o_quantity_array(i),
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN w_id_array(i) <> no_w_id THEN 1 ELSE 0 END
             WHERE i_id = o_id_array(i)
             AND s_w_id = w_id_array(i)
             AND i_id = o_id_array(i)
             RETURNING s_dist_10, s_quantity, i_price * o_quantity_array(i) BULK COLLECT INTO district_info, s_quantity_array,amount_array;
             END IF;
 
-            -- Oracle return the TAX information to the client, presumably to do the calculation there.  HammerDB doesn't return it at all so I'll just calculate it here and do nothing with it
             order_amount := 0;
             FOR loop_counter IN 1 .. no_o_ol_cnt
             LOOP
