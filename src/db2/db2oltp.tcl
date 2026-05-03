@@ -235,7 +235,7 @@ proc CreateStoredProcs { db_handle } {
         FROM customer
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND c_id = p_c_id WITH RR USE AND KEEP UPDATE LOCKS;
         END IF;
-        SET p_c_balance = ( p_c_balance + p_h_amount );
+        SET p_c_balance = ( p_c_balance - p_h_amount );
         IF p_c_credit = 'BC'
         THEN
         SELECT c_data INTO p_c_data
