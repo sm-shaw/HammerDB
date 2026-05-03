@@ -179,7 +179,7 @@ proc CreateStoredProcs { mysql_handler } {
         START TRANSACTION;
         WHILE loop_counter <= 10 DO
         SET d_d_id = loop_counter;
-        SELECT no_o_id INTO d_no_o_id FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id LIMIT 1;
+        SELECT no_o_id INTO d_no_o_id FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id ORDER BY no_o_id ASC LIMIT 1;
         DELETE FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id AND no_o_id = d_no_o_id;
         SELECT o_c_id INTO d_c_id FROM orders
         WHERE o_id = d_no_o_id AND o_d_id = d_d_id AND
@@ -296,7 +296,7 @@ proc CreateStoredProcs { mysql_handler } {
         FROM customer
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND c_id = p_c_id;
         END IF;
-        SET p_c_balance = ( p_c_balance + p_h_amount );
+        SET p_c_balance = ( p_c_balance - p_h_amount );
         IF p_c_credit = 'BC'
         THEN
         SELECT c_data INTO p_c_data
@@ -1546,7 +1546,7 @@ proc insert_mysql_no_stored_procs { testtype timedtype } {
       lassign $cust_id_to_query p_c_first p_c_middle p_c_last p_c_street_1 p_c_street_2 p_c_city p_c_state p_c_zip p_c_phone p_c_credit p_c_credit_lim p_c_discount p_c_balance p_c_since
     }
     if { $p_c_balance eq "" } { set p_c_balance 0 }
-    set p_c_balance [ expr {$p_c_balance + $p_h_amount} ]
+    set p_c_balance [ expr {$p_c_balance - $p_h_amount} ]
     if { $p_c_credit eq "BC" } {
       set c_data [ join [ mysql::sel $mysql_handler "SELECT c_data FROM customer WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id" -flatlist ]]
       set h_data [ concat $p_w_name $p_d_name ]
@@ -1613,7 +1613,7 @@ proc insert_mysql_no_stored_procs { testtype timedtype } {
     mysqlexec $mysql_handler "start transaction"
     while { $loop_counter <= 10 } {
 	set d_d_id $loop_counter
-	set no_o_id [ mysql::sel $mysql_handler "SELECT no_o_id FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id LIMIT 1" -flatlist ]
+	set no_o_id [ mysql::sel $mysql_handler "SELECT no_o_id FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id ORDER BY no_o_id ASC LIMIT 1" -flatlist ]
 	if { $no_o_id eq "" } { break }
 	mysqlexec $mysql_handler "DELETE FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id AND no_o_id = $no_o_id"
 	set o_c_id [ list [ mysql::sel $mysql_handler "SELECT o_c_id FROM orders WHERE o_id = $no_o_id AND o_d_id = $d_d_id AND o_w_id = $w_id" -list ]]
