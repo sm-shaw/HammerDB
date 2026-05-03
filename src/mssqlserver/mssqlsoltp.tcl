@@ -135,8 +135,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity)
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity >= (@no_ol_quantity + 10))
             THEN 0 ELSE 91 END,
+            s_ytd = s_ytd + @no_ol_quantity,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id <> @no_w_id) THEN 1 ELSE 0 END,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
@@ -256,7 +259,7 @@ proc CreateStoredProcs { odbc imdb } {
             AND order_line.ol_d_id = @d_d_id
             AND order_line.ol_w_id = @d_w_id
             END
-            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total
+            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
             WHERE customer.c_id = @d_c_id
             AND customer.c_d_id = @d_d_id
             AND customer.c_w_id = @d_w_id
@@ -358,6 +361,8 @@ proc CreateStoredProcs { odbc imdb } {
             UPDATE dbo.customer
             SET
             @p_c_balance = c_balance = c_balance - @p_h_amount,
+            c_ytd_payment = c_ytd_payment + @p_h_amount,
+            c_payment_cnt = c_payment_cnt + 1,
             c_data =
             CASE
             WHEN c_credit <> 'BC' THEN c_credit
@@ -683,8 +688,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity)
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity >= (@no_ol_quantity + 10))
             THEN 0 ELSE 91 END,
+            s_ytd = s_ytd + @no_ol_quantity,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id <> @no_w_id) THEN 1 ELSE 0 END,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
@@ -801,7 +809,7 @@ proc CreateStoredProcs { odbc imdb } {
             AND order_line.ol_d_id = @d_d_id
             AND order_line.ol_w_id = @d_w_id
             END
-            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total
+            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
             WHERE customer.c_id = @d_c_id
             AND customer.c_d_id = @d_d_id
             AND customer.c_w_id = @d_w_id
@@ -900,6 +908,8 @@ proc CreateStoredProcs { odbc imdb } {
             UPDATE dbo.customer
             SET
             @p_c_balance = c_balance = c_balance - @p_h_amount,
+            c_ytd_payment = c_ytd_payment + @p_h_amount,
+            c_payment_cnt = c_payment_cnt + 1,
             c_data =
             CASE
             WHEN c_credit <> 'BC' THEN c_credit
