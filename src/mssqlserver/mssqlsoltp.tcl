@@ -80,7 +80,7 @@ proc CreateStoredProcs { odbc imdb } {
             @no_ol_dist_info char(24),
             @no_s_data char(50),
             @x int,
-            @rbk int,
+            @rbk int
             BEGIN TRANSACTION
             BEGIN TRY
             SET @no_o_all_local = 1
@@ -633,7 +633,7 @@ proc CreateStoredProcs { odbc imdb } {
             @no_ol_dist_info char(24),
             @no_s_data char(50),
             @x int,
-            @rbk int,
+            @rbk int
             BEGIN TRANSACTION
             BEGIN TRY
             SET @no_o_all_local = 1
