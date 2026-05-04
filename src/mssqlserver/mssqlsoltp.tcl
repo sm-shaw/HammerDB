@@ -80,7 +80,8 @@ proc CreateStoredProcs { odbc imdb } {
             @no_ol_dist_info char(24),
             @no_s_data char(50),
             @x int,
-            @rbk int
+            @rbk int,
+            @no_ol_quantity_plus_9 int
             BEGIN TRANSACTION
             BEGIN TRY
             SET @no_o_all_local = 1
@@ -128,6 +129,7 @@ proc CreateStoredProcs { odbc imdb } {
             END
             END
             SET @no_ol_quantity = CAST(10 * RAND() + 1 AS INT)
+            SET @no_ol_quantity_plus_9 = @no_ol_quantity + 9
             SELECT @no_i_price = item.i_price
             , @no_i_name = item.i_name
             , @no_i_data = item.i_data
@@ -135,8 +137,8 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
-            THEN 91 ELSE 0 END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity_plus_9)
+            THEN 0 ELSE 91 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
             s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END,
@@ -633,7 +635,8 @@ proc CreateStoredProcs { odbc imdb } {
             @no_ol_dist_info char(24),
             @no_s_data char(50),
             @x int,
-            @rbk int
+            @rbk int,
+            @no_ol_quantity_plus_9 int
             BEGIN TRANSACTION
             BEGIN TRY
             SET @no_o_all_local = 1
@@ -681,6 +684,7 @@ proc CreateStoredProcs { odbc imdb } {
             END
             END
             SET @no_ol_quantity = CAST(10 * RAND() + 1 AS INT)
+            SET @no_ol_quantity_plus_9 = @no_ol_quantity + 9
             SELECT @no_i_price = item.i_price
             , @no_i_name = item.i_name
             , @no_i_data = item.i_data
@@ -688,8 +692,8 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
-            THEN 91 ELSE 0 END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity_plus_9)
+            THEN 0 ELSE 91 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
             s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END,
