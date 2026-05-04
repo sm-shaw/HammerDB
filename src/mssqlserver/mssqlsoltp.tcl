@@ -135,11 +135,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-	    s_quantity = s_quantity - @no_ol_quantity + CASE WHEN ((s_quantity - @no_ol_quantity) >= 10)
-            THEN 0 ELSE 91 END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
+            THEN 91 ELSE 0 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
-            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id <> @no_w_id) THEN 1 ELSE 0 END,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
@@ -688,11 +688,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-	    s_quantity = s_quantity - @no_ol_quantity + CASE WHEN ((s_quantity - @no_ol_quantity) >= 10)
-            THEN 0 ELSE 91 END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
+            THEN 91 ELSE 0 END,
             s_ytd = s_ytd + @no_ol_quantity,
             s_order_cnt = s_order_cnt + 1,
-            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id <> @no_w_id) THEN 1 ELSE 0 END,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
