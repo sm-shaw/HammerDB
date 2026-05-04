@@ -85,7 +85,6 @@ proc CreateStoredProcs { lda timesten num_part } {
             integrity_viol			EXCEPTION;
             PRAGMA EXCEPTION_INIT(integrity_viol,-1);
             BEGIN
-            --assignment below added due to error in appendix code
             no_o_all_local := 0;
             SELECT c_discount, c_last, c_credit, w_tax
             INTO no_c_discount, no_c_last, no_c_credit, no_w_tax
@@ -114,7 +113,6 @@ proc CreateStoredProcs { lda timesten num_part } {
             no_ol_supply_w_id := no_w_id;
             ELSE
             no_ol_supply_w_id := no_w_id;
-            --no_all_local is actually used before this point so following not beneficial
             no_o_all_local := 0;
             WHILE ((no_ol_supply_w_id = no_w_id) AND (no_max_w_id != 1))
             LOOP
@@ -262,8 +260,6 @@ proc CreateStoredProcs { lda timesten num_part } {
 
             --#2.4.1.5.3
             o_quantity_array(loop_counter) := round(DBMS_RANDOM.value(low => 1, high => 10));
-
-            -- Take advantage of the fact that I'm looping to populate the array used to record order lines at the end
             ol_line_number_array(loop_counter) := loop_counter;
             END LOOP;
 
@@ -395,7 +391,6 @@ proc CreateStoredProcs { lda timesten num_part } {
             INSERT INTO order_line (ol_o_id, ol_d_id, ol_w_id, ol_number, ol_i_id, ol_supply_w_id, ol_quantity, ol_amount, ol_dist_info)
             VALUES (no_d_next_o_id, no_d_id, no_w_id, ol_line_number_array(i), o_id_array(i), w_id_array(i), o_quantity_array(i), amount_array(i), district_info(i));
 
-            -- Rollback 1% of transactions
             IF DBMS_RANDOM.value < 0.01 THEN
             dbms_output.put_line('Rolling back');
             ROLLBACK;
@@ -404,7 +399,7 @@ proc CreateStoredProcs { lda timesten num_part } {
             END IF;
 
             EXCEPTION
-            WHEN not_serializable OR deadlock OR snapshot_too_old OR integrity_viol --OR no_data_found
+            WHEN not_serializable OR deadlock OR snapshot_too_old OR integrity_viol
             THEN
             ROLLBACK;
         END; }
@@ -793,15 +788,6 @@ proc CreateStoredProcs { lda timesten num_part } {
         WHERE c_id = os_c_id AND c_d_id = os_d_id AND c_w_id = os_w_id;
         END IF;
 
-        -- The following statement in the TPC-C specification appendix is incorrect
-        -- as it does not include the where clause and does not restrict the
-        -- results set giving an ORA-01422.
-        -- The statement has been modified in accordance with the
-        -- descriptive specification as follows:
-        -- The row in the ORDER table with matching O_W_ID (equals C_W_ID),
-        -- O_D_ID (equals C_D_ID), O_C_ID (equals C_ID), and with the largest
-        -- existing O_ID, is selected. This is the most recent order placed by that
-        -- customer. O_ID, O_ENTRY_D, and O_CARRIER_ID are retrieved.
         BEGIN
         SELECT o_id, o_carrier_id, o_entry_d
         INTO os_o_id, os_o_carrier_id, os_entdate
