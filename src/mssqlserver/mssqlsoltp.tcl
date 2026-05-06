@@ -178,8 +178,8 @@ proc CreateStoredProcs { odbc imdb } {
             END
             INTO dbo.order_line
             WHERE
-            stock.s_i_id = @no_ol_i_id AND
-            stock.s_w_id = @no_ol_supply_w_id
+            stock.s_w_id = @no_ol_supply_w_id AND
+            stock.s_i_id = @no_ol_i_id
             SET @loop_counter = @loop_counter + 1
             END
             INSERT dbo.orders( o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local)
@@ -731,8 +731,8 @@ proc CreateStoredProcs { odbc imdb } {
             END
             INTO dbo.order_line
             WHERE
-            stock.s_i_id = @no_ol_i_id AND
-            stock.s_w_id = @no_ol_supply_w_id
+            stock.s_w_id = @no_ol_supply_w_id AND
+            stock.s_i_id = @no_ol_i_id
             SET @loop_counter = @loop_counter + 1
             END
             INSERT dbo.orders( o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local)
@@ -784,7 +784,7 @@ proc CreateStoredProcs { odbc imdb } {
             SET @d_d_id = @loop_counter
             SELECT TOP 1
             @d_no_o_id = no_o_id
-            FROM dbo.new_order WITH (serializable updlock)
+            FROM dbo.new_order WITH (serializable, updlock)
             WHERE no_w_id = @d_w_id AND
             no_d_id = @d_d_id
             ORDER BY no_o_id ASC
