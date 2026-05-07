@@ -547,36 +547,28 @@ proc CreateStoredProcs { odbc imdb } {
             IF @@TRANCOUNT > 0
             COMMIT TRANSACTION;
         END}
-        set sql(5) {CREATE PROCEDURE [dbo].[slev]
-            @st_w_id int,
-            @st_d_id int,
-            @threshold int
-            AS
-            BEGIN
-            DECLARE
-            @st_o_id_low int,
-            @st_o_id_high int
+        set sql(5) {CREATE PROCEDURE [dbo].[slev]                                                                                                                                                   @st_w_id int,                                                                                                                                                                           @st_d_id int,                                                                                                                                                                           @threshold int                                                                                                                                                                          AS                                                                                                                                                                                      BEGIN                                                                                                                                                                                   DECLARE
+            @st_o_id int,
+            @stock_count bigint
             BEGIN TRANSACTION
             BEGIN TRY
             SELECT
-            @st_o_id_low = district.d_next_o_id - 20,
-            @st_o_id_high = district.d_next_o_id - 1
+            @st_o_id = district.d_next_o_id
             FROM dbo.district
             WHERE district.d_w_id = @st_w_id AND district.d_id = @st_d_id
-            SELECT
-            COUNT(DISTINCT stock.s_i_id)
-            FROM dbo.order_line
-            , dbo.stock
-            WHERE order_line.ol_w_id = @st_w_id
-            AND order_line.ol_d_id = @st_d_id
-            AND order_line.ol_o_id BETWEEN @st_o_id_low AND @st_o_id_high
-            AND stock.s_w_id = order_line.ol_w_id
-            AND stock.s_i_id = order_line.ol_i_id
-            AND stock.s_quantity < @threshold
-	    OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
-            END TRY
-            BEGIN CATCH
-	    IF (error_number() in (701, 41839, 41823, 41302, 41305, 41325, 41301))
+            SELECT @stock_count = COUNT_BIG(*)                                                                                                                                                      FROM
+            (
+            SELECT ol_i_id
+            FROM dbo.order_line WITH (INDEX(order_line_i1))
+            WHERE order_line.ol_w_id = @st_w_id                                                                                                                                                     AND order_line.ol_d_id = @st_d_id                                                                                                                                                       AND order_line.ol_o_id < @st_o_id
+            AND order_line.ol_o_id >= (@st_o_id - 20)
+            GROUP BY ol_i_id
+            ) AS recent_items
+            JOIN dbo.stock WITH (INDEX(PK_STOCK))
+            ON stock.s_w_id = @st_w_id
+            AND stock.s_i_id = recent_items.ol_i_id
+            WHERE stock.s_quantity < @threshold                                                                                                                                                     OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);                                                                                                                                               SELECT @stock_count AS stock_count                                                                                                                                                      END TRY                                                                                                                                                                                 BEGIN CATCH
+            IF (error_number() in (701, 41839, 41823, 41302, 41305, 41325, 41301))
             SELECT 'IMOLTPERROR',ERROR_NUMBER() AS ErrorNumber
             ELSE
             SELECT
@@ -1095,26 +1087,31 @@ proc CreateStoredProcs { odbc imdb } {
             AS
             BEGIN
             DECLARE
-            @st_o_id_low int,
-            @st_o_id_high int
+            @st_o_id int,
+            @stock_count bigint
             BEGIN TRANSACTION
             BEGIN TRY
             SELECT
-            @st_o_id_low = district.d_next_o_id - 20,
-            @st_o_id_high = district.d_next_o_id - 1
+            @st_o_id = district.d_next_o_id
             FROM dbo.district
             WHERE district.d_w_id = @st_w_id AND district.d_id = @st_d_id
-            SELECT
-            COUNT(DISTINCT stock.s_i_id)
-            FROM dbo.order_line
-            , dbo.stock
+            SELECT @stock_count = COUNT_BIG(*)
+            FROM
+            (
+            SELECT ol_i_id
+            FROM dbo.order_line WITH (INDEX(order_line_i1))
             WHERE order_line.ol_w_id = @st_w_id
             AND order_line.ol_d_id = @st_d_id
-            AND order_line.ol_o_id BETWEEN @st_o_id_low AND @st_o_id_high
-            AND stock.s_w_id = order_line.ol_w_id
-            AND stock.s_i_id = order_line.ol_i_id
-            AND stock.s_quantity < @threshold
-	    OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            AND order_line.ol_o_id < @st_o_id
+            AND order_line.ol_o_id >= (@st_o_id - 20)
+            GROUP BY ol_i_id
+            ) AS recent_items
+            JOIN dbo.stock WITH (INDEX(PK_STOCK))
+            ON stock.s_w_id = @st_w_id
+            AND stock.s_i_id = recent_items.ol_i_id
+            WHERE stock.s_quantity < @threshold
+            OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            SELECT @stock_count AS stock_count
             END TRY
             BEGIN CATCH
             SELECT
