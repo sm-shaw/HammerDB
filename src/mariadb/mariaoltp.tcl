@@ -124,13 +124,16 @@ proc CreateStoredProcs { maria_handler } {
         SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10
         INTO no_s_quantity, no_s_data, no_s_dist_01, no_s_dist_02, no_s_dist_03, no_s_dist_04, no_s_dist_05, no_s_dist_06, no_s_dist_07, no_s_dist_08, no_s_dist_09, no_s_dist_10
         FROM stock WHERE s_i_id = no_ol_i_id AND s_w_id = no_ol_supply_w_id;
-        IF ( no_s_quantity > no_ol_quantity )
+        IF ( no_s_quantity >= ( no_ol_quantity + 10 ) )
         THEN
         SET no_s_quantity = ( no_s_quantity - no_ol_quantity );
         ELSE
         SET no_s_quantity = ( no_s_quantity - no_ol_quantity + 91 );
         END IF;
-        UPDATE stock SET s_quantity = no_s_quantity
+        UPDATE stock SET s_quantity = no_s_quantity,
+        s_ytd = s_ytd + no_ol_quantity,
+        s_order_cnt = s_order_cnt + 1,
+        s_remote_cnt = s_remote_cnt + IF(no_ol_supply_w_id != no_w_id,1,0)
         WHERE s_i_id = no_ol_i_id
         AND s_w_id = no_ol_supply_w_id;
         SET no_ol_amount = (  no_ol_quantity * no_i_price * ( 1 + no_w_tax + no_d_tax ) * ( 1 - no_c_discount ) );
@@ -165,6 +168,24 @@ proc CreateStoredProcs { maria_handler } {
         COMMIT;
         END 
     }
+    set update_returning_min_version "13.0.1"
+    set maria_version [ lindex [ split [ list [ maria::sel $maria_handler "select version()" -list ] ] - ] 0 ]
+    # UPDATE RETURNING is available from MariaDB 13.0.1 set variable to enable.
+    set enable_update_returning false
+    if { $enable_update_returning && [ package vcompare $maria_version $update_returning_min_version ] >= 0 } {
+        puts "Using MariaDB UPDATE RETURNING for version $maria_version"
+        set sql(1) [ string map [ list {        SELECT d_next_o_id, d_tax INTO no_d_next_o_id, no_d_tax
+        FROM district
+        WHERE d_id = no_d_id AND d_w_id = no_w_id FOR UPDATE;
+        UPDATE district SET d_next_o_id = d_next_o_id + 1 WHERE d_id = no_d_id AND d_w_id = no_w_id;
+        SET o_id = no_d_next_o_id;} {        UPDATE district
+        SET d_next_o_id = d_next_o_id + 1
+        WHERE d_id = no_d_id AND d_w_id = no_w_id
+        RETURNING OLD_VALUE(d_next_o_id), d_tax INTO no_d_next_o_id, no_d_tax;
+        SET o_id = no_d_next_o_id;} ] $sql(1) ]
+    } else {
+        puts "Using MariaDB SELECT FOR UPDATE for version $maria_version"
+    }
     set sql(2) { 
         CREATE PROCEDURE `DELIVERY`(
         d_w_id      INTEGER,
@@ -185,7 +206,7 @@ proc CreateStoredProcs { maria_handler } {
         START TRANSACTION;
         WHILE loop_counter <= 10 DO
         SET d_d_id = loop_counter;
-        SELECT no_o_id INTO d_no_o_id FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id LIMIT 1;
+        SELECT no_o_id INTO d_no_o_id FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id ORDER BY no_o_id ASC LIMIT 1;
         DELETE FROM new_order WHERE no_w_id = d_w_id AND no_d_id = d_d_id AND no_o_id = d_no_o_id;
         SELECT o_c_id INTO d_c_id FROM orders
         WHERE o_id = d_no_o_id AND o_d_id = d_d_id AND
@@ -200,7 +221,7 @@ proc CreateStoredProcs { maria_handler } {
         FROM order_line
         WHERE ol_o_id = d_no_o_id AND ol_d_id = d_d_id
         AND ol_w_id = d_w_id;
-        UPDATE customer SET c_balance = c_balance + d_ol_total
+        UPDATE customer SET c_balance = c_balance + d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
         WHERE c_id = d_c_id AND c_d_id = d_d_id AND
         c_w_id = d_w_id;
         SET deliv_data = CONCAT(d_d_id,' ',d_no_o_id,' ',timestamp);
@@ -304,7 +325,7 @@ proc CreateStoredProcs { maria_handler } {
         FROM customer
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND c_id = p_c_id;
         END IF;
-        SET p_c_balance = ( p_c_balance + p_h_amount );
+        SET p_c_balance = ( p_c_balance - p_h_amount );
         IF p_c_credit = 'BC'
         THEN
         SELECT c_data INTO p_c_data
@@ -314,11 +335,11 @@ proc CreateStoredProcs { maria_handler } {
         SET p_c_new_data = CONCAT(CAST(p_c_id AS CHAR),' ',CAST(p_c_d_id AS CHAR),' ',CAST(p_c_w_id AS CHAR),' ',CAST(p_d_id AS CHAR),' ',CAST(p_w_id AS CHAR),' ',CAST(FORMAT(p_h_amount,2) AS CHAR),CAST(timestamp AS CHAR),h_data);
         SET p_c_new_data = SUBSTR(CONCAT(p_c_new_data,p_c_data),1,500-(LENGTH(p_c_new_data)));
         UPDATE customer
-        SET c_balance = p_c_balance, c_data = p_c_new_data
+        SET c_balance = p_c_balance, c_data = p_c_new_data, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         ELSE
-        UPDATE customer SET c_balance = p_c_balance
+        UPDATE customer SET c_balance = p_c_balance, c_ytd_payment = c_ytd_payment + p_h_amount, c_payment_cnt = c_payment_cnt + 1
         WHERE c_w_id = p_c_w_id AND c_d_id = p_c_d_id AND
         c_id = p_c_id;
         END IF;
@@ -1480,12 +1501,12 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
       set quantity_data_dist [ maria::sel $maria_handler "SELECT s_quantity, s_data, s_dist_01, s_dist_02, s_dist_03, s_dist_04, s_dist_05, s_dist_06, s_dist_07, s_dist_08, s_dist_09, s_dist_10 FROM stock WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id" -flatlist ]
       set no_i_price [ lindex $price_name_data 0 ]
       set no_s_quantity [ lindex $quantity_data_dist 0 ]
-      if { $no_s_quantity > $no_ol_quantity } {
+      if { $no_s_quantity >= ($no_ol_quantity + 10) } {
         set no_s_quantity [ expr {$no_s_quantity - $no_ol_quantity} ]
       } else {
         set no_s_quantity [ expr {$no_s_quantity - $no_ol_quantity + 91} ]
       }
-      mariaexec $maria_handler "UPDATE stock SET s_quantity = $no_s_quantity WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id"
+      mariaexec $maria_handler "UPDATE stock SET s_quantity = $no_s_quantity, s_ytd = s_ytd + $no_ol_quantity, s_order_cnt = s_order_cnt + 1, s_remote_cnt = s_remote_cnt + IF($no_ol_supply_w_id != $no_w_id,1,0) WHERE s_i_id = $no_ol_i_id AND s_w_id = $no_ol_supply_w_id"
       set no_ol_amount [ expr {($no_ol_quantity * $no_i_price * ( 1 + $no_w_tax + $no_d_tax ) * ( 1 - $no_c_discount ))} ]
       switch $no_d_id {
         1 { set no_ol_dist_info [ lindex $quantity_data_dist 2 ] }
@@ -1565,15 +1586,15 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
       lassign $cust_id_to_query p_c_first p_c_middle p_c_last p_c_street_1 p_c_street_2 p_c_city p_c_state p_c_zip p_c_phone p_c_credit p_c_credit_lim p_c_discount p_c_balance p_c_since
     }
     if { $p_c_balance eq "" } { set p_c_balance 0 }
-    set p_c_balance [ expr {$p_c_balance + $p_h_amount} ]
+    set p_c_balance [ expr {$p_c_balance - $p_h_amount} ]
     if { $p_c_credit eq "BC" } {
       set c_data [ join [ maria::sel $maria_handler "SELECT c_data FROM customer WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id" -flatlist ]]
       set h_data [ concat $p_w_name $p_d_name ]
       set p_c_new_data [ concat p_c_id $p_c_id p_c_d_id $p_c_d_id p_c_w_id $p_c_w_id p_d_id $p_d_id p_w_id $p_w_id p_h_amount [ format %4.2f $p_h_amount ] h_date $h_date h_data $h_data ]
       set p_c_new_data [ string range [ concat $p_c_new_data $c_data ] 1 [ expr 500 - [ string length $p_c_new_data ] ] ]
-      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_data = '$p_c_new_data' WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
+      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_data = '$p_c_new_data', c_ytd_payment = c_ytd_payment + $p_h_amount, c_payment_cnt = c_payment_cnt + 1 WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
     } else {
-      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
+      mariaexec $maria_handler "UPDATE customer SET c_balance = $p_c_balance, c_ytd_payment = c_ytd_payment + $p_h_amount, c_payment_cnt = c_payment_cnt + 1 WHERE c_w_id = $p_c_w_id AND c_d_id = $p_c_d_id AND c_id = $p_c_id"
       set c_data ""
     }
     set h_data [ concat $p_w_name $p_d_name ]
@@ -1632,14 +1653,14 @@ proc insert_maria_no_stored_procs { testtype timedtype } {
     mariaexec $maria_handler "start transaction"
     while { $loop_counter <= 10 } {
 	set d_d_id $loop_counter
-	set no_o_id [ maria::sel $maria_handler "SELECT no_o_id FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id LIMIT 1" -flatlist ]
+	set no_o_id [ maria::sel $maria_handler "SELECT no_o_id FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id ORDER BY no_o_id ASC LIMIT 1" -flatlist ]
 	if { $no_o_id eq "" } { break }
 	mariaexec $maria_handler "DELETE FROM new_order WHERE no_w_id = $w_id AND no_d_id = $d_d_id AND no_o_id = $no_o_id"
 	set o_c_id [ list [ maria::sel $maria_handler "SELECT o_c_id FROM orders WHERE o_id = $no_o_id AND o_d_id = $d_d_id AND o_w_id = $w_id" -list ]]
 	mariaexec $maria_handler "UPDATE orders SET o_carrier_id = $carrier_id WHERE o_id = $no_o_id AND o_d_id = $d_d_id AND o_w_id = $w_id"
 	mariaexec $maria_handler "UPDATE order_line SET ol_delivery_d = str_to_date($date,'%Y%m%d%H%i%s') WHERE ol_o_id = $no_o_id AND ol_d_id = $d_d_id AND ol_w_id = $w_id"
    	set d_ol_total [ list [ maria::sel $maria_handler "SELECT SUM(ol_amount) FROM order_line WHERE ol_o_id = $no_o_id AND ol_d_id = $d_d_id AND ol_w_id = $w_id" -list ]]
-	mariaexec $maria_handler "UPDATE customer SET c_balance = c_balance + $d_ol_total WHERE c_id = $o_c_id AND c_d_id = $d_d_id AND c_w_id = $w_id"
+	mariaexec $maria_handler "UPDATE customer SET c_balance = c_balance + $d_ol_total, c_delivery_cnt = c_delivery_cnt + 1 WHERE c_id = $o_c_id AND c_d_id = $d_d_id AND c_w_id = $w_id"
 	incr loop_counter
        	}
 	maria::commit $maria_handler

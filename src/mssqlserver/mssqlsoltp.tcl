@@ -135,8 +135,7 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity)
-            THEN 0 ELSE 91 END,
+            s_ytd = s_ytd + @no_ol_quantity,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
@@ -150,7 +149,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHEN 8 THEN s_dist_08
             WHEN 9 THEN s_dist_09
             WHEN 10 THEN s_dist_10
-            END
+            END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
+            THEN 91 ELSE 0 END,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END
             OUTPUT
             @o_id,
             @no_d_id,
@@ -175,8 +178,8 @@ proc CreateStoredProcs { odbc imdb } {
             END
             INTO dbo.order_line
             WHERE
-            stock.s_i_id = @no_ol_i_id AND
-            stock.s_w_id = @no_ol_supply_w_id
+            stock.s_w_id = @no_ol_supply_w_id AND
+            stock.s_i_id = @no_ol_i_id
             SET @loop_counter = @loop_counter + 1
             END
             INSERT dbo.orders( o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local)
@@ -255,12 +258,12 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE order_line.ol_o_id = @d_no_o_id
             AND order_line.ol_d_id = @d_d_id
             AND order_line.ol_w_id = @d_w_id
-            END
-            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total
+            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
             WHERE customer.c_id = @d_c_id
             AND customer.c_d_id = @d_d_id
             AND customer.c_w_id = @d_w_id
-      
+            END
+
             PRINT
             'D: '
             +
@@ -354,13 +357,40 @@ proc CreateStoredProcs { odbc imdb } {
             ORDER BY c_first desc
             END
             BEGIN TRANSACTION
+            -- get district data and update year-to-date
+            UPDATE dbo.district
+            SET
+            d_ytd = d_ytd + @p_h_amount,
+            @p_d_street_1 = d_street_1,
+            @p_d_street_2 = d_street_2,
+            @p_d_city = d_city,
+            @p_d_state = d_state,
+            @p_d_zip = d_zip,
+            @p_d_name = d_name
+            WHERE
+            d_w_id = @p_w_id AND
+            d_id = @p_d_id
+            -- get warehouse data and update year-to-date
+            UPDATE dbo.warehouse
+            SET
+            w_ytd = w_ytd + @p_h_amount,
+            @p_w_street_1 = w_street_1,
+            @p_w_street_2 = w_street_2,
+            @p_w_city = w_city,
+            @p_w_state = w_state,
+            @p_w_zip = w_zip,
+            @p_w_name = w_name
+            WHERE
+            w_id = @p_w_id
             -- get customer info and update balances
             UPDATE dbo.customer
             SET
             @p_c_balance = c_balance = c_balance - @p_h_amount,
+            c_ytd_payment = c_ytd_payment + @p_h_amount,
+            c_payment_cnt = c_payment_cnt + 1,
             c_data =
             CASE
-            WHEN c_credit <> 'BC' THEN c_credit
+            WHEN c_credit <> 'BC' THEN c_data
             ELSE LEFT(
             ISNULL(CAST(@p_c_id AS char), '') + ' ' +
             ISNULL(CAST(@p_c_d_id AS char), '') + ' ' +
@@ -394,31 +424,6 @@ proc CreateStoredProcs { odbc imdb } {
             SET @h_data = (ISNULL(@p_w_name, '') + ' ' + ISNULL(@p_d_name, ''))
             INSERT dbo.history( h_c_d_id, h_c_w_id, h_c_id, h_d_id, h_w_id, h_date, h_amount, h_data)
             VALUES ( @p_c_d_id, @p_c_w_id, @p_c_id, @p_d_id, @p_w_id, @TIMESTAMP, @p_h_amount, @h_data)
-            -- get district data and update year-to-date
-            UPDATE dbo.district
-            SET
-            d_ytd = d_ytd + @p_h_amount,
-            @p_d_street_1 = d_street_1,
-            @p_d_street_2 = d_street_2,
-            @p_d_city = d_city,
-            @p_d_state = d_state,
-            @p_d_zip = d_zip,
-            @p_d_name = d_name
-            WHERE
-            d_w_id = @p_w_id AND
-            d_id = @p_d_id
-            -- get warehouse data and update year-to-date
-            UPDATE dbo.warehouse
-            SET
-            w_ytd = w_ytd + @p_h_amount,
-            @p_w_street_1 = w_street_1,
-            @p_w_street_2 = w_street_2,
-            @p_w_city = w_city,
-            @p_w_state = w_state,
-            @p_w_zip = w_zip,
-            @p_w_name = w_name
-            WHERE
-            w_id = @p_w_id
             SELECT @p_c_id as N'@p_c_id', @p_c_last as N'@p_c_last', @p_w_street_1 as N'@p_w_street_1'
             , @p_w_street_2 as N'@p_w_street_2', @p_w_city as N'@p_w_city'
             , @p_w_state as N'@p_w_state', @p_w_zip as N'@p_w_zip'
@@ -542,36 +547,41 @@ proc CreateStoredProcs { odbc imdb } {
             IF @@TRANCOUNT > 0
             COMMIT TRANSACTION;
         END}
-        set sql(5) {CREATE PROCEDURE [dbo].[slev]
+            set sql(5) {CREATE PROCEDURE [dbo].[slev]
             @st_w_id int,
             @st_d_id int,
             @threshold int
             AS
             BEGIN
             DECLARE
-            @st_o_id_low int,
-            @st_o_id_high int
+            @st_o_id int,
+            @stock_count bigint
             BEGIN TRANSACTION
             BEGIN TRY
             SELECT
-            @st_o_id_low = district.d_next_o_id - 20,
-            @st_o_id_high = district.d_next_o_id - 1
+            @st_o_id = district.d_next_o_id
             FROM dbo.district
             WHERE district.d_w_id = @st_w_id AND district.d_id = @st_d_id
-            SELECT
-            COUNT(DISTINCT stock.s_i_id)
-            FROM dbo.order_line
-            , dbo.stock
+            SELECT @stock_count = COUNT_BIG(*)
+            FROM
+            (
+            SELECT ol_i_id
+            FROM dbo.order_line WITH (INDEX(order_line_i1))
             WHERE order_line.ol_w_id = @st_w_id
             AND order_line.ol_d_id = @st_d_id
-            AND order_line.ol_o_id BETWEEN @st_o_id_low AND @st_o_id_high
-            AND stock.s_w_id = order_line.ol_w_id
-            AND stock.s_i_id = order_line.ol_i_id
-            AND stock.s_quantity < @threshold
-	    OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            AND order_line.ol_o_id < @st_o_id
+            AND order_line.ol_o_id >= (@st_o_id - 20)
+            GROUP BY ol_i_id
+            ) AS recent_items
+            JOIN dbo.stock WITH (INDEX(PK_STOCK))
+            ON stock.s_w_id = @st_w_id
+            AND stock.s_i_id = recent_items.ol_i_id
+            WHERE stock.s_quantity < @threshold
+            OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            SELECT @stock_count AS stock_count
             END TRY
             BEGIN CATCH
-	    IF (error_number() in (701, 41839, 41823, 41302, 41305, 41325, 41301))
+            IF (error_number() in (701, 41839, 41823, 41302, 41305, 41325, 41301))
             SELECT 'IMOLTPERROR',ERROR_NUMBER() AS ErrorNumber
             ELSE
             SELECT
@@ -683,8 +693,7 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE item.i_id = @no_ol_i_id
             UPDATE dbo.stock
             SET
-            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity > @no_ol_quantity)
-            THEN 0 ELSE 91 END,
+            s_ytd = s_ytd + @no_ol_quantity,
             @no_s_data = s_data,
             @no_ol_dist_info =
             CASE @no_d_id
@@ -698,7 +707,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHEN 8 THEN s_dist_08
             WHEN 9 THEN s_dist_09
             WHEN 10 THEN s_dist_10
-            END
+            END,
+            s_quantity = s_quantity - @no_ol_quantity + CASE WHEN (s_quantity - @no_ol_quantity < 10)
+            THEN 91 ELSE 0 END,
+            s_order_cnt = s_order_cnt + 1,
+            s_remote_cnt = s_remote_cnt + CASE WHEN (@no_ol_supply_w_id = @no_w_id) THEN 0 ELSE 1 END
             OUTPUT
             @o_id,
             @no_d_id,
@@ -723,8 +736,8 @@ proc CreateStoredProcs { odbc imdb } {
             END
             INTO dbo.order_line
             WHERE
-            stock.s_i_id = @no_ol_i_id AND
-            stock.s_w_id = @no_ol_supply_w_id
+            stock.s_w_id = @no_ol_supply_w_id AND
+            stock.s_i_id = @no_ol_i_id
             SET @loop_counter = @loop_counter + 1
             END
             INSERT dbo.orders( o_id, o_d_id, o_w_id, o_c_id, o_entry_d, o_ol_cnt, o_all_local)
@@ -776,7 +789,7 @@ proc CreateStoredProcs { odbc imdb } {
             SET @d_d_id = @loop_counter
             SELECT TOP 1
             @d_no_o_id = no_o_id
-            FROM dbo.new_order WITH (serializable updlock)
+            FROM dbo.new_order WITH (serializable, updlock)
             WHERE no_w_id = @d_w_id AND
             no_d_id = @d_d_id
             ORDER BY no_o_id ASC
@@ -800,11 +813,11 @@ proc CreateStoredProcs { odbc imdb } {
             WHERE order_line.ol_o_id = @d_no_o_id
             AND order_line.ol_d_id = @d_d_id
             AND order_line.ol_w_id = @d_w_id
-            END
-            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total
+            UPDATE dbo.customer SET c_balance = customer.c_balance + @d_ol_total, c_delivery_cnt = c_delivery_cnt + 1
             WHERE customer.c_id = @d_c_id
             AND customer.c_d_id = @d_d_id
             AND customer.c_w_id = @d_w_id
+            END
       
             PRINT
             'D: '
@@ -896,13 +909,40 @@ proc CreateStoredProcs { odbc imdb } {
             ORDER BY c_first desc
             END
             BEGIN TRANSACTION
+            -- get district data and update year-to-date
+            UPDATE dbo.district
+            SET
+            d_ytd = d_ytd + @p_h_amount,
+            @p_d_street_1 = d_street_1,
+            @p_d_street_2 = d_street_2,
+            @p_d_city = d_city,
+            @p_d_state = d_state,
+            @p_d_zip = d_zip,
+            @p_d_name = d_name
+            WHERE
+            d_w_id = @p_w_id AND
+            d_id = @p_d_id
+            -- get warehouse data and update year-to-date
+            UPDATE dbo.warehouse
+            SET
+            w_ytd = w_ytd + @p_h_amount,
+            @p_w_street_1 = w_street_1,
+            @p_w_street_2 = w_street_2,
+            @p_w_city = w_city,
+            @p_w_state = w_state,
+            @p_w_zip = w_zip,
+            @p_w_name = w_name
+            WHERE
+            w_id = @p_w_id
             -- get customer info and update balances
             UPDATE dbo.customer
             SET
             @p_c_balance = c_balance = c_balance - @p_h_amount,
+            c_ytd_payment = c_ytd_payment + @p_h_amount,
+            c_payment_cnt = c_payment_cnt + 1,
             c_data =
             CASE
-            WHEN c_credit <> 'BC' THEN c_credit
+            WHEN c_credit <> 'BC' THEN c_data
             ELSE LEFT(
             ISNULL(CAST(@p_c_id AS char), '') + ' ' +
             ISNULL(CAST(@p_c_d_id AS char), '') + ' ' +
@@ -936,31 +976,6 @@ proc CreateStoredProcs { odbc imdb } {
             SET @h_data = (ISNULL(@p_w_name, '') + ' ' + ISNULL(@p_d_name, ''))
             INSERT dbo.history( h_c_d_id, h_c_w_id, h_c_id, h_d_id, h_w_id, h_date, h_amount, h_data)
             VALUES ( @p_c_d_id, @p_c_w_id, @p_c_id, @p_d_id, @p_w_id, @TIMESTAMP, @p_h_amount, @h_data)
-            -- get district data and update year-to-date
-            UPDATE dbo.district
-            SET
-            d_ytd = d_ytd + @p_h_amount,
-            @p_d_street_1 = d_street_1,
-            @p_d_street_2 = d_street_2,
-            @p_d_city = d_city,
-            @p_d_state = d_state,
-            @p_d_zip = d_zip,
-            @p_d_name = d_name
-            WHERE
-            d_w_id = @p_w_id AND
-            d_id = @p_d_id
-            -- get warehouse data and update year-to-date
-            UPDATE dbo.warehouse
-            SET
-            w_ytd = w_ytd + @p_h_amount,
-            @p_w_street_1 = w_street_1,
-            @p_w_street_2 = w_street_2,
-            @p_w_city = w_city,
-            @p_w_state = w_state,
-            @p_w_zip = w_zip,
-            @p_w_name = w_name
-            WHERE
-            w_id = @p_w_id
             SELECT @p_c_id as N'@p_c_id', @p_c_last as N'@p_c_last', @p_w_street_1 as N'@p_w_street_1'
             , @p_w_street_2 as N'@p_w_street_2', @p_w_city as N'@p_w_city'
             , @p_w_state as N'@p_w_state', @p_w_zip as N'@p_w_zip'
@@ -1078,33 +1093,38 @@ proc CreateStoredProcs { odbc imdb } {
             IF @@TRANCOUNT > 0
             COMMIT TRANSACTION;
         END}
-        set sql(5) {CREATE PROCEDURE [dbo].[slev]
+            set sql(5) {CREATE PROCEDURE [dbo].[slev]
             @st_w_id int,
             @st_d_id int,
             @threshold int
             AS
             BEGIN
             DECLARE
-            @st_o_id_low int,
-            @st_o_id_high int
+            @st_o_id int,
+            @stock_count bigint
             BEGIN TRANSACTION
             BEGIN TRY
             SELECT
-            @st_o_id_low = district.d_next_o_id - 20,
-            @st_o_id_high = district.d_next_o_id - 1
+            @st_o_id = district.d_next_o_id
             FROM dbo.district
             WHERE district.d_w_id = @st_w_id AND district.d_id = @st_d_id
-            SELECT
-            COUNT(DISTINCT stock.s_i_id)
-            FROM dbo.order_line
-            , dbo.stock
+            SELECT @stock_count = COUNT_BIG(*)
+            FROM
+            (
+            SELECT ol_i_id
+            FROM dbo.order_line WITH (INDEX(order_line_i1))
             WHERE order_line.ol_w_id = @st_w_id
             AND order_line.ol_d_id = @st_d_id
-            AND order_line.ol_o_id BETWEEN @st_o_id_low AND @st_o_id_high
-            AND stock.s_w_id = order_line.ol_w_id
-            AND stock.s_i_id = order_line.ol_i_id
-            AND stock.s_quantity < @threshold
-	    OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            AND order_line.ol_o_id < @st_o_id
+            AND order_line.ol_o_id >= (@st_o_id - 20)
+            GROUP BY ol_i_id
+            ) AS recent_items
+            JOIN dbo.stock WITH (INDEX(PK_STOCK))
+            ON stock.s_w_id = @st_w_id
+            AND stock.s_i_id = recent_items.ol_i_id
+            WHERE stock.s_quantity < @threshold
+            OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            SELECT @stock_count AS stock_count
             END TRY
             BEGIN CATCH
             SELECT
