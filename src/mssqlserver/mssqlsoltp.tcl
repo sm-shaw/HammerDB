@@ -547,7 +547,13 @@ proc CreateStoredProcs { odbc imdb } {
             IF @@TRANCOUNT > 0
             COMMIT TRANSACTION;
         END}
-        set sql(5) {CREATE PROCEDURE [dbo].[slev]                                                                                                                                                   @st_w_id int,                                                                                                                                                                           @st_d_id int,                                                                                                                                                                           @threshold int                                                                                                                                                                          AS                                                                                                                                                                                      BEGIN                                                                                                                                                                                   DECLARE
+            set sql(5) {CREATE PROCEDURE [dbo].[slev]
+            @st_w_id int,
+            @st_d_id int,
+            @threshold int
+            AS
+            BEGIN
+            DECLARE
             @st_o_id int,
             @stock_count bigint
             BEGIN TRANSACTION
@@ -556,18 +562,25 @@ proc CreateStoredProcs { odbc imdb } {
             @st_o_id = district.d_next_o_id
             FROM dbo.district
             WHERE district.d_w_id = @st_w_id AND district.d_id = @st_d_id
-            SELECT @stock_count = COUNT_BIG(*)                                                                                                                                                      FROM
+            SELECT @stock_count = COUNT_BIG(*)
+            FROM
             (
             SELECT ol_i_id
             FROM dbo.order_line WITH (INDEX(order_line_i1))
-            WHERE order_line.ol_w_id = @st_w_id                                                                                                                                                     AND order_line.ol_d_id = @st_d_id                                                                                                                                                       AND order_line.ol_o_id < @st_o_id
+            WHERE order_line.ol_w_id = @st_w_id
+            AND order_line.ol_d_id = @st_d_id
+            AND order_line.ol_o_id < @st_o_id
             AND order_line.ol_o_id >= (@st_o_id - 20)
             GROUP BY ol_i_id
             ) AS recent_items
             JOIN dbo.stock WITH (INDEX(PK_STOCK))
             ON stock.s_w_id = @st_w_id
             AND stock.s_i_id = recent_items.ol_i_id
-            WHERE stock.s_quantity < @threshold                                                                                                                                                     OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);                                                                                                                                               SELECT @stock_count AS stock_count                                                                                                                                                      END TRY                                                                                                                                                                                 BEGIN CATCH
+            WHERE stock.s_quantity < @threshold
+            OPTION (ORDER GROUP, LOOP JOIN, MAXDOP 1);
+            SELECT @stock_count AS stock_count
+            END TRY
+            BEGIN CATCH
             IF (error_number() in (701, 41839, 41823, 41302, 41305, 41325, 41301))
             SELECT 'IMOLTPERROR',ERROR_NUMBER() AS ErrorNumber
             ELSE
@@ -1080,7 +1093,7 @@ proc CreateStoredProcs { odbc imdb } {
             IF @@TRANCOUNT > 0
             COMMIT TRANSACTION;
         END}
-        set sql(5) {CREATE PROCEDURE [dbo].[slev]
+            set sql(5) {CREATE PROCEDURE [dbo].[slev]
             @st_w_id int,
             @st_d_id int,
             @threshold int
