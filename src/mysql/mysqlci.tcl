@@ -1159,17 +1159,19 @@ proc mysql_ping {cidict refname} {
     for {set attempt 1} {$attempt <= $attempts} {incr attempt} {
         set ::_mysql_ping_output ""
         set close_status OK
-        set cmd "cd $basedir && { $sql_cmd; } 2>&1"
 
         if {[catch {
+            set cmd "cd \"$basedir\" && $sql_cmd 2>&1"
             set pipe [open "|bash -c {$cmd}" "r"]
             fconfigure $pipe -blocking 1
             set ::_mysql_ping_output [read $pipe]
+
             if {[catch {close $pipe} errMsg]} {
                 set close_status $errMsg
             }
         } errMsg]} {
             set close_status $errMsg
+            set ::_mysql_ping_output $errMsg
         }
 
         set output_trim [string trim [string map {\r ""} $::_mysql_ping_output]]
