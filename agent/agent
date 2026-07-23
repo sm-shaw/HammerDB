@@ -292,20 +292,32 @@ return "Not Detected"
 }
 
 proc HowManyProcessorsLinux {} {
-global cpu_model
+    global cpu_model
+
     set fin [open /proc/cpuinfo r]
     set data [read $fin]; list
     close $fin
+
     set ::S(cpus) [llength [regexp -all -inline processor $data]]
     set ::S(cpus,list) {}
+
     for {set i 0} {$i < $::S(cpus)} {incr i} {
         lappend ::S(cpus,list) $i
     }
-    foreach line [ split $data "\n" ] {
-    if {[string match {model name*} $line]} {
-    regexp {(.*):\ (.*)} $line all header cpu_model
-    break
-	}
+
+    set cpu_model "UNKNOWN"
+
+    foreach line [split $data "\n"] {
+        if {[string match {model name*} $line]} {
+            regexp {(.*):\ (.*)} $line all header cpu_model
+            break
+        }
+
+        if {[string match {CPU architecture*} $line]} {
+            regexp {(.*):\ (.*)} $line all header architecture
+            set cpu_model "ARM $architecture"
+            break
+        }
     }
 }
 
