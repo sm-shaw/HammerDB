@@ -6,4 +6,4 @@ import ctypes
 p=ctypes.CDLL("libpq.so.5"); v=p.PQlibVersion(); print(v); assert 170000 <= v < 180000
 PY
 ldconfig -p | grep libpq.so.5'
-librarycheck 'PostgreSQL.*(SUCCESS|loaded|available)'
+librarycheck '(Success|loaded library).*PostgreSQL'

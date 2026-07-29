@@ -20,7 +20,12 @@ Run the manual **HammerDB 6.0 multi-architecture images** workflow. Its only tri
   publishing externally. Intermediate images are pushed only to a temporary
   registry on the Actions runner so later Buildx builds resolve the exact
   newly built dependencies.
-* `push-test`: uses only `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, and publishes immutable `v6.0-test-<component>-<commit>` manifests.
-* `promote-production`: copies the exact tested manifests without rebuilding. It requires explicit confirmation and is blocked outside `TPC-Council/HammerDB`.
+* `push-test`: uses only `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, refuses
+  pre-existing tags, publishes immutable `v6.0-test-<component>-<commit>`
+  manifests, and smoke-tests both platform digests before recording them.
+* `promote-production`: preflights all seven supplied tested manifest digests
+  before changing any tag, then copies those exact manifests without
+  rebuilding. It requires explicit confirmation and is blocked outside
+  `TPC-Council/HammerDB`.
 
 Production version tags are `v6.0-*` and aliases are the component names (`latest` for combined). Inspect a manifest with `IMAGE=docker.io/tpcorg/hammerdb:v6.0-test-<sha> Docker/tests/test-manifest.sh`. See [the test plan](TESTING-6.0-MULTIARCH.md).

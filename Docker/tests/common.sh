@@ -10,5 +10,5 @@ validate_common() {
 }
 librarycheck() {
   local pattern=$1
-  run bash -euc 'output=$(printf "librarycheck\nexit\n" | timeout 60 /home/hammerdb/hammerdbcli 2>&1); printf "%s\n" "$output"; grep -Ei '"$pattern"' <<<"$output"'
+  run bash -euc 'output=$(printf "librarycheck\nexit\n" | timeout 60 /home/hammerdb/hammerdbcli 2>&1); printf "%s\n" "$output"; grep -Ei -- "$1" <<<"$output"' -- "$pattern"
 }
