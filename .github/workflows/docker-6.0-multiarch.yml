@@ -1,0 +1,137 @@
+name: HammerDB 6.0 multi-architecture images
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Operation (build-only, push-test, or promote-production)
+        required: true
+        type: choice
+        options: [build-only, push-test, promote-production]
+      tested_sha:
+        description: Commit SHA whose immutable test manifests are promoted
+        required: false
+        type: string
+      confirm_production:
+        description: Type PROMOTE-V6.0 to promote without rebuilding
+        required: false
+        type: string
+      hammerdb_amd64_sha256: {description: Published AMD64 HammerDB archive SHA-256, required: true, type: string}
+      hammerdb_arm64_sha256: {description: Published ARM64 HammerDB archive SHA-256, required: true, type: string}
+      mysql_amd64_sha256: {description: AMD64 MySQL client SHA-256, required: true, type: string}
+      mysql_arm64_sha256: {description: ARM64 MySQL client SHA-256, required: true, type: string}
+      oracle_amd64_sha256: {description: AMD64 Oracle archive SHA-256, required: true, type: string}
+      oracle_arm64_sha256: {description: ARM64 Oracle archive SHA-256, required: true, type: string}
+
+env:
+  REGISTRY_IMAGE: docker.io/tpcorg/hammerdb
+
+jobs:
+  build-only:
+    if: inputs.mode == 'build-only'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            machine: x86_64
+            mysql_machine: x86-64
+            oracle_machine: x86-64
+          - platform: linux/arm64
+            machine: aarch64
+            mysql_machine: ARM aarch64
+            oracle_machine: ARM aarch64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build in dependency order
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          TAG_PREFIX: hammerdb-${{ strategy.job-index }}
+          HAMMERDB_AMD64_SHA256: ${{ inputs.hammerdb_amd64_sha256 }}
+          HAMMERDB_ARM64_SHA256: ${{ inputs.hammerdb_arm64_sha256 }}
+          MYSQL_AMD64_SHA256: ${{ inputs.mysql_amd64_sha256 }}
+          MYSQL_ARM64_SHA256: ${{ inputs.mysql_arm64_sha256 }}
+          ORACLE_AMD64_SHA256: ${{ inputs.oracle_amd64_sha256 }}
+          ORACLE_ARM64_SHA256: ${{ inputs.oracle_arm64_sha256 }}
+        run: Docker/tests/build-images.sh
+      - name: Architecture-specific smoke tests
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+          MYSQL_FILE_MACHINE: ${{ matrix.mysql_machine }}
+          ORACLE_FILE_MACHINE: ${{ matrix.oracle_machine }}
+          TAG_PREFIX: hammerdb-${{ strategy.job-index }}
+        run: |
+          for name in base mysql maria postgres oracle mssqls; do IMAGE="$TAG_PREFIX-$name" "Docker/tests/test-$name.sh"; done
+          IMAGE="$TAG_PREFIX" Docker/tests/test-combined.sh
+
+  push-test:
+    if: inputs.mode == 'push-test'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Push immutable test manifests in dependency order
+        env:
+          SHA: ${{ github.sha }}
+          HAMD: ${{ inputs.hammerdb_amd64_sha256 }}
+          HARM: ${{ inputs.hammerdb_arm64_sha256 }}
+          MAMD: ${{ inputs.mysql_amd64_sha256 }}
+          MARM: ${{ inputs.mysql_arm64_sha256 }}
+          OAMD: ${{ inputs.oracle_amd64_sha256 }}
+          OARM: ${{ inputs.oracle_arm64_sha256 }}
+        run: |
+          set -euo pipefail
+          short=${SHA:0:12}; root="$REGISTRY_IMAGE:v6.0-test"; platforms=linux/amd64,linux/arm64
+          base="$root-base-$short"
+          docker buildx build --platform "$platforms" --push -t "$base" --build-arg HAMMERDB_AMD64_SHA256="$HAMD" --build-arg HAMMERDB_ARM64_SHA256="$HARM" Docker/base
+          for name in mysql maria postgres oracle mssqls; do
+            tag="$root-$name-$short"; args=(--build-arg "BASE_IMAGE=$base")
+            [[ $name == mysql ]] && args+=(--build-arg "MYSQL_AMD64_SHA256=$MAMD" --build-arg "MYSQL_ARM64_SHA256=$MARM")
+            [[ $name == oracle ]] && args+=(--build-arg "ORACLE_AMD64_SHA256=$OAMD" --build-arg "ORACLE_ARM64_SHA256=$OARM")
+            docker buildx build --platform "$platforms" --push -t "$tag" "${args[@]}" "Docker/$name"
+          done
+          docker buildx build --platform "$platforms" --push -t "$root-$short" $(for n in mysql maria postgres oracle mssqls; do printf -- '--build-arg %s_IMAGE=%s-%s-%s ' "${n^^}" "$root" "$n" "$short"; done) Docker
+          for suffix in base mysql maria postgres oracle mssqls ''; do IMAGE="$root${suffix:+-$suffix}-$short" Docker/tests/test-manifest.sh; done
+      - name: Assert no production tag is targeted
+        run: |
+          set -euo pipefail
+          grep -q 'v6.0-test.*short' .github/workflows/docker-6.0-multiarch.yml
+          ! grep -E -- '-t .*:(latest|base|mysql|maria|postgres|oracle|mssqls|v6\.0)([ "'"']|$)' .github/workflows/docker-6.0-multiarch.yml
+
+  promote-production:
+    if: inputs.mode == 'promote-production'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce upstream-only explicit promotion
+        run: |
+          set -euo pipefail
+          [[ '${{ github.repository }}' == 'TPC-Council/HammerDB' ]] || { echo 'BLOCKED: production promotion is upstream-only'; exit 1; }
+          [[ '${{ inputs.confirm_production }}' == 'PROMOTE-V6.0' ]] || { echo 'BLOCKED: confirmation mismatch'; exit 1; }
+          [[ '${{ inputs.tested_sha }}' =~ ^[0-9a-f]{7,40}$ ]] || { echo 'BLOCKED: tested_sha is required'; exit 1; }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Copy tested manifests to production tags (no rebuild)
+        env:
+          TESTED_SHA: ${{ inputs.tested_sha }}
+        run: |
+          set -euo pipefail
+          short=${TESTED_SHA:0:12}
+          for suffix in base mysql maria postgres oracle mssqls combined; do
+            if [[ $suffix == combined ]]; then source="$REGISTRY_IMAGE:v6.0-test-$short"; version=v6.0; alias=latest
+            else source="$REGISTRY_IMAGE:v6.0-test-$suffix-$short"; version="v6.0-$suffix"; alias=$suffix
+            fi
+            docker buildx imagetools inspect "$source" >/dev/null
+            docker buildx imagetools create -t "$REGISTRY_IMAGE:$version" -t "$REGISTRY_IMAGE:$alias" "$source"
+          done

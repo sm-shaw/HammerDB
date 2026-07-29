@@ -1,24 +1,21 @@
-FROM docker.io/tpcorg/hammerdb:v5.0-base
-
-RUN apt-get update && \
-     DEBIAN_FRONTEND=noninteractive apt-get install -y curl gcc make lsb-release && \
-     ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && \
-     curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list |  tee /etc/apt/sources.list.d/mssql-release.list && \
-     apt update && \
-     ACCEPT_EULA=Y apt-get install -y msodbcsql18  && \
-     ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y mssql-tools18  && \
-     echo 'export PATH="$PATH:/opt/mssql-tools18/bin" >> ~/.bashrc' && \
-     wget http://www.unixodbc.org/unixODBC-2.3.11.tar.gz && tar -xvzf unixODBC-2.3.11.tar.gz && cd unixODBC-2.3.11 && \
-     ./configure --prefix=/usr/local/unixODBC --enable-gui=no --enable-drivers=no --enable-iconv --with-iconv-char-enc=UTF8 \
-     --with-iconv-ucode-enc=UTF16LE --enable-threads=yes --enable-fastvalidate && make && make install && cd .. && \
-     echo 'export PATH="$PATH:/opt/mssql-tools18/bin:/usr/local/unixODBC/bin" \n\
-     export ODBCINI="/usr/local/unixODBC/etc/odbc.ini" \n\
-     export ODBCSYSINI="/usr/local/unixODBC/etc" \n\
-     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/unixODBC/lib"'  >> ~/.bashrc && \
-     echo "[ODBC Driver 18 for SQL Server] \n\
-     Description=Microsoft ODBC Driver 18 for SQL Server \n\
-     Driver=/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.5.so.1.1 \n\
-     UsageCount=1 " >> /usr/local/unixODBC/etc/odbcinst.ini && \
-     odbcinst -j && \
-     apt-get purge -y gcc make && \
-     rm -rf *.tar.gz *.zip unixODBC-2.3.11 /var/lib/apt/lists/*
+ARG BASE_IMAGE=docker.io/tpcorg/hammerdb:v6.0-base
+FROM ${BASE_IMAGE}
+ARG UNIXODBC_VERSION=2.3.12
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg gcc make libc6-dev && \
+    curl --fail --location --silent --show-error https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/24.04/prod noble main" > /etc/apt/sources.list.d/microsoft-prod.list && \
+    curl --fail --location --silent --show-error "https://www.unixodbc.org/unixODBC-${UNIXODBC_VERSION}.tar.gz" -o /tmp/unixodbc.tar.gz && \
+    tar -xzf /tmp/unixodbc.tar.gz -C /tmp && cd "/tmp/unixODBC-${UNIXODBC_VERSION}" && \
+    configure_args='--prefix=/usr/local/unixODBC --enable-gui=no --enable-drivers=no --enable-iconv --with-iconv-char-enc=UTF8 --with-iconv-ucode-enc=UTF16LE --enable-threads=yes --enable-fastvalidate' && \
+    printf '%s\n' "$configure_args" > /usr/local/unixODBC-configure.args && ./configure $configure_args && make -j"$(nproc)" && make install && \
+    apt-get update && ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends msodbcsql18 mssql-tools18 && \
+    driver=$(find /opt/microsoft/msodbcsql18 -type f -name 'libmsodbcsql-*.so*' -print -quit); test -n "$driver"; \
+    printf '[ODBC Driver 18 for SQL Server]\nDescription=Microsoft ODBC Driver 18 for SQL Server\nDriver=%s\nUsageCount=1\n' "$driver" > /usr/local/unixODBC/etc/odbcinst.ini && \
+    echo /usr/local/unixODBC/lib > /etc/ld.so.conf.d/unixodbc.conf && ldconfig && \
+    /usr/local/unixODBC/bin/odbcinst -j && /usr/local/unixODBC/bin/odbcinst -q -d | grep -Fx '[ODBC Driver 18 for SQL Server]' && \
+    grep -F -- '--enable-fastvalidate' /usr/local/unixODBC-configure.args && \
+    apt-get purge -y gcc make libc6-dev && apt-get autoremove -y && rm -rf /tmp/unixODBC* /var/lib/apt/lists/*
+ENV PATH=/opt/mssql-tools18/bin:/usr/local/unixODBC/bin:$PATH
+ENV ODBCINI=/usr/local/unixODBC/etc/odbc.ini
+ENV ODBCSYSINI=/usr/local/unixODBC/etc
+ENV LD_LIBRARY_PATH=/usr/local/unixODBC/lib

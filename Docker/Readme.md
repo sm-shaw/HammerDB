@@ -1,62 +1,23 @@
-# Release Notes for HammerDB Docker images
+# HammerDB 6.0 Docker images
 
-##### HammerDB prebuild Docker images can be downloaded directly from [Official TPC-Council HammerDB DockerHub](https://hub.docker.com/r/tpcorg/hammerdb)
-        docker pull tpcorg/hammerdb
-        docker tag  tpcorg/hammerdb hammerdb
-View all the Official TPC-Council HammerDB DockerHub images available [here](https://hub.docker.com/r/tpcorg/hammerdb/tags)
+These Dockerfiles package the published HammerDB 6.0 Ubuntu 24.04 release tarballs; HammerDB is **not compiled from source**. A single Dockerfile per logical image builds `linux/amd64` and `linux/arm64`, and a multi-platform manifest lets Docker select the host architecture automatically.
 
-Alternatively, [Dockerfile](https://github.com/TPC-Council/HammerDB/blob/master/Docker/Dockerfile) can be used to build the same HammerDB client docker image that supports all the databases HammerDB is enabled for, i.e. Oracle, Microsoft SQL Server, MySQL, PostgreSQL and MariaDB, except for IBM Db2. We intend to add it in future releases. TPC-Council#404
-##### To build an image: Go to the folder containing the Dockerfile
-        docker build -t hammerdb .
-##### To create a container named "hammerdb" from the image, "hammerdb"
-        docker run -it --name hammerdb hammerdb bash
-Networking is needed to communicate with a remote database when starting the container
-##### For example, adding host network to the container.
-        docker run --network=host -it --name hammerdb hammerdb bash
-##### HammerDB prebuild Docker images can be downloaded directly from [Official TPC-Council HammerDB DockerHub](https://hub.docker.com/r/tpcorg/hammerdb)
-        docker pull tpcorg/hammerdb
+Images are built in dependency order: **base → MySQL → MariaDB → PostgreSQL → Oracle → SQL Server → combined**. Child builds accept image build arguments so validation never mixes 6.0 work with an existing production image. The combined image contains all five clients (Db2 remains excluded). The obsolete remote-GUI Docker variant was removed; normal HammerDB GUI and web service functionality are unchanged.
 
-## Database specific Docker container images
-Given the wide usage of docker containers is in cloud and emphasizes on being light weight. Here are Database specific Dockerfiles which builds client libarries only for the desired database. Find them here:
-1. [MySQL](https://github.com/TPC-Council/HammerDB/tree/master/Docker/mysql/Dockerfile), [Readme](https://github.com/TPC-Council/HammerDB/tree/master/Docker/mysql/Readme.md)
-2. [MariaDB](https://github.com/TPC-Council/HammerDB/tree/master/Docker/maria/Dockerfile), [Readme](https://github.com/TPC-Council/HammerDB/tree/master/Docker/maria/Readme.md)
-3. [PostgreSQL](https://github.com/TPC-Council/HammerDB/tree/master/Docker/postgres/Dockerfile), [Readme](https://github.com/TPC-Council/HammerDB/tree/master/Docker/postgres/Readme.md)
-4. [Oracle Database](https://github.com/TPC-Council/HammerDB/tree/master/Docker/oracle/Dockerfile), [Readme](https://github.com/TPC-Council/HammerDB/tree/master/Docker/oracle/Readme.md)
-5. [Microsoft SQL Server](https://github.com/TPC-Council/HammerDB/tree/master/Docker/mssqls/Dockerfile), [Readme](https://github.com/TPC-Council/HammerDB/tree/master/Docker/mssqls/Readme.md)
+## Client design
 
-##### Alternatively, these pre built images can be downloaded from [Official TPC-Council HammerDB DockerHub](https://hub.docker.com/r/tpcorg/hammerdb)
-         docker pull tpcorg/hammerdb:mysql
-         docker pull tpcorg/hammerdb:maria
-         docker pull tpcorg/hammerdb:oracle
-         docker pull tpcorg/hammerdb:postgres
-         docker pull tpcorg/hammerdb:mssqls
-         
-## Example Scripts
-CLI example scripts for each database are included under "scripts folder". Examples for TPROC-C and TPROC-H workloads are given both in python and tcl languages.
-These scripts are recommended to run from the HammerDB home directory, "/home/hammerdb/" 
-This example Python script for MariaDB Database and HammerDB TPROC-C workload automate the following:
-1. builds schema 
-2. run an TPROC-C workload test
-3. delete schema and
-4. write the results to "/home/hammerdb/TMP" directory.
-        
-##### This script can be executed as followed. 
-        ./scripts/python/maria/tprocc/maria_tprocc_py.sh
-###### Please note: Update the connection strings appropritaely in each of the following scripts before executing any experiments.
-        ./scripts/python/maria/tprocc/maria_tprocc_buildschema.py
-        ./scripts/python/maria/tprocc/maria_tprocc_run.py
-        ./scripts/python/maria/tprocc/maria_tprocc_deleteschema.py
-        ./scripts/python/maria/tprocc/maria_tprocc_result.py
-Format is similar for every database while using both TCL or Python 
+* MySQL uses the architecture-specific `libmysqlclient.so.24` supplied by HammerDB and validates its SHA-256, ELF machine and SONAME.
+* MariaDB uses Ubuntu 24.04's architecture-selected `libmariadb3` package.
+* PostgreSQL uses PGDG PostgreSQL/libpq 17. This enables testing `sslnegotiation=direct` for issue #901, but the issue is not considered resolved until the separate direct-TLS integration test passes.
+* Oracle uses the matching official Instant Client archive at `/opt/oracle/instantclient`.
+* SQL Server uses Microsoft's Ubuntu 24.04 ODBC Driver 18 on both architectures and a custom `/usr/local/unixODBC` build with `--enable-fastvalidate`.
 
-## Enable GUI Interface for HammerDB in Docker
-To use HammerDB in GUI Mode from running within a Docker container, make sure X11 forwarding is configured and environment variable DISPLAY is set appropriately.
-##### For example on Ubuntu,
-        export DISPLAY=localhost:10.0
-##### Additionally disable host control, by executing the following.
-        xhost+
-##### To start HammerDB container:
-        docker run -it --rm -v ~/.Xauthority:/root/.Xauthority -e DISPLAY=$DISPLAY --network=host --name hammerdb hammerdb bash
+## Building and publishing
 
+Run the manual **HammerDB 6.0 multi-architecture images** workflow. Its only trigger is `workflow_dispatch` and its modes are:
 
-Refer to HammerDB blog "[How to deploy HammerDB CLI fast with Docker](https://www.hammerdb.com/blog/uncategorized/how-to-deploy-hammerdb-cli-fast-with-docker/) for more information.
+* `build-only`: builds and smoke-tests each architecture without logging in or pushing.
+* `push-test`: uses only `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, and publishes immutable `v6.0-test-<component>-<commit>` manifests.
+* `promote-production`: copies the exact tested manifests without rebuilding. It requires explicit confirmation and is blocked outside `TPC-Council/HammerDB`.
+
+Production version tags are `v6.0-*` and aliases are the component names (`latest` for combined). Inspect a manifest with `IMAGE=docker.io/tpcorg/hammerdb:v6.0-test-<sha> Docker/tests/test-manifest.sh`. See [the test plan](TESTING-6.0-MULTIARCH.md).

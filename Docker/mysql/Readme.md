@@ -1,19 +1,3 @@
+# MySQL image
 
-# MySQL Dockerfile
-
-##### HammerDB prebuild Docker images can be downloaded directly from [Official TPC-Council HammerDB DockerHub](https://hub.docker.com/r/tpcorg/hammerdb/tags)
-        docker pull tpcorg/hammerdb:mysql
-        docker tag tpcorg/hammerdb:mysql hammerdb:mysql
-
-The [Dockerfile](https://github.com/TPC-Council/HammerDB/blob/master/Docker/mysql/Dockerfile) here builds the same HammerDB client Docker image that supports MySQL Database
-
-##### To build an image: Go to the folder containing the Dockerfile
-        docker build -t hammerdb:mysql .
-
-##### To create a container named "hammerdb-mysql" from the image, "hammerdb:mysql" 
-        docker run -it --name hammerdb-mysql hammerdb:mysql bash
-
-Networking is needed to communicate with a remote database when starting the container
-
-##### For example, adding host network to the container.
-        docker run --network=host -it --name hammerdb-mysql hammerdb:mysql bash
+This HammerDB 6.0 Ubuntu 24.04 image downloads the HammerDB-provided MySQL `libmysqlclient.so.24` for AMD64 or ARM64. The build requires per-architecture SHA-256 values and checks nonempty/non-HTML content, ELF machine, SONAME, linker registration, and the HammerDB library smoke test.
