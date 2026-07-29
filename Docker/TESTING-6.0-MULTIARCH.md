@@ -19,9 +19,11 @@ and SQL Server's stored `--enable-fastvalidate` evidence.
 `push-test` publishes only immutable commit-SHA test tags using `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; each manifest must contain `linux/amd64` and `linux/arm64`. It never changes production tags. `promote-production` is upstream-only, explicitly confirmed, and copies previously tested manifests without rebuilding.
 
 Before `push-test` builds anything, all seven candidate tags are inspected and
-the job fails if any already exists. After publishing, both platform digests of
-every component and the combined image are pulled and smoke-tested. The
-resulting manifest digests are uploaded only after all tests pass. Promotion
+the job completes the entire preflight and fails if any already exists. An
+unexpected inspection error also fails closed instead of being mistaken for a
+missing tag. After publishing, both platform digests of every component and
+the combined image are pulled and smoke-tested. The resulting manifest digests
+are written to the workflow summary and uploaded only after all tests pass. Promotion
 requires those seven digests, preflights every source and both platforms before
 changing any production tag, and copies from the resolved digests rather than
 mutable tag names.

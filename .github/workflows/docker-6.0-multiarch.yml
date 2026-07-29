@@ -124,13 +124,28 @@ jobs:
             }
           }
           candidate_tags=("$root-base-$short" "$root-mysql-$short" "$root-maria-$short" "$root-postgres-$short" "$root-oracle-$short" "$root-mssqls-$short" "$root-$short")
+          existing_tags=()
+          inspection_errors=()
           for tag in "${candidate_tags[@]}"; do
             require_test_tag "$tag"
-            if docker buildx imagetools inspect "$tag" >/dev/null 2>&1; then
-              echo "FAIL: immutable test tag already exists: $tag" >&2
-              exit 1
+            inspect_error=$(mktemp)
+            if docker buildx imagetools inspect "$tag" >/dev/null 2>"$inspect_error"; then
+              existing_tags+=("$tag")
+            elif ! grep -Eiq 'manifest unknown|no such manifest|not found' "$inspect_error"; then
+              inspection_errors+=("$tag: $(tr '\n' ' ' < "$inspect_error")")
             fi
+            rm -f "$inspect_error"
           done
+          if (( ${#inspection_errors[@]} )); then
+            printf 'FAIL: could not determine whether test tag exists: %s\n' "${inspection_errors[@]}" >&2
+            exit 1
+          fi
+          if (( ${#existing_tags[@]} )); then
+            printf 'FAIL: refusing to overwrite immutable test tag: %s\n' "${existing_tags[@]}" >&2
+            exit 1
+          fi
+          # No build or push occurs above this line: the complete seven-tag set
+          # has been proven absent before the first Docker Hub modification.
           base="$root-base-$short"
           docker buildx build --platform "$platforms" --push -t "$base" --build-arg HAMMERDB_AMD64_SHA256="$HAMD" --build-arg HAMMERDB_ARM64_SHA256="$HARM" Docker/base
           for name in mysql maria postgres oracle mssqls; do
@@ -170,6 +185,12 @@ jobs:
             docker pull --platform "$platform" "$image"
             PLATFORM="$platform" EXPECTED_MACHINE="$machine" MYSQL_FILE_MACHINE="$mysql_machine" ORACLE_FILE_MACHINE="$oracle_machine" IMAGE="$image" Docker/tests/test-combined.sh
           done
+          {
+            printf '## Tested HammerDB 6.0 manifests\n\n'
+            printf 'Both linux/amd64 and linux/arm64 platform digests passed their smoke tests.\n\n'
+            printf '| Test tag | Verified manifest identity |\n|---|---|\n'
+            while IFS='=' read -r tag identity; do printf '| `%s` | `%s` |\n' "$tag" "$identity"; done < test-manifests.env
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Record tested manifest digests
         uses: actions/upload-artifact@v4
         with:
