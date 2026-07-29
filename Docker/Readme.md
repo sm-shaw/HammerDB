@@ -16,7 +16,10 @@ Images are built in dependency order: **base → MySQL → MariaDB → PostgreSQ
 
 Run the manual **HammerDB 6.0 multi-architecture images** workflow. Its only trigger is `workflow_dispatch` and its modes are:
 
-* `build-only`: builds and smoke-tests each architecture without logging in or pushing.
+* `build-only`: builds and smoke-tests each architecture without logging in or
+  publishing externally. Intermediate images are pushed only to a temporary
+  registry on the Actions runner so later Buildx builds resolve the exact
+  newly built dependencies.
 * `push-test`: uses only `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, and publishes immutable `v6.0-test-<component>-<commit>` manifests.
 * `promote-production`: copies the exact tested manifests without rebuilding. It requires explicit confirmation and is blocked outside `TPC-Council/HammerDB`.
 

@@ -4,7 +4,17 @@ Only these status terms are used: `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`.
 
 ## Automated validation
 
-The manually dispatched workflow accepts the required archive/library checksum inputs. `build-only` uses Buildx and QEMU, builds in dependency order, then loads and smoke-tests separate AMD64 and ARM64 images. Every test validates Ubuntu 24.04, image architecture, HammerDB 6.0, CLI startup and `librarycheck`. Component tests additionally validate MySQL ELF/SONAME, the Ubuntu MariaDB package, libpq 17 through `PQlibVersion()`, Oracle dependencies, and SQL Server's stored `--enable-fastvalidate` evidence.
+The manually dispatched workflow exposes optional archive/library checksum
+inputs because `promote-production` does not rebuild. The `build-only` and
+`push-test` jobs explicitly reject missing or malformed checksum values before
+building or authenticating. `build-only` uses Buildx and QEMU and publishes
+each single-platform dependency to a temporary runner-local registry before
+the next Buildx build, then pulls the completed images for smoke tests. It does
+not rely on Buildx resolving a Docker-engine-only `--load` tag. Every test
+validates Ubuntu 24.04, image architecture, HammerDB 6.0, CLI startup and
+`librarycheck`. Component tests additionally validate MySQL ELF/SONAME, the
+Ubuntu MariaDB package, libpq 17 through `PQlibVersion()`, Oracle dependencies,
+and SQL Server's stored `--enable-fastvalidate` evidence.
 
 `push-test` publishes only immutable commit-SHA test tags using `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; each manifest must contain `linux/amd64` and `linux/arm64`. It never changes production tags. `promote-production` is upstream-only, explicitly confirmed, and copies previously tested manifests without rebuilding.
 
