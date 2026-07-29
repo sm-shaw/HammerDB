@@ -1,18 +1,5 @@
-# PostgreSQL Dockerfile
+# PostgreSQL image
 
-##### HammerDB prebuild Docker images can be downloaded directly from [Official TPC-Council HammerDB DockerHub](https://hub.docker.com/r/tpcorg/hammerdb/tags)
-        docker pull tpcorg/hammerdb:postgres
-        docker tag tpcorg/hammerdb:postgres hammerdb:postgres
+This HammerDB 6.0 Ubuntu 24.04 image configures the architecture-neutral official PGDG repository and pins `libpq5` to major 17 with `postgresql-client-17`. Validation checks `psql`, `pg_config`, the loaded path and `170000 <= PQlibVersion() < 180000`.
 
-The [Dockerfile](https://github.com/TPC-Council/HammerDB/blob/master/Docker/postgres/Dockerfile) here builds the same HammerDB client Docker image that supports PostgreSQL Database
-
-##### To build an image: Go to the folder containing the Dockerfile
-        docker build -t hammerdb:postgres .
-
-##### To create a container named "hammerdb-postgres" from the image, "hammerdb:postgres" 
-        docker run -it --name hammerdb-postgres hammerdb:postgres bash
-
-Networking is needed to communicate with a remote database when starting the container
-
-##### For example, adding host network to the container.
-        docker run --network=host -it --name hammerdb-postgres hammerdb:postgres bash
+This addresses the client prerequisite behind [issue #901](https://github.com/TPC-Council/HammerDB/issues/901). It is **not** a claim that the issue is resolved: `test-postgres-direct-tls.sh` must connect to a real TLS server with `sslnegotiation=direct` first.
