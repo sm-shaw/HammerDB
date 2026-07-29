@@ -1,22 +1,39 @@
-FROM       ubuntu:24.04
+FROM ubuntu:24.04
 LABEL maintainer="Pooja Jain"
 
-# Update & upgrade apt and download basic utilities
+ARG TARGETARCH
+ARG HAMMERDB_VERSION=6.0
+
 RUN apt-get update && \
-    apt-get -y upgrade && \
-    apt-get -y install -q && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget unzip gnupg apt-utils iputils-ping vim netcat-traditional libxft-dev libcairo2-dev xauth python3 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl unzip gnupg apt-utils iputils-ping vim \
+        netcat-traditional libxft-dev libcairo2-dev xauth python3 \
+        libaio1t64 file && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN wget http://archive.ubuntu.com/ubuntu/pool/main/liba/libaio/libaio1t64_0.3.113-6build1_amd64.deb && \
-    apt install `pwd`/libaio1t64_0.3.113-6build1_amd64.deb && \
-    rm -rf  /var/lib/apt/lists/* `pwd`/libaio1t64_0.3.113-6build1_amd64.deb 
-
-# Install configure HammerDB-v5.0
-ARG HAMMERDB_VERSION=5.0
-RUN wget https://github.com/TPC-Council/HammerDB/releases/download/v$HAMMERDB_VERSION/HammerDB-$HAMMERDB_VERSION-Prod-Lin-UBU24.tar.gz -O - | \
-    tar -xvzf - -C /home/ && \
-    ln -s /home/HammerDB-$HAMMERDB_VERSION /home/hammerdb
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) \
+            archive="HammerDB-${HAMMERDB_VERSION}-Prod-Lin-UBU24.tar.gz"; \
+            sha1="b66c66d4bb436cb942e6535b1fbbb11b5fee7a27" \
+            ;; \
+        arm64) \
+            archive="HammerDB-${HAMMERDB_VERSION}-Prod-Lin-UBU24-ARM64.tar.gz"; \
+            sha1="f80a54f841231a75b03a395bb388a92c2e45f494" \
+            ;; \
+        *) \
+            echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; \
+            exit 1 \
+            ;; \
+    esac; \
+    curl --fail --location --show-error \
+        "https://github.com/TPC-Council/HammerDB/releases/download/v${HAMMERDB_VERSION}/${archive}" \
+        --output "/tmp/${archive}"; \
+    echo "${sha1}  /tmp/${archive}" | sha1sum --check -; \
+    tar -xzf "/tmp/${archive}" -C /home; \
+    ln -s "/home/HammerDB-${HAMMERDB_VERSION}" /home/hammerdb; \
+    rm -f "/tmp/${archive}"
 
 WORKDIR /home/hammerdb
 
-CMD tail -f /dev/null
+CMD ["tail", "-f", "/dev/null"]
