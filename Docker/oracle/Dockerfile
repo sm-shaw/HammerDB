@@ -15,5 +15,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     mv /opt/oracle/instantclient_* /opt/oracle/instantclient; rm /tmp/oracle.zip; \
     file /opt/oracle/instantclient/libclntsh.so* | grep -F "$machine"; ldd /opt/oracle/instantclient/libclntsh.so; \
     echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf; ldconfig; rm -rf /var/lib/apt/lists/*
+ENV ORACLE_HOME=/opt/oracle/instantclient
 ENV ORACLE_LIBRARY=/opt/oracle/instantclient/libclntsh.so
-ENV LD_LIBRARY_PATH=/opt/oracle/instantclient
+ENV TNS_ADMIN=/opt/oracle/instantclient/network/admin
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:${LD_LIBRARY_PATH}
