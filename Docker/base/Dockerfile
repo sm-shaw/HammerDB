@@ -9,6 +9,15 @@ ARG HAMMERDB_ARM64_SHA256
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates curl libaio1t64 libxft2 libcairo2 xauth python3 iputils-ping netcat-traditional && \
+    case "$TARGETARCH" in \
+      amd64) libaio_dir=/usr/lib/x86_64-linux-gnu ;; \
+      arm64) libaio_dir=/usr/lib/aarch64-linux-gnu ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    test -e "$libaio_dir/libaio.so.1t64" && \
+    ln -sf "$libaio_dir/libaio.so.1t64" "$libaio_dir/libaio.so.1" && \
+    ldconfig && \
+    test -e "$libaio_dir/libaio.so.1" && \
     rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     case "$TARGETARCH" in \
