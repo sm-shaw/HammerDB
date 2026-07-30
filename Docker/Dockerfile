@@ -18,8 +18,10 @@ COPY --from=postgres /usr/bin/psql /usr/bin/psql
 COPY --from=postgres /usr/lib/postgresql/17/ /usr/lib/postgresql/17/
 COPY --from=oracle /opt/oracle/ /opt/oracle/
 COPY --from=oracle /etc/ld.so.conf.d/oracle-instantclient.conf /etc/ld.so.conf.d/oracle-instantclient.conf
+ENV ORACLE_HOME=/opt/oracle/instantclient
 ENV ORACLE_LIBRARY=/opt/oracle/instantclient/libclntsh.so
-ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:/usr/local/unixODBC/lib
+ENV TNS_ADMIN=/opt/oracle/instantclient/network/admin
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:${LD_LIBRARY_PATH}
 RUN ldconfig && ldconfig -p | grep -E 'lib(mysqlclient|mariadb|pq|clntsh|odbc)'
 
 WORKDIR /home/hammerdb
