@@ -165,7 +165,7 @@ jobs:
           : > test-manifests.env
           for tag in "${tags[@]}"; do
             IMAGE="$tag" Docker/tests/test-manifest.sh
-            digest=$(docker buildx imagetools inspect "$tag" | awk '/^Digest:/{print $2; exit}')
+            digest=$(docker buildx imagetools inspect "$tag" | awk '/^Digest:/{digest=$2} END{print digest}')
             [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "FAIL: cannot resolve manifest digest for $tag" >&2; exit 1; }
             printf '%s=%s@%s\n' "${tag##*:}" "$tag" "$digest" >> test-manifests.env
           done
@@ -231,7 +231,7 @@ jobs:
             else source="$REGISTRY_IMAGE:v6.0-test-$suffix-$short"; version="v6.0-$suffix"; alias=$suffix
             fi
             IMAGE="$source" Docker/tests/test-manifest.sh
-            digest=$(docker buildx imagetools inspect "$source" | awk '/^Digest:/{print $2; exit}')
+            digest=$(docker buildx imagetools inspect "$source" | awk '/^Digest:/{digest=$2} END{print digest}')
             [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "BLOCKED: cannot resolve $source" >&2; exit 1; }
             expected=${tested_digests[${#digests[@]}]}
             [[ $digest == "$expected" ]] || { echo "BLOCKED: $source does not match its tested digest" >&2; exit 1; }
