@@ -34,5 +34,8 @@ RUN set -eux; \
     ln -s "/home/HammerDB-${HAMMERDB_VERSION}" /home/hammerdb; \
     rm -f "/tmp/${archive}"
 
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 WORKDIR /home/hammerdb
 CMD ["tail", "-f", "/dev/null"]
