@@ -1809,14 +1809,17 @@ proc _runtimer { seconds } {
     upvar timevar timevar
     proc runtimer_loop { seconds } {
         upvar elapsed elapsed
-        incr elapsed
         upvar timevar timevar
         set rcomplete [vucomplete]
+        set vacuum_active [expr {[tsv::exists application vacuum_running] && [tsv::get application vacuum_running]}]
+        if { !$vacuum_active } {
+            incr elapsed
+        }
         if { ![ expr {$elapsed % 60} ] } {
             set y [ expr $elapsed / 60 ]
             #putscli "Timer: $y minutes elapsed"
         }
-        if {!$rcomplete && $elapsed < $seconds } {
+        if {!$rcomplete && ($vacuum_active || $elapsed < $seconds) } {
             ;#Neither vucomplete or time reached, reschedule loop
         catch {after 1000 runtimer_loop $seconds }} else {
             #putscli "keepalive returned after $elapsed seconds"

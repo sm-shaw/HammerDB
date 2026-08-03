@@ -210,8 +210,9 @@ proc load_virtual {}  {
             } 
         }
     }
-    ed_stop_vuser 
+    ed_stop_vuser
     tsv::set application abort 0
+    tsv::set application vacuum_running 0
     if {  [ info exists virtual_users ] } { ; } else { set virtual_users 1 }
     if {  [ info exists maxvuser ] } { ; } else { set maxvuser $virtual_users }
     if {  [ info exists lprefix ] } { ; } else { set lprefix "load" }
@@ -542,6 +543,7 @@ proc run_virtual {} {
     disable_enable_options_menu disable
     set vuser_create_ok false
     tsv::set application abort 0
+    tsv::set application vacuum_running 0
     ed_edit_commit
     set totcount 0
     #Trying to run so check if any script in editor to run
