@@ -1,27 +1,28 @@
-FROM  docker.io/tpcorg/hammerdb:oracle as oracle
+ARG MYSQL_IMAGE=docker.io/tpcorg/hammerdb:v6.0-mysql
+ARG MARIA_IMAGE=docker.io/tpcorg/hammerdb:v6.0-maria
+ARG POSTGRES_IMAGE=docker.io/tpcorg/hammerdb:v6.0-postgres
+ARG ORACLE_IMAGE=docker.io/tpcorg/hammerdb:v6.0-oracle
+ARG MSSQLS_IMAGE=docker.io/tpcorg/hammerdb:v6.0-mssqls
+FROM ${MYSQL_IMAGE} AS mysql
+FROM ${MARIA_IMAGE} AS maria
+FROM ${POSTGRES_IMAGE} AS postgres
+FROM ${ORACLE_IMAGE} AS oracle
+FROM ${MSSQLS_IMAGE} AS final
 
-FROM  docker.io/tpcorg/hammerdb:mssqls
+# Buildx resolves every stage for the target platform. Copy the complete runtime
+# trees so transitive dependencies and architecture-specific loader paths follow.
+COPY --from=mysql /usr/lib/ /usr/lib/
+COPY --from=maria /usr/lib/ /usr/lib/
+COPY --from=postgres /usr/lib/ /usr/lib/
+COPY --from=postgres /usr/bin/psql /usr/bin/psql
+COPY --from=postgres /usr/lib/postgresql/17/ /usr/lib/postgresql/17/
+COPY --from=oracle /opt/oracle/ /opt/oracle/
+COPY --from=oracle /etc/ld.so.conf.d/oracle-instantclient.conf /etc/ld.so.conf.d/oracle-instantclient.conf
+ENV ORACLE_HOME=/opt/oracle/instantclient
+ENV ORACLE_LIBRARY=/opt/oracle/instantclient/libclntsh.so
+ENV TNS_ADMIN=/opt/oracle/instantclient/network/admin
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:${LD_LIBRARY_PATH}
+RUN ldconfig && ldconfig -p | grep -E 'lib(mysqlclient|mariadb|pq|clntsh|odbc)'
 
-# Install and configure IBM Db2 client libraries, 
-# You will need to pre-download IDB Db2 client libraries and place in the local folder
-# RUN mkdir -p db2_cli_odbc_driver/odbc_cli
-# ADD odbc_cli db2_cli_odbc_driver/odbc_cli/
-# RUN apt update && \
-#    echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections && \
-#    apt -y install libxml2 && \
-#    echo 'export DB2_CLI_DRIVER_INSTALL_PATH="/home/db2_cli_odbc_driver/odbc_cli/clidriver"' >> ~/.bashrc && \
-#    echo 'export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/home/db2_cli_odbc_driver/odbc_cli/clidriver/lib"' >> ~/.bashrc && \
-#    echo 'export LIBPATH="/home/db2_cli_odbc_driver/odbc_cli/clidriver/lib"' >> ~/.bashrc && \
-#    echo 'export PATH="$PATH:/home/db2_cli_odbc_driver/odbc_cli/clidriver/bin"' >> ~/.bashrc && \
-#    echo 'export PATH="$PATH:/home/db2_cli_odbc_driver/odbc_cli/clidriver/adm"' >>  ~/.bashrc
-
-COPY --from=oracle /home/instantclient_21_18 /home/instantclient_21_18
-ENV ORACLE_LIBRARY=/home/instantclient_21_18/libclntsh.so
-RUN echo 'export LD_LIBRARY_PATH=/home/instantclient_21_18/:$LD_LIBRARY_PATH'  >> ~/.bashrc  && \
-    ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y libmariadb3 libpq-dev && \
-    wget -O /usr/lib/x86_64-linux-gnu/libmysqlclient.so.24  http://www.hammerdb.com/mysqllibs/libmysqlclient.so.24 && \
-    rm -rf /var/lib/apt/lists/*
-
+WORKDIR /home/hammerdb
+CMD ["tail", "-f", "/dev/null"]
