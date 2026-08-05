@@ -1807,24 +1807,46 @@ tk_messageBox -icon warning -message "runtimer command has been deprecated and i
 proc _runtimer { seconds } {
     upvar elapsed elapsed
     upvar timevar timevar
-    proc runtimer_loop { seconds } {
-        upvar elapsed elapsed
-        upvar timevar timevar
-        set rcomplete [vucomplete]
-        set vacuum_active [expr {[tsv::exists application vacuum_running] && [tsv::get application vacuum_running]}]
-        if { !$vacuum_active } {
+    global rdbms
+    if { $rdbms eq "PostgreSQL" } {
+        ;#PostgreSQL end-of-run vacuum can block past the poll below, so track it and keep polling instead of reporting a false VU-shutdown timeout
+        proc runtimer_loop { seconds } {
+            upvar elapsed elapsed
+            upvar timevar timevar
+            set rcomplete [vucomplete]
+            set vacuum_active [expr {[tsv::exists application vacuum_running] && [tsv::get application vacuum_running]}]
+            if { !$vacuum_active } {
+                incr elapsed
+            }
+            if { ![ expr {$elapsed % 60} ] } {
+                set y [ expr $elapsed / 60 ]
+                #putscli "Timer: $y minutes elapsed"
+            }
+            if {!$rcomplete && ($vacuum_active || $elapsed < $seconds) } {
+                ;#Neither vucomplete or time reached, reschedule loop
+            catch {after 1000 runtimer_loop $seconds }} else {
+                #putscli "keepalive returned after $elapsed seconds"
+                set elapsed 0
+                set timevar 1
+            }
+        }
+    } else {
+        proc runtimer_loop { seconds } {
+            upvar elapsed elapsed
             incr elapsed
-        }
-        if { ![ expr {$elapsed % 60} ] } {
-            set y [ expr $elapsed / 60 ]
-            #putscli "Timer: $y minutes elapsed"
-        }
-        if {!$rcomplete && ($vacuum_active || $elapsed < $seconds) } {
-            ;#Neither vucomplete or time reached, reschedule loop
-        catch {after 1000 runtimer_loop $seconds }} else {
-            #putscli "keepalive returned after $elapsed seconds"
-            set elapsed 0
-            set timevar 1
+            upvar timevar timevar
+            set rcomplete [vucomplete]
+            if { ![ expr {$elapsed % 60} ] } {
+                set y [ expr $elapsed / 60 ]
+                #putscli "Timer: $y minutes elapsed"
+            }
+            if {!$rcomplete && $elapsed < $seconds } {
+                ;#Neither vucomplete or time reached, reschedule loop
+            catch {after 1000 runtimer_loop $seconds }} else {
+                #putscli "keepalive returned after $elapsed seconds"
+                set elapsed 0
+                set timevar 1
+            }
         }
     }
     set elapsed 0
