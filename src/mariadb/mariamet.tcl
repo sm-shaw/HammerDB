@@ -1546,7 +1546,7 @@ namespace eval mariamet {
                     { #FFD700 gold }
                     { #E46800 orange }
                     { #4080F0 light_blue }
-                    { #004AE7 blue }
+                    { #00CC00 green }
                     { #00FF00 bright_green }
                     { #00CC00 green }
                     { #FFFFFF black }
