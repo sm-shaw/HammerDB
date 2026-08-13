@@ -3133,28 +3133,32 @@ switch $myposition {
             if { $mode eq "Primary" } { eval [subst {thread::send -async $MASTER { remote_command ed_kill_vusers }}] }
             if { $VACUUM } {
                 set RAISEERROR "true"
-                puts "Checkpoint and Vacuum"
-                set result [pg_exec $lda "checkpoint" ]
-                if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
-                    if { $RAISEERROR } {
-                        error "[pg_result $result -error]"
-                    } else {
-                        puts "Checkpoint Error set RAISEERROR for Details"
-                    }
-                } else {
-                    pg_result $result -clear
-                }
+                puts "Vacuum and Checkpoint"
+                tsv::set application vacuum_running 1
                 set result [pg_exec $lda1 "vacuum" ]
                 if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
                     if { $RAISEERROR } {
+                        tsv::set application vacuum_running 0
                         error "[pg_result $result -error]"
                     } else {
                         puts "Vacuum Error set RAISEERROR for Details"
                     }
                 } else {
-                    puts "Checkpoint and Vacuum Complete"
                     pg_result $result -clear
                 }
+                set result [pg_exec $lda "checkpoint" ]
+                if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
+                    if { $RAISEERROR } {
+                        tsv::set application vacuum_running 0
+                        error "[pg_result $result -error]"
+                    } else {
+                        puts "Checkpoint Error set RAISEERROR for Details"
+                    }
+                } else {
+                    puts "Vacuum and Checkpoint Complete"
+                    pg_result $result -clear
+                }
+                tsv::set application vacuum_running 0
             }
             if { ($DRITA_SNAPSHOTS eq "true") || ($VACUUM eq "true") } {
                 pg_disconnect $lda
@@ -3623,28 +3627,32 @@ switch $myposition {
             if { $mode eq "Primary" } { eval [subst {thread::send -async $MASTER { remote_command ed_kill_vusers }}] }
             if { $VACUUM } {
                 set RAISEERROR "true"
-                puts "Checkpoint and Vacuum"
-                set result [pg_exec $lda "checkpoint" ]
-                if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
-                    if { $RAISEERROR } {
-                        error "[pg_result $result -error]"
-                    } else {
-                        puts "Checkpoint Error set RAISEERROR for Details"
-                    }
-                } else {
-                    pg_result $result -clear
-                }
+                puts "Vacuum and Checkpoint"
+                tsv::set application vacuum_running 1
                 set result [pg_exec $lda1 "vacuum" ]
                 if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
                     if { $RAISEERROR } {
+                        tsv::set application vacuum_running 0
                         error "[pg_result $result -error]"
                     } else {
                         puts "Vacuum Error set RAISEERROR for Details"
                     }
                 } else {
-                    puts "Checkpoint and Vacuum Complete"
                     pg_result $result -clear
                 }
+                set result [pg_exec $lda "checkpoint" ]
+                if {[pg_result $result -status] ni {"PGRES_TUPLES_OK" "PGRES_COMMAND_OK"}} {
+                    if { $RAISEERROR } {
+                        tsv::set application vacuum_running 0
+                        error "[pg_result $result -error]"
+                    } else {
+                        puts "Checkpoint Error set RAISEERROR for Details"
+                    }
+                } else {
+                    puts "Vacuum and Checkpoint Complete"
+                    pg_result $result -clear
+                }
+                tsv::set application vacuum_running 0
             }
             if { ($DRITA_SNAPSHOTS eq "true") || ($VACUUM eq "true") } {
                 pg_disconnect $lda

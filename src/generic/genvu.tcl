@@ -210,8 +210,9 @@ proc load_virtual {}  {
             } 
         }
     }
-    ed_stop_vuser 
+    ed_stop_vuser
     tsv::set application abort 0
+    if { $rdbms eq "PostgreSQL" } { tsv::set application vacuum_running 0 }
     if {  [ info exists virtual_users ] } { ; } else { set virtual_users 1 }
     if {  [ info exists maxvuser ] } { ; } else { set maxvuser $virtual_users }
     if {  [ info exists lprefix ] } { ; } else { set lprefix "load" }
@@ -536,12 +537,13 @@ proc load_virtual {}  {
 }
 
 proc run_virtual {} {
-    global _ED ed_loadsave argv argv0 argc embed_args threadscreated threadsbytid maxvuser delayms conpause ntimes masterthread totcount table vuser_create_ok
+    global _ED ed_loadsave argv argv0 argc embed_args threadscreated threadsbytid maxvuser delayms conpause ntimes masterthread totcount table vuser_create_ok rdbms
     set Name .ed_mainFrame.buttons.runworld
     $Name configure -state disabled
     disable_enable_options_menu disable
     set vuser_create_ok false
     tsv::set application abort 0
+    if { $rdbms eq "PostgreSQL" } { tsv::set application vacuum_running 0 }
     ed_edit_commit
     set totcount 0
     #Trying to run so check if any script in editor to run
