@@ -19,10 +19,10 @@ Setup tkblt             tkblt-3.2.24.7z                tkblt.bawt
 Setup tclpy             tclpy-0.4.1.7z                 tclpy_NMake.bawt
 Setup tclpyS            tclpyS-0.4.1.7z                tclpyS_NMake.bawt
 # Compiled Tcl Database interface packages.
-Setup oratcl            oratcl-4.6.1.7z                 oratcl_NMake.bawt	
+Setup oratcl            oratcl-4.6.1.7z                 oratcl_NMake.bawt
 Setup mariatcl          mariatcl-0.1.1.7z             mariatcl_NMake.bawt
 Setup mysqltcl          mysqltcl-3.052.1.7z             mysqltcl_NMake.bawt
-Setup pgtcl             pgtcl-2.1.1.1.7z                pgtcl_NMake.bawt	
+Setup pgtcl             pgtcl-2.1.1.2.7z                pgtcl_NMake.bawt
 Setup db2tcl            db2tcl-2.0.1.1.7z               db2tcl_NMake.bawt
 # Compiled Tcl packages.
 # Pure Tcl/Tk packages.
