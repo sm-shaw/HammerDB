@@ -1288,6 +1288,21 @@ proc gettimestamp { } {
 # bcp command to copy from file to specified tables
 # -b flag specifies batch size of 500000, -a flag specifies network packet size of 16000
 # network packet size depends on server configuration, default of 4096 is used if 16000 is not allowed
+proc bcpWindowsTrustServerCertificate { trust_cert } {
+    if {!$trust_cert} {
+        return 0
+    }
+    if {![info exists ::mssqls_bcp_major_version]} {
+        set ::mssqls_bcp_major_version 0
+        if {![catch {exec bcp -v} bcp_version_output]} {
+            if {[regexp {Version:[[:space:]]*([0-9]+)\.} $bcp_version_output all bcp_major_version]} {
+                set ::mssqls_bcp_major_version $bcp_major_version
+            }
+        }
+    }
+    return [expr {$::mssqls_bcp_major_version >= 18}]
+}
+
 proc bcpComm {odbc tableName filePath uid pwd server} {
     upvar 3 location location
     upvar 3 authentication authentication
@@ -1297,25 +1312,40 @@ proc bcpComm {odbc tableName filePath uid pwd server} {
     }
     } else {
     if {[ string toupper $authentication ] eq "WINDOWS" } {
-        exec bcp $tableName IN $filePath -b 500000 -a 16000 -T -S $server -c  -t ","
+        upvar #0 tcl_platform tcl_platform
+        upvar 3 trust_cert trust_cert
+        if {$tcl_platform(platform) == "windows" && [bcpWindowsTrustServerCertificate $trust_cert]} {
+            exec bcp $tableName IN $filePath -b 500000 -a 16000 -T -S $server -u -c -t ","
+        } else {
+            exec bcp $tableName IN $filePath -b 500000 -a 16000 -T -S $server -c -t ","
+        }
     } else {
     upvar #0 tcl_platform tcl_platform
-   if {$tcl_platform(platform) == "windows"} {
-#bcp on Windows uses ODBC driver 17 that does not support the -u option and may need updating when bcp driver changes
-   if {[ string toupper $authentication ] eq "ENTRA" } {
-        exec bcp $tableName IN $filePath -b 500000 -a 16000 -G -S $server -c  -t ","
+    if {$tcl_platform(platform) == "windows"} {
+        upvar 3 trust_cert trust_cert
+        set bcp_trust_cert [bcpWindowsTrustServerCertificate $trust_cert]
+        if {[ string toupper $authentication ] eq "ENTRA" } {
+            if {$bcp_trust_cert} {
+                exec bcp $tableName IN $filePath -b 500000 -a 16000 -G -S $server -u -c -t ","
+            } else {
+                exec bcp $tableName IN $filePath -b 500000 -a 16000 -G -S $server -c -t ","
+            }
         } else {
-        exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -c  -t ","
-	}
-	} else {
+            if {$bcp_trust_cert} {
+                exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -u -c -t ","
+            } else {
+                exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -c -t ","
+            }
+        }
+    } else {
 #bcp on Linux can use ODBC driver 18 and trust the server certificate with -u option
     upvar 3 trust_cert trust_cert
     upvar 3 odbc_driver odbc_driver
-    regexp {ODBC\ Driver\ ([0-9]+)\ for\ SQL\ Server} $odbc_driver all odbc_version 
+    regexp {ODBC\ Driver\ ([0-9]+)\ for\ SQL\ Server} $odbc_driver all odbc_version
     if { $trust_cert && $odbc_version >= 18 } {
-        exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -u -c  -t ","
-		} else {
-        exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -c  -t ","
+        exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -u -c -t ","
+            } else {
+        exec bcp $tableName IN $filePath -b 500000 -a 16000 -U $uid -P $pwd -S $server -c -t ","
            }
          }
       }
