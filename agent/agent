@@ -634,6 +634,9 @@ proc CollectIOMetricsLinux {} {
         if {[llength $fields] < 14} { continue }
         set dev [lindex $fields 2]
         if {[regexp {^(loop|ram|fd|sr|dm-|md)} $dev]} { continue }
+        # /proc/diskstats contains both whole devices and their partitions.
+        # Count only the whole device to avoid counting the same I/O twice.
+        if {[file exists "/sys/class/block/$dev/partition"]} { continue }
         set reads [expr {$reads + [lindex $fields 3]}]
         set writes [expr {$writes + [lindex $fields 7]}]
         set sectors [expr {$sectors + [lindex $fields 5] + [lindex $fields 9]}]
