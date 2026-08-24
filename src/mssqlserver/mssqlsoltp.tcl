@@ -1292,15 +1292,13 @@ proc bcpWindowsTrustServerCertificate { trust_cert } {
     if {!$trust_cert} {
         return 0
     }
-    if {![info exists ::mssqls_bcp_major_version]} {
-        set ::mssqls_bcp_major_version 0
-        if {![catch {exec bcp -v} bcp_version_output]} {
-            if {[regexp {Version:[[:space:]]*([0-9]+)\.} $bcp_version_output all bcp_major_version]} {
-                set ::mssqls_bcp_major_version $bcp_major_version
-            }
-        }
+    if {![info exists ::mssqls_bcp_supports_u]} {
+        set bcp_usage ""
+        catch {exec bcp 2>@1} bcp_usage
+        set ::mssqls_bcp_supports_u \
+            [regexp -- {\[-u[[:space:]]} $bcp_usage]
     }
-    return [expr {$::mssqls_bcp_major_version >= 18}]
+    return $::mssqls_bcp_supports_u
 }
 
 proc bcpComm {odbc tableName filePath uid pwd server} {
