@@ -1545,7 +1545,6 @@ namespace eval mysqlmet {
                     { #FFD700 gold }
                     { #E46800 orange }
                     { #4080F0 light_blue }
-                    { #004AE7 blue }
                     { #00FF00 bright_green }
                     { #00CC00 green }
                     { #FFFFFF black }
@@ -2098,7 +2097,7 @@ namespace eval mysqlmet {
                                   s.DIGEST
                                 FROM performance_schema.threads t
                                 LEFT JOIN performance_schema.events_waits_current w
-                                  ON t.THREAD_ID = w.THREAD_ID AND w.EVENT_NAME != 'idle'
+                                  ON t.THREAD_ID = w.THREAD_ID AND w.EVENT_NAME != 'idle' AND w.END_EVENT_ID IS NULL
                                 LEFT JOIN performance_schema.events_statements_current s
                                   ON t.THREAD_ID = s.THREAD_ID
                                 WHERE t.TYPE = 'FOREGROUND'
