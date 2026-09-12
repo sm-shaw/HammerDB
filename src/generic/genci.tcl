@@ -169,6 +169,7 @@ proc SQLite2Dict_ci {dbname} {
 }
 
 proc find_ciplan_dir {} {
+    set PWConfigDir [file join [pwd] config]
     if {[info exists ::UserDefaultDir] && [string trim $::UserDefaultDir] ne ""} {
         if {[catch {
             set UDConfigDir [file join [file normalize $::UserDefaultDir] config]
@@ -183,7 +184,7 @@ proc find_ciplan_dir {} {
     }]} {
         set ISConfigDir ""
     }
-    foreach CD {UDConfigDir ISConfigDir} {
+    foreach CD {PWConfigDir UDConfigDir ISConfigDir} {
         if {[file isdirectory [set $CD]]} {
             if {[file exists [file join [set $CD] ci.xml]]} {
                 return [set $CD]
