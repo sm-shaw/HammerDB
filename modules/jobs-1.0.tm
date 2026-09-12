@@ -3528,7 +3528,20 @@ if {$rawmode} {
   proc getjobtiming { jobid } {
     set jobtiming [ dict create ]
     hdbjobs eval {SELECT procname,elapsed_ms,calls,min_ms,avg_ms,max_ms,total_ms,p99_ms,p95_ms,p75_ms,p50_ms,p25_ms,sd,ratio_pct FROM JOBTIMING WHERE JOBID=$jobid and SUMMARY=1 ORDER BY RATIO_PCT DESC}  {
-    set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p75_ms $p75_ms p50_ms $p50_ms p25_ms $p25_ms sd $sd ratio_pct $ratio_pct"
+    set timing [list \
+    elapsed_ms $elapsed_ms \
+    calls $calls \
+    min_ms $min_ms \
+    avg_ms $avg_ms \
+    max_ms $max_ms \
+    total_ms $total_ms \
+    p99_ms $p99_ms \
+    p95_ms $p95_ms \
+    p75_ms $p75_ms \
+    p50_ms $p50_ms \
+    p25_ms $p25_ms \
+    sd $sd \
+    ratio_pct $ratio_pct]
       dict append jobtiming $procname $timing
     }
     if { [ dict size $jobtiming ] eq 0 } {
@@ -4547,7 +4560,20 @@ proc getjob { query } {
                 WHERE JOBID=$jobid AND VU=$vuid AND SUMMARY=0
                 ORDER BY RATIO_PCT DESC
             } {
-                set timing "elapsed_ms $elapsed_ms calls $calls min_ms $min_ms avg_ms $avg_ms max_ms $max_ms total_ms $total_ms p99_ms $p99_ms p95_ms $p95_ms p75_ms $p75_ms p50_ms $p50_ms p25_ms $p25_ms sd $sd ratio_pct $ratio_pct"
+                set timing [list \
+    elapsed_ms $elapsed_ms \
+    calls $calls \
+    min_ms $min_ms \
+    avg_ms $avg_ms \
+    max_ms $max_ms \
+    total_ms $total_ms \
+    p99_ms $p99_ms \
+    p95_ms $p95_ms \
+    p75_ms $p75_ms \
+    p50_ms $p50_ms \
+    p25_ms $p25_ms \
+    sd $sd \
+    ratio_pct $ratio_pct]
                 dict append jobtiming $procname $timing
             }
 
